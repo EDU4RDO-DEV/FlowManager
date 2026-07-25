@@ -16,6 +16,20 @@ export type AppModuleKey =
   | 'produccion'
   | 'inventario';
 
+const ALL_MODULES: AppModuleKey[] = [
+  'resumen',
+  'usuarios',
+  'roles',
+  'clientes',
+  'proveedores',
+  'sesiones',
+  'produccion',
+  'inventario',
+];
+
+export const RBAC_PREVIEW_MODE =
+  process.env.NEXT_PUBLIC_RBAC_PREVIEW_MODE === 'true';
+
 function normalizeRoleName(value: string): string {
   return value
     .normalize('NFD')
@@ -60,6 +74,10 @@ export function getRoleGroup(nombreRol: string | null | undefined): RoleGroup {
 }
 
 export function getAllowedModulesByRole(nombreRol: string | null | undefined): AppModuleKey[] {
+  if (RBAC_PREVIEW_MODE) {
+    return ALL_MODULES;
+  }
+
   const group = getRoleGroup(nombreRol);
   return moduleByRole[group];
 }
