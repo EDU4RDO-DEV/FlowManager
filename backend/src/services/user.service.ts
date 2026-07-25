@@ -31,6 +31,17 @@ type UpdateUserInput = {
   idUsuarioModificador?: number;
 };
 
+type ChangeUserPasswordInput = {
+  claveActual: string;
+  nuevaClave: string;
+  idUsuarioModificador?: number;
+};
+
+type ResetUserPasswordInput = {
+  nuevaClave: string;
+  idUsuarioModificador?: number;
+};
+
 function toUserDto(usuario: {
   Id: number;
   IdUsuario: number | null;
@@ -107,6 +118,19 @@ async function validateCorreoDisponible(correo: string, exceptId?: number) {
   if (existing) {
     throw new Error('El correo ya está registrado');
   }
+}
+
+async function getActiveUserWithPassword(id: number) {
+  const user = await prisma.usuario.findFirst({
+    where: { Id: id, Anulado: false },
+    select: { Id: true, Clave: true },
+  });
+
+  if (!user) {
+    throw new Error('Usuario no existe');
+  }
+
+  return user;
 }
 
 export async function listUsers() {
@@ -338,6 +362,77 @@ export async function deleteUser(id: number, idUsuarioAnulador?: number) {
       Anulado: true,
       ...(idUsuarioAnulador !== undefined ? { IdUsuarioAnulador: idUsuarioAnulador } : {}),
       FechaAnulacion: new Date(),
+    },
+  });
+}
+
+export async function changeUserPassword(id: number, input: ChangeUserPasswordInput) {
+  const user = await getActiveUserWithPassword(id);
+
+  if (input.idUsuarioModificador !== undefined) {
+    const usuarioModificador = await prisma.usuario.findFirst({
+      where: { Id: input.idUsuarioModificador, Anulado: false },
+      select: { Id: true },
+    });
+
+    if (!usuarioModificador) {
+      throw new Error('Usuario modificador no existe');
+    }
+  }
+
+  const currentPasswordOk = await bcrypt.compare(input.claveActual, user.Clave);
+  if (!currentPasswordOk) {
+    throw new Error('Clave actual incorrecta');
+  }
+
+  const isSamePassword = await bcrypt.compare(input.nuevaClave, user.Clave);
+  if (isSamePassword) {
+    throw new Error('La nueva clave debe ser diferente a la actual');
+  }
+
+  const newPasswordHash = await bcrypt.hash(input.nuevaClave, 10);
+
+  await prisma.usuario.update({
+    where: { Id: id },
+    data: {
+      Clave: newPasswordHash,
+      ...(input.idUsuarioModificador !== undefined
+        ? { IdUsuarioModificador: input.idUsuarioModificador }
+        : {}),
+      FechaModificacion: new Date(),
+    },
+  });
+}
+
+export async function resetUserPassword(id: number, input: ResetUserPasswordInput) {
+  const user = await getActiveUserWithPassword(id);
+
+  if (input.idUsuarioModificador !== undefined) {
+    const usuarioModificador = await prisma.usuario.findFirst({
+      where: { Id: input.idUsuarioModificador, Anulado: false },
+      select: { Id: true },
+    });
+
+    if (!usuarioModificador) {
+      throw new Error('Usuario modificador no existe');
+    }
+  }
+
+  const isSamePassword = await bcrypt.compare(input.nuevaClave, user.Clave);
+  if (isSamePassword) {
+    throw new Error('La nueva clave debe ser diferente a la actual');
+  }
+
+  const newPasswordHash = await bcrypt.hash(input.nuevaClave, 10);
+
+  await prisma.usuario.update({
+    where: { Id: id },
+    data: {
+      Clave: newPasswordHash,
+      ...(input.idUsuarioModificador !== undefined
+        ? { IdUsuarioModificador: input.idUsuarioModificador }
+        : {}),
+      FechaModificacion: new Date(),
     },
   });
 }

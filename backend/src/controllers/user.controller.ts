@@ -1,10 +1,12 @@
 import { Request, Response } from 'express';
 
 import {
+  changeUserPassword,
   createUser,
   deleteUser,
   getUserById,
   listUsers,
+  resetUserPassword,
   updateUser,
 } from '../services/user.service';
 
@@ -259,6 +261,137 @@ export async function deleteUserController(req: Request, res: Response) {
 
     if (message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function changeUserPasswordController(req: Request, res: Response) {
+  try {
+    const id = parseId(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, message: 'id debe ser un entero positivo' });
+    }
+
+    const { claveActual, nuevaClave, idUsuarioModificador } = req.body as {
+      claveActual?: string;
+      nuevaClave?: string;
+      idUsuarioModificador?: number;
+    };
+
+    if (!claveActual || !nuevaClave) {
+      return res.status(400).json({
+        ok: false,
+        message: 'claveActual y nuevaClave son obligatorias',
+      });
+    }
+
+    if (nuevaClave.length < 8) {
+      return res.status(400).json({
+        ok: false,
+        message: 'nuevaClave debe tener al menos 8 caracteres',
+      });
+    }
+
+    if (
+      idUsuarioModificador !== undefined &&
+      !isValidPositiveInteger(idUsuarioModificador)
+    ) {
+      return res.status(400).json({
+        ok: false,
+        message: 'idUsuarioModificador debe ser entero positivo cuando se envía',
+      });
+    }
+
+    await changeUserPassword(id, {
+      claveActual,
+      nuevaClave,
+      ...(idUsuarioModificador !== undefined
+        ? { idUsuarioModificador: Number(idUsuarioModificador) }
+        : {}),
+    });
+
+    return res.status(200).json({
+      ok: true,
+      message: 'Contraseña actualizada correctamente',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (
+      message === 'Usuario no existe' ||
+      message === 'Usuario modificador no existe' ||
+      message === 'Clave actual incorrecta' ||
+      message === 'La nueva clave debe ser diferente a la actual'
+    ) {
+      return res.status(
+        message.includes('no existe') ? 404 : 400,
+      ).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function resetUserPasswordController(req: Request, res: Response) {
+  try {
+    const id = parseId(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, message: 'id debe ser un entero positivo' });
+    }
+
+    const { nuevaClave, idUsuarioModificador } = req.body as {
+      nuevaClave?: string;
+      idUsuarioModificador?: number;
+    };
+
+    if (!nuevaClave) {
+      return res.status(400).json({
+        ok: false,
+        message: 'nuevaClave es obligatoria',
+      });
+    }
+
+    if (nuevaClave.length < 8) {
+      return res.status(400).json({
+        ok: false,
+        message: 'nuevaClave debe tener al menos 8 caracteres',
+      });
+    }
+
+    if (
+      idUsuarioModificador !== undefined &&
+      !isValidPositiveInteger(idUsuarioModificador)
+    ) {
+      return res.status(400).json({
+        ok: false,
+        message: 'idUsuarioModificador debe ser entero positivo cuando se envía',
+      });
+    }
+
+    await resetUserPassword(id, {
+      nuevaClave,
+      ...(idUsuarioModificador !== undefined
+        ? { idUsuarioModificador: Number(idUsuarioModificador) }
+        : {}),
+    });
+
+    return res.status(200).json({
+      ok: true,
+      message: 'Contraseña restablecida correctamente',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (
+      message === 'Usuario no existe' ||
+      message === 'Usuario modificador no existe' ||
+      message === 'La nueva clave debe ser diferente a la actual'
+    ) {
+      return res.status(
+        message.includes('no existe') ? 404 : 400,
+      ).json({ ok: false, message });
     }
 
     return res.status(500).json({ ok: false, message });
