@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { Building2, FilePenLine, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -12,6 +13,7 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { useAuth } from "@/components/auth-provider";
 import { getApiErrorMessage } from "@/lib/api";
+import { Card, CardContent } from "@/components/ui/card";
 import { getUserById, listRoles, updateUser } from "@/services/users.service";
 import type { RoleDto } from "@/types/users";
 
@@ -97,25 +99,59 @@ export default function EditUserPage() {
     <RequireAuth>
       <DashboardShell
         title="Editar Usuario"
-        description="Submodulo de edicion de usuarios. Ajusta campos y guarda cambios."
+        description="Submodulo corporativo para ajustes y mantenimiento de perfiles Basan."
       >
-        <div className="mx-auto w-full max-w-2xl">
-          {loading ? (
-            <p className="rounded-lg border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
-              Cargando informacion del usuario...
-            </p>
-          ) : (
-            <UserFormCard
-              mode="edit"
-              title={`Editar usuario #${params.id}`}
-              roles={roles}
-              form={form}
-              saving={saving}
-              onChange={setForm}
-              onCancel={() => router.push("/users")}
-              onSubmit={handleSubmit}
-            />
-          )}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
+          <div className="space-y-4 lg:col-span-1">
+            <Card className="rounded-xl border border-border bg-background">
+              <CardContent className="p-4">
+                <div className="mb-2 inline-flex rounded-lg border border-border bg-muted/50 p-2">
+                  <FilePenLine className="size-4 text-sky-600" />
+                </div>
+                <p className="text-sm font-semibold tracking-tight">Edicion dirigida</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Modifica solo los campos necesarios y conserva trazabilidad.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-xl border border-border bg-muted/50">
+              <CardContent className="p-4 text-sm text-muted-foreground">
+                <div className="mb-2 inline-flex rounded-lg border border-border bg-background p-2">
+                  <ShieldCheck className="size-4 text-sky-600" />
+                </div>
+                Cada cambio actualiza políticas de acceso y rol de operación.
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-xl border border-border bg-background">
+              <CardContent className="p-4 text-sm text-muted-foreground">
+                <div className="mb-2 inline-flex rounded-lg border border-border bg-muted/50 p-2">
+                  <Building2 className="size-4 text-sky-600" />
+                </div>
+                Panel operativo alineado a estándares de Industrias Basan.
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="lg:col-span-3">
+            {loading ? (
+              <p className="rounded-xl border border-dashed border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+                Cargando informacion del usuario...
+              </p>
+            ) : (
+              <UserFormCard
+                mode="edit"
+                title={`Editar usuario #${params.id}`}
+                roles={roles}
+                form={form}
+                saving={saving}
+                onChange={setForm}
+                onCancel={() => router.push("/users")}
+                onSubmit={handleSubmit}
+              />
+            )}
+          </div>
         </div>
       </DashboardShell>
     </RequireAuth>

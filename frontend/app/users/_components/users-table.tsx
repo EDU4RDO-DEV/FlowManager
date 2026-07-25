@@ -1,10 +1,28 @@
-import { Loader2, Plus, RefreshCw } from "lucide-react";
-import Link from "next/link";
+"use client";
 
+import { Ellipsis, KeyRound, Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { RoleDto, UserDto } from "@/types/users";
 
 type UsersTableProps = {
@@ -36,16 +54,23 @@ export function UsersTable({
   roleNameByUser,
   formatDate,
 }: UsersTableProps) {
+  const router = useRouter();
+
   return (
-    <Card className="border-border/70 shadow-sm">
+    <Card className="rounded-xl border border-border bg-background">
       <CardHeader className="flex flex-row items-center justify-between gap-4">
-        <CardTitle className="text-base tracking-tight">Listado de usuarios</CardTitle>
+        <div>
+          <CardTitle className="text-2xl font-bold tracking-tight">Listado de usuarios</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Controla accesos, roles y seguridad operacional del equipo Basan.
+          </p>
+        </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={onReload} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={onReload} disabled={loading} className="hover:bg-muted/50 transition-colors">
             {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
             Recargar
           </Button>
-          <Button size="sm" asChild>
+          <Button size="sm" asChild className="bg-sky-600 text-white hover:bg-sky-700 transition-colors">
             <Link href="/users/create">
               <Plus className="size-4" />
               Crear usuario
@@ -54,7 +79,7 @@ export function UsersTable({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 rounded-xl border border-border bg-muted/50 p-4 md:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="search-users">Busqueda</Label>
             <Input
@@ -62,6 +87,7 @@ export function UsersTable({
               placeholder="Nombre, correo o rol"
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
+              className="bg-background"
             />
           </div>
 
@@ -69,7 +95,7 @@ export function UsersTable({
             <Label htmlFor="filter-role">Filtro por rol</Label>
             <select
               id="filter-role"
-              className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+              className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm transition-colors hover:bg-muted/50"
               value={roleFilter}
               onChange={(event) => onRoleFilterChange(event.target.value)}
             >
@@ -84,51 +110,65 @@ export function UsersTable({
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border border-border/80">
-          <table className="w-full min-w-190 text-sm">
-            <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2">ID</th>
-                <th className="px-3 py-2">Nombre</th>
-                <th className="px-3 py-2">Correo</th>
-                <th className="px-3 py-2">Rol</th>
-                <th className="px-3 py-2">Registro</th>
-                <th className="px-3 py-2">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <Table className="min-w-190">
+            <TableHeader className="bg-muted/50">
+              <TableRow className="hover:bg-muted/50">
+                <TableHead>ID</TableHead>
+                <TableHead>Nombre</TableHead>
+                <TableHead>Correo</TableHead>
+                <TableHead>Rol</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead>Registro</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {users.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-6 text-center text-muted-foreground" colSpan={6}>
+                <TableRow>
+                  <TableCell className="py-8 text-center text-muted-foreground" colSpan={7}>
                     No hay usuarios para mostrar.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : (
                 users.map((item) => (
-                  <tr key={item.id} className="border-t border-border/70 align-top">
-                    <td className="px-3 py-2">{item.id}</td>
-                    <td className="px-3 py-2 font-medium text-foreground">{item.nombre}</td>
-                    <td className="px-3 py-2">{item.correo}</td>
-                    <td className="px-3 py-2">{roleNameByUser(item)}</td>
-                    <td className="px-3 py-2">{formatDate(item.fechaRegistro)}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-1.5">
-                        <Button size="xs" variant="outline" asChild>
-                          <Link href={`/users/edit/${item.id}`}>Editar</Link>
-                        </Button>
-                        <Button size="xs" variant="destructive" onClick={() => onDelete(item)}>
-                          Eliminar
-                        </Button>
-                        <Button size="xs" variant="secondary" onClick={() => onResetPassword(item)}>
-                          Reset clave
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
+                  <TableRow key={item.id}>
+                    <TableCell className="font-mono text-xs text-muted-foreground">#{item.id}</TableCell>
+                    <TableCell className="font-medium text-foreground">{item.nombre}</TableCell>
+                    <TableCell>{item.correo}</TableCell>
+                    <TableCell>{roleNameByUser(item)}</TableCell>
+                    <TableCell>
+                      <Badge variant={item.anulado ? "destructive" : "default"}>
+                        {item.anulado ? "Inactivo" : "Activo"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{formatDate(item.fechaRegistro)}</TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background transition-colors hover:bg-muted/50">
+                          <Ellipsis className="size-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                          <DropdownMenuItem onClick={() => router.push(`/users/edit/${item.id}`)}>
+                            <Pencil className="size-4" />
+                            Editar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => onResetPassword(item)}>
+                            <KeyRound className="size-4" />
+                            Reset clave
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => onDelete(item)} className="text-destructive">
+                            <Trash2 className="size-4" />
+                            Eliminar
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </CardContent>
     </Card>
