@@ -420,8 +420,8 @@ model Talonario {
 model Usuario {
   Id                                               Int                     @id(map: "PK__Usuario__3214EC075D50852E") @default(autoincrement())
   IdUsuario                                        Int?
-  IdEntidad                                        Int
-  IdRol                                            Int
+  IdEntidad                                        Int?
+  IdRol                                            Int?
   Nombre                                           String                  @db.VarChar(255)
   Correo                                           String                  @db.VarChar(255)
   Clave                                            String                  @db.VarChar(Max)
@@ -448,8 +448,8 @@ model Usuario {
   RutaSesion_RutaSesion_IdUsuarioVendedorToUsuario RutaSesion[]            @relation("RutaSesion_IdUsuarioVendedorToUsuario")
   Sesion                                           Sesion[]
   Talonario                                        Talonario[]
-  Entidad_Usuario_IdEntidadToEntidad               Entidad                 @relation("Usuario_IdEntidadToEntidad", fields: [IdEntidad], references: [Id], onUpdate: NoAction, map: "FK_Usuario_Entidad")
-  Rol_Usuario_IdRolToRol                           Rol                     @relation("Usuario_IdRolToRol", fields: [IdRol], references: [Id], onUpdate: NoAction, map: "FK_Usuario_Rol")
+  Entidad_Usuario_IdEntidadToEntidad               Entidad?                @relation("Usuario_IdEntidadToEntidad", fields: [IdEntidad], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Usuario_Entidad")
+  Rol_Usuario_IdRolToRol                           Rol?                    @relation("Usuario_IdRolToRol", fields: [IdRol], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Usuario_Rol")
   Usuario                                          Usuario?                @relation("UsuarioToUsuario", fields: [IdUsuario], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Usuario_UsuarioPadre")
   other_Usuario                                    Usuario[]               @relation("UsuarioToUsuario")
   Vehiculo                                         Vehiculo[]

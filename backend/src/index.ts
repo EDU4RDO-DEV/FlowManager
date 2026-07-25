@@ -2,11 +2,15 @@ import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
 
+import authRouter from './routes/auth.routes';
+
 const app = express();
 const PORT = Number(process.env.PORT) || 4000;
 
 app.use(cors());
 app.use(express.json());
+
+app.use('/api/auth', authRouter);
 
 app.get('/health', (_req, res) => {
 	res.status(200).json({
@@ -14,6 +18,10 @@ app.get('/health', (_req, res) => {
 		service: 'flowmanager-backend',
 		timestamp: new Date().toISOString(),
 	});
+});
+
+app.use((_req, res) => {
+	res.status(404).json({ ok: false, message: 'Ruta no encontrada' });
 });
 
 app.listen(PORT, () => {
