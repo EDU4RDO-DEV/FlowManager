@@ -1,0 +1,512 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+model AjusteInventario {
+  Id                Int            @id(map: "PK__AjusteIn__3214EC073DEAE24F") @default(autoincrement())
+  IdInventarioItem  Int
+  IdUsuario         Int
+  TipoAjuste        String         @db.VarChar(50)
+  NumeroAjuste      Int
+  CantidadAjustada  Float
+  Observacion       String?        @db.VarChar(255)
+  FechaRegistro     DateTime?      @default(now(), map: "DF__AjusteInv__Fecha__0D7A0286") @db.DateTime
+  Anulado           Boolean        @default(false, map: "DF__AjusteInv__Anula__0E6E26BF")
+  IdUsuarioAnulador Int?
+  FechaAnulacion    DateTime?      @db.DateTime
+  InventarioItem    InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_AjusteInventario_InventarioItem")
+  Usuario           Usuario        @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_AjusteInventario_Usuario")
+}
+
+model BitacoraInventario {
+  Id                 Int            @id(map: "PK__Bitacora__3214EC07A97D3D9D") @default(autoincrement())
+  IdInventarioItem   Int
+  IdUsuario          Int
+  TipoDocumento      String?        @db.VarChar(10)
+  Documento          String?        @db.VarChar(10)
+  Nombre             String         @db.VarChar(255)
+  TipoMovimiento     Boolean
+  ExistenciaAnterior Float
+  Cantidad           Float
+  NuevaExistencia    Float
+  FechaRegistro      DateTime?      @default(now(), map: "DF__BitacoraI__Fecha__09A971A2") @db.DateTime
+  Anulado            Boolean        @default(false, map: "DF__BitacoraI__Anula__0A9D95DB")
+  IdUsuarioAnulador  Int?
+  FechaAnulacion     DateTime?      @db.DateTime
+  InventarioItem     InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_BitacoraInventario_InventarioItem")
+  Usuario            Usuario        @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_BitacoraInventario_Usuario")
+}
+
+model Cliente {
+  Id                   Int       @id(map: "PK__Cliente__3214EC0739E9B73D") @default(autoincrement())
+  IdEntidad            Int
+  IdUsuario            Int
+  FechaRegistro        DateTime? @default(now(), map: "DF__Cliente__FechaRe__5CD6CB2B") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime? @db.DateTime
+  Anulado              Boolean   @default(false, map: "DF__Cliente__Anulado__5DCAEF64")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime? @db.DateTime
+  Entidad              Entidad   @relation(fields: [IdEntidad], references: [Id], onUpdate: NoAction, map: "FK_Cliente_Entidad")
+  Usuario              Usuario   @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Cliente_Usuario")
+  Venta                Venta[]
+}
+
+model Compra {
+  Id                   Int             @id(map: "PK__Compra__3214EC079C171486") @default(autoincrement())
+  IdProveedor          Int
+  IdUsuario            Int
+  NumeroCompra         Int
+  NumeroFactura        String          @db.VarChar(50)
+  EsGasto              Boolean         @default(false, map: "DF__Compra__EsGasto__74AE54BC")
+  Observaciones        String?         @db.VarChar(255)
+  FechaFactura         DateTime        @db.Date
+  FechaRegistro        DateTime?       @default(now(), map: "DF__Compra__FechaReg__75A278F5") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime?       @db.DateTime
+  Anulado              Boolean         @default(false, map: "DF__Compra__Anulado__76969D2E")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime?       @db.DateTime
+  Proveedor            Proveedor       @relation(fields: [IdProveedor], references: [Id], onUpdate: NoAction, map: "FK_Compra_Proveedor")
+  Usuario              Usuario         @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Compra_Usuario")
+  DetalleCompra        DetalleCompra[]
+  DetalleGasto         DetalleGasto[]
+}
+
+model ConfiguracionComision {
+  Id            Int             @id(map: "PK__Configur__3214EC07C239FD38") @default(autoincrement())
+  IdUsuario     Int
+  Nombre        String          @db.VarChar(100)
+  FechaRegistro DateTime?       @default(now(), map: "DF__Configura__Fecha__68487DD7") @db.DateTime
+  Anulado       Boolean         @default(false, map: "DF__Configura__Anula__693CA210")
+  Usuario       Usuario         @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_ConfiguracionComision_Usuario")
+  Empleado      Empleado[]
+  ReglaComision ReglaComision[]
+}
+
+model DetalleCompra {
+  Id                Int            @id(map: "PK__DetalleC__3214EC07C9D68A20") @default(autoincrement())
+  IdCompra          Int
+  IdInventarioItem  Int
+  Cantidad          Float
+  CostoUnitario     Decimal        @db.Decimal(8, 2)
+  FechaRegistro     DateTime?      @default(now(), map: "DF__DetalleCo__Fecha__7D439ABD") @db.DateTime
+  Anulado           Boolean        @default(false, map: "DF__DetalleCo__Anula__7E37BEF6")
+  IdUsuarioAnulador Int?
+  FechaAnulacion    DateTime?      @db.DateTime
+  Compra            Compra         @relation(fields: [IdCompra], references: [Id], onUpdate: NoAction, map: "FK_DetalleCompra_Compra")
+  InventarioItem    InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_DetalleCompra_InventarioItem")
+}
+
+model DetalleGasto {
+  Id                Int       @id(map: "PK__DetalleG__3214EC07C6F65A29") @default(autoincrement())
+  IdCompra          Int
+  Descripcion       String    @db.VarChar(255)
+  Cantidad          Decimal   @db.Decimal(10, 2)
+  PrecioUnitario    Decimal   @db.Decimal(10, 2)
+  FechaRegistro     DateTime? @default(now(), map: "DF__DetalleGa__Fecha__797309D9") @db.DateTime
+  Anulado           Boolean   @default(false, map: "DF__DetalleGa__Anula__7A672E12")
+  IdUsuarioAnulador Int?
+  FechaAnulacion    DateTime? @db.DateTime
+  Compra            Compra    @relation(fields: [IdCompra], references: [Id], onUpdate: NoAction, map: "FK_DetalleGasto_Compra")
+}
+
+model DetalleVenta {
+  Id                Int            @id(map: "PK__DetalleV__3214EC074961FD0D") @default(autoincrement())
+  IdVenta           Int
+  IdInventarioItem  Int
+  Nombre            String         @db.VarChar(255)
+  Cantidad          Float
+  PrecioUnitario    Decimal        @db.Decimal(10, 2)
+  EsBonificacion    Boolean        @default(false, map: "DF__DetalleVe__EsBon__19DFD96B")
+  FechaRegistro     DateTime?      @default(now(), map: "DF__DetalleVe__Fecha__1AD3FDA4") @db.DateTime
+  Anulado           Boolean        @default(false, map: "DF__DetalleVe__Anula__1BC821DD")
+  IdUsuarioAnulador Int?
+  FechaAnulacion    DateTime?      @db.DateTime
+  InventarioItem    InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_DetalleVenta_InventarioItem")
+  Venta             Venta          @relation(fields: [IdVenta], references: [Id], onUpdate: NoAction, map: "FK_DetalleVenta_Venta")
+}
+
+model Empleado {
+  Id                      Int                    @id(map: "PK__Empleado__3214EC0707FA1428") @default(autoincrement())
+  IdEntidad               Int
+  IdUsuario               Int
+  IdConfiguracionComision Int?
+  PuestoTrabajo           String                 @db.VarChar(255)
+  DescripcionPuesto       String?                @db.VarChar(255)
+  FechaContratacion       DateTime               @db.Date
+  FechaSalida             DateTime?              @db.Date
+  SueldoBase              Decimal                @db.Decimal(10, 2)
+  FechaRegistro           DateTime?              @default(now(), map: "DF__Empleado__FechaR__60A75C0F") @db.DateTime
+  IdUsuarioModificador    Int?
+  FechaModificacion       DateTime?              @db.DateTime
+  Anulado                 Boolean                @default(false, map: "DF__Empleado__Anulad__619B8048")
+  IdUsuarioAnulador       Int?
+  FechaAnulacion          DateTime?              @db.DateTime
+  ConfiguracionComision   ConfiguracionComision? @relation(fields: [IdConfiguracionComision], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Empleado_ConfiguracionComision")
+  Entidad                 Entidad                @relation(fields: [IdEntidad], references: [Id], onUpdate: NoAction, map: "FK_Empleado_Entidad")
+  Usuario                 Usuario                @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Empleado_Usuario")
+  PlanillaMensual         PlanillaMensual[]
+}
+
+model Empresa {
+  Id                   Int       @id(map: "PK__Empresa__3214EC0725618E3A") @default(autoincrement())
+  IdUsuario            Int
+  Nit                  String    @db.VarChar(20)
+  Nombre               String    @db.VarChar(255)
+  NombreComercial      String    @db.VarChar(255)
+  Direccion            String    @db.VarChar(255)
+  Telefono1            String?   @db.VarChar(20)
+  Telefono2            String?   @db.VarChar(20)
+  CorreoElectronico    String?   @db.VarChar(100)
+  Frase                String    @db.VarChar(255)
+  RutaLogo             String?   @db.VarChar(255)
+  UsuarioFel           String?   @db.VarChar(255)
+  ContrasenaFel        String?   @db.VarChar(255)
+  ServidorFel          String?   @db.VarChar(255)
+  FechaInicioFel       DateTime? @db.Date
+  FechaFinFel          DateTime? @db.Date
+  RegimenIsr           String    @db.VarChar(255)
+  FechaRegistro        DateTime? @default(now(), map: "DF__Empresa__FechaRe__5535A963") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime? @db.DateTime
+  Anulado              Boolean   @default(false, map: "DF__Empresa__Anulado__5629CD9C")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime? @db.DateTime
+  Usuario              Usuario   @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Empresa_Usuario")
+}
+
+model Entidad {
+  Id                                 Int         @id(map: "PK__Entidad__3214EC07F3769907") @default(autoincrement())
+  IdUsuario                          Int
+  NombreCompleto                     String      @db.VarChar(255)
+  Sexo                               String?     @db.Char(1)
+  FechaNacimiento                    DateTime?   @db.Date
+  Telefono1                          String?     @db.VarChar(20)
+  Telefono2                          String?     @db.VarChar(20)
+  CorreoElectronico                  String?     @db.VarChar(100)
+  RutaImagen                         String?     @db.VarChar(255)
+  Nit                                String?     @db.VarChar(25)
+  Dpi                                String?     @db.VarChar(25)
+  FechaRegistro                      DateTime?   @default(now(), map: "DF__Entidad__FechaRe__59063A47") @db.DateTime
+  IdUsuarioModificador               Int?
+  FechaModificacion                  DateTime?   @db.DateTime
+  Anulado                            Boolean     @default(false, map: "DF__Entidad__Anulado__59FA5E80")
+  IdUsuarioAnulador                  Int?
+  FechaAnulacion                     DateTime?   @db.DateTime
+  Cliente                            Cliente[]
+  Empleado                           Empleado[]
+  Usuario_Entidad_IdUsuarioToUsuario Usuario     @relation("Entidad_IdUsuarioToUsuario", fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Entidad_Usuario")
+  Proveedor                          Proveedor[]
+  Usuario_Usuario_IdEntidadToEntidad Usuario[]   @relation("Usuario_IdEntidadToEntidad")
+}
+
+model EstructuraProducto {
+  Id                                                                    Int            @id(map: "PK__Estructu__3214EC076C0D1A73") @default(autoincrement())
+  IdProductoTerminado                                                   Int
+  IdMateriaPrima                                                        Int
+  CantidadRequerida                                                     Float
+  FechaRegistro                                                         DateTime?      @default(now(), map: "DF__Estructur__Fecha__05D8E0BE") @db.DateTime
+  Anulado                                                               Boolean        @default(false, map: "DF__Estructur__Anula__06CD04F7")
+  InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem      InventarioItem @relation("EstructuraProducto_IdMateriaPrimaToInventarioItem", fields: [IdMateriaPrima], references: [Id], onUpdate: NoAction, map: "FK_EstructuraProducto_MateriaPrima")
+  InventarioItem_EstructuraProducto_IdProductoTerminadoToInventarioItem InventarioItem @relation("EstructuraProducto_IdProductoTerminadoToInventarioItem", fields: [IdProductoTerminado], references: [Id], onUpdate: NoAction, map: "FK_EstructuraProducto_ProductoTerminado")
+}
+
+model GastoVehiculo {
+  Id                   Int        @id(map: "PK__GastoVeh__3214EC07A03843BC") @default(autoincrement())
+  IdRutaSesion         Int
+  IdUsuario            Int
+  IdProveedor          Int?
+  Descripcion          String     @db.VarChar(255)
+  Monto                Decimal    @db.Decimal(10, 2)
+  MetodoPago           String     @db.VarChar(50)
+  NumeroVale           Int?
+  RutaImagen           String?    @db.VarChar(255)
+  EstadoPago           String     @default("PAGADO", map: "DF__GastoVehi__Estad__2DE6D218") @db.VarChar(20)
+  FechaPago            DateTime?  @db.DateTime
+  ReferenciaPago       String?    @db.VarChar(100)
+  FechaRegistro        DateTime?  @default(now(), map: "DF__GastoVehi__Fecha__2EDAF651") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime?  @db.DateTime
+  Anulado              Boolean    @default(false, map: "DF__GastoVehi__Anula__2FCF1A8A")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime?  @db.DateTime
+  Proveedor            Proveedor? @relation(fields: [IdProveedor], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_GastoVehiculo_Proveedor")
+  RutaSesion           RutaSesion @relation(fields: [IdRutaSesion], references: [Id], onUpdate: NoAction, map: "FK_GastoVehiculo_RutaSesion")
+  Usuario              Usuario    @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_GastoVehiculo_Usuario")
+}
+
+model InventarioItem {
+  Id                                                                        Int                  @id(map: "PK__Inventar__3214EC07ABC0F2D5") @default(autoincrement())
+  IdUsuario                                                                 Int
+  IdProveedor                                                               Int
+  Nombre                                                                    String               @db.VarChar(255)
+  Categoria                                                                 String               @db.VarChar(50)
+  Existencia                                                                Float
+  CostoPromedio                                                             Decimal              @db.Decimal(10, 2)
+  PrecioVenta                                                               Decimal              @db.Decimal(10, 2)
+  EsProductoFinal                                                           Boolean              @default(true, map: "DF__Inventari__EsPro__01142BA1")
+  RutaImagen                                                                String?              @db.VarChar(255)
+  FechaRegistro                                                             DateTime?            @default(now(), map: "DF__Inventari__Fecha__02084FDA") @db.DateTime
+  IdUsuarioModificador                                                      Int?
+  FechaModificacion                                                         DateTime?            @db.DateTime
+  Anulado                                                                   Boolean              @default(false, map: "DF__Inventari__Anula__02FC7413")
+  IdUsuarioAnulador                                                         Int?
+  FechaAnulacion                                                            DateTime?            @db.DateTime
+  AjusteInventario                                                          AjusteInventario[]
+  BitacoraInventario                                                        BitacoraInventario[]
+  DetalleCompra                                                             DetalleCompra[]
+  DetalleVenta                                                              DetalleVenta[]
+  EstructuraProducto_EstructuraProducto_IdMateriaPrimaToInventarioItem      EstructuraProducto[] @relation("EstructuraProducto_IdMateriaPrimaToInventarioItem")
+  EstructuraProducto_EstructuraProducto_IdProductoTerminadoToInventarioItem EstructuraProducto[] @relation("EstructuraProducto_IdProductoTerminadoToInventarioItem")
+  Proveedor                                                                 Proveedor            @relation(fields: [IdProveedor], references: [Id], onUpdate: NoAction, map: "FK_InventarioItem_Proveedor")
+  Usuario                                                                   Usuario              @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_InventarioItem_Usuario")
+  ReglaComision                                                             ReglaComision[]
+}
+
+model PagoVenta {
+  Id                Int       @id(map: "PK__PagoVent__3214EC074F59C79C") @default(autoincrement())
+  IdVenta           Int
+  IdUsuario         Int
+  Monto             Decimal   @db.Decimal(10, 2)
+  MetodoPago        String    @db.VarChar(50)
+  NumeroReferencia  String?   @db.VarChar(100)
+  Banco             String?   @db.VarChar(100)
+  FechaPago         DateTime? @default(now(), map: "DF__PagoVenta__Fecha__1EA48E88") @db.DateTime
+  RutaFirma         String?   @db.VarChar(255)
+  Observaciones     String?   @db.VarChar(255)
+  Anulado           Boolean   @default(false, map: "DF__PagoVenta__Anula__1F98B2C1")
+  IdUsuarioAnulador Int?
+  FechaAnulacion    DateTime? @db.DateTime
+  Usuario           Usuario   @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_PagoVenta_Usuario")
+  Venta             Venta     @relation(fields: [IdVenta], references: [Id], onUpdate: NoAction, map: "FK_PagoVenta_Venta")
+}
+
+model PlanillaMensual {
+  Id                   Int       @id(map: "PK__Planilla__3214EC073F7CA9B8") @default(autoincrement())
+  IdEmpleado           Int
+  Mes                  Int
+  Anio                 Int
+  SueldoBase           Decimal   @db.Decimal(10, 2)
+  TotalComisiones      Decimal   @db.Decimal(10, 2)
+  TotalViaticos        Decimal   @default(0, map: "DF__PlanillaM__Total__6EF57B66") @db.Decimal(10, 2)
+  TotalDescuentos      Decimal   @default(0, map: "DF__PlanillaM__Total__6FE99F9F") @db.Decimal(10, 2)
+  SueldoLiquido        Decimal   @db.Decimal(10, 2)
+  Observaciones        String?   @db.VarChar(255)
+  FechaRegistro        DateTime? @default(now(), map: "DF__PlanillaM__Fecha__70DDC3D8") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime? @db.DateTime
+  Anulado              Boolean   @default(false, map: "DF__PlanillaM__Anula__71D1E811")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime? @db.DateTime
+  Empleado             Empleado  @relation(fields: [IdEmpleado], references: [Id], onUpdate: NoAction, map: "FK_PlanillaMensual_Empleado")
+}
+
+model Proveedor {
+  Id                   Int              @id(map: "PK__Proveedo__3214EC079578DEBB") @default(autoincrement())
+  IdEntidad            Int
+  IdUsuario            Int
+  Nombre               String           @db.VarChar(255)
+  FechaRegistro        DateTime?        @default(now(), map: "DF__Proveedor__Fecha__6477ECF3") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime?        @db.DateTime
+  Anulado              Boolean          @default(false, map: "DF__Proveedor__Anula__656C112C")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime?        @db.DateTime
+  Compra               Compra[]
+  GastoVehiculo        GastoVehiculo[]
+  InventarioItem       InventarioItem[]
+  Entidad              Entidad          @relation(fields: [IdEntidad], references: [Id], onUpdate: NoAction, map: "FK_Proveedor_Entidad")
+  Usuario              Usuario          @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Proveedor_Usuario")
+}
+
+model ReglaComision {
+  Id                      Int                   @id(map: "PK__ReglaCom__3214EC079009C25E") @default(autoincrement())
+  IdConfiguracionComision Int
+  IdInventarioItem        Int
+  CantidadMinima          Float
+  CantidadMaxima          Float?
+  Porcentaje              Decimal               @db.Decimal(5, 2)
+  Anulado                 Boolean               @default(false, map: "DF__ReglaComi__Anula__6C190EBB")
+  ConfiguracionComision   ConfiguracionComision @relation(fields: [IdConfiguracionComision], references: [Id], onUpdate: NoAction, map: "FK_ReglaComision_ConfiguracionComision")
+  InventarioItem          InventarioItem        @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_ReglaComision_InventarioItem")
+}
+
+model Rol {
+  Id                             Int       @id(map: "PK__Rol__3214EC07D631775C") @default(autoincrement())
+  IdUsuario                      Int
+  Nombre                         String    @db.VarChar(50)
+  Descripcion                    String?   @db.VarChar(255)
+  FechaRegistro                  DateTime? @default(now(), map: "DF__Rol__FechaRegist__49C3F6B7") @db.DateTime
+  IdUsuarioModificador           Int?
+  FechaModificacion              DateTime? @db.DateTime
+  Anulado                        Boolean   @default(false, map: "DF__Rol__Anulado__4AB81AF0")
+  IdUsuarioAnulador              Int?
+  FechaAnulacion                 DateTime? @db.DateTime
+  Usuario_Rol_IdUsuarioToUsuario Usuario   @relation("Rol_IdUsuarioToUsuario", fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Rol_Usuario")
+  Usuario_Usuario_IdRolToRol     Usuario[] @relation("Usuario_IdRolToRol")
+}
+
+model Ruta {
+  Id            Int          @id(map: "PK__Ruta__3214EC072A309141") @default(autoincrement())
+  Nombre        String       @db.VarChar(100)
+  Descripcion   String?      @db.VarChar(255)
+  FechaRegistro DateTime?    @default(now(), map: "DF__Ruta__FechaRegis__2645B050") @db.DateTime
+  Anulado       Boolean      @default(false, map: "DF__Ruta__Anulado__2739D489")
+  RutaSesion    RutaSesion[]
+}
+
+model RutaSesion {
+  Id                                            Int             @id(map: "PK__RutaSesi__3214EC0785FB5BC3") @default(autoincrement())
+  IdRuta                                        Int
+  IdVehiculo                                    Int
+  IdUsuarioChofer                               Int
+  IdUsuarioVendedor                             Int
+  FechaSesion                                   DateTime        @db.Date
+  KmInicial                                     Float?
+  KmFinal                                       Float?
+  Estado                                        String          @db.VarChar(20)
+  FechaRegistro                                 DateTime?       @default(now(), map: "DF__RutaSesio__Fecha__2A164134") @db.DateTime
+  IdUsuarioModificador                          Int?
+  FechaModificacion                             DateTime?       @db.DateTime
+  Anulado                                       Boolean         @default(false, map: "DF__RutaSesio__Anula__2B0A656D")
+  IdUsuarioAnulador                             Int?
+  FechaAnulacion                                DateTime?       @db.DateTime
+  GastoVehiculo                                 GastoVehiculo[]
+  Usuario_RutaSesion_IdUsuarioChoferToUsuario   Usuario         @relation("RutaSesion_IdUsuarioChoferToUsuario", fields: [IdUsuarioChofer], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Chofer")
+  Ruta                                          Ruta            @relation(fields: [IdRuta], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Ruta")
+  Vehiculo                                      Vehiculo        @relation(fields: [IdVehiculo], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Vehiculo")
+  Usuario_RutaSesion_IdUsuarioVendedorToUsuario Usuario         @relation("RutaSesion_IdUsuarioVendedorToUsuario", fields: [IdUsuarioVendedor], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Vendedor")
+  Venta                                         Venta[]
+}
+
+model Sesion {
+  Id                   Int       @id(map: "PK__Sesion__3214EC076E363928") @default(autoincrement())
+  IdUsuario            Int
+  IP                   String    @db.VarChar(100)
+  NombreDispositivo    String    @db.VarChar(255)
+  TokenSesion          String    @db.VarChar(Max)
+  Latitud              Decimal?  @db.Decimal(18, 6)
+  Longitud             Decimal?  @db.Decimal(18, 6)
+  Precision            Decimal?  @db.Decimal(8, 6)
+  FechaExpiracionToken DateTime  @db.DateTime
+  FechaRegistro        DateTime? @default(now(), map: "DF__Sesion__FechaReg__5165187F") @db.DateTime
+  Anulado              Boolean   @default(false, map: "DF__Sesion__Anulado__52593CB8")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime? @db.DateTime
+  Usuario              Usuario   @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Sesion_Usuario")
+}
+
+model Talonario {
+  Id                 Int       @id(map: "PK__Talonari__3214EC07469884E8") @default(autoincrement())
+  IdUsuario          Int
+  Nombre             String    @db.VarChar(100)
+  CorrelativoInicial Int
+  CorrelativoFinal   Int
+  UltimoUtilizado    Int?
+  FechaRegistro      DateTime? @default(now(), map: "DF__Talonario__Fecha__114A936A") @db.DateTime
+  Anulado            Boolean   @default(false, map: "DF__Talonario__Anula__123EB7A3")
+  IdUsuarioAnulador  Int?
+  FechaAnulacion     DateTime? @db.DateTime
+  Usuario            Usuario   @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Talonario_Usuario")
+  Venta              Venta[]
+}
+
+model Usuario {
+  Id                                               Int                     @id(map: "PK__Usuario__3214EC075D50852E") @default(autoincrement())
+  IdUsuario                                        Int?
+  IdEntidad                                        Int
+  IdRol                                            Int
+  Nombre                                           String                  @db.VarChar(255)
+  Correo                                           String                  @db.VarChar(255)
+  Clave                                            String                  @db.VarChar(Max)
+  FechaRegistro                                    DateTime?               @default(now(), map: "DF__Usuario__FechaRe__4D94879B") @db.DateTime
+  IdUsuarioModificador                             Int?
+  FechaModificacion                                DateTime?               @db.DateTime
+  Anulado                                          Boolean                 @default(false, map: "DF__Usuario__Anulado__4E88ABD4")
+  IdUsuarioAnulador                                Int?
+  FechaAnulacion                                   DateTime?               @db.DateTime
+  AjusteInventario                                 AjusteInventario[]
+  BitacoraInventario                               BitacoraInventario[]
+  Cliente                                          Cliente[]
+  Compra                                           Compra[]
+  ConfiguracionComision                            ConfiguracionComision[]
+  Empleado                                         Empleado[]
+  Empresa                                          Empresa[]
+  Entidad_Entidad_IdUsuarioToUsuario               Entidad[]               @relation("Entidad_IdUsuarioToUsuario")
+  GastoVehiculo                                    GastoVehiculo[]
+  InventarioItem                                   InventarioItem[]
+  PagoVenta                                        PagoVenta[]
+  Proveedor                                        Proveedor[]
+  Rol_Rol_IdUsuarioToUsuario                       Rol[]                   @relation("Rol_IdUsuarioToUsuario")
+  RutaSesion_RutaSesion_IdUsuarioChoferToUsuario   RutaSesion[]            @relation("RutaSesion_IdUsuarioChoferToUsuario")
+  RutaSesion_RutaSesion_IdUsuarioVendedorToUsuario RutaSesion[]            @relation("RutaSesion_IdUsuarioVendedorToUsuario")
+  Sesion                                           Sesion[]
+  Talonario                                        Talonario[]
+  Entidad_Usuario_IdEntidadToEntidad               Entidad                 @relation("Usuario_IdEntidadToEntidad", fields: [IdEntidad], references: [Id], onUpdate: NoAction, map: "FK_Usuario_Entidad")
+  Rol_Usuario_IdRolToRol                           Rol                     @relation("Usuario_IdRolToRol", fields: [IdRol], references: [Id], onUpdate: NoAction, map: "FK_Usuario_Rol")
+  Usuario                                          Usuario?                @relation("UsuarioToUsuario", fields: [IdUsuario], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Usuario_UsuarioPadre")
+  other_Usuario                                    Usuario[]               @relation("UsuarioToUsuario")
+  Vehiculo                                         Vehiculo[]
+  Venta                                            Venta[]
+}
+
+model Vehiculo {
+  Id                   Int          @id(map: "PK__Vehiculo__3214EC076253A2C5") @default(autoincrement())
+  IdUsuario            Int
+  Placa                String       @db.VarChar(50)
+  Marca                String       @db.VarChar(50)
+  Modelo               String       @db.VarChar(50)
+  Color                String?      @db.VarChar(50)
+  Estado               String       @db.VarChar(50)
+  FechaRegistro        DateTime?    @default(now(), map: "DF__Vehiculo__FechaR__22751F6C") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime?    @db.DateTime
+  Anulado              Boolean      @default(false, map: "DF__Vehiculo__Anulad__236943A5")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime?    @db.DateTime
+  RutaSesion           RutaSesion[]
+  Usuario              Usuario      @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Vehiculo_Usuario")
+}
+
+model Venta {
+  Id                        Int            @id(map: "PK__Venta__3214EC07613C492B") @default(autoincrement())
+  IdCliente                 Int
+  IdUsuario                 Int
+  IdRutaSesion              Int?
+  IdTalonario               Int?
+  NumeroVenta               Int
+  NumeroProForma            Int?
+  TipoRegistro              String         @db.VarChar(20)
+  EstadoEntrega             String         @db.VarChar(20)
+  CondicionPago             String         @db.VarChar(20)
+  EstadoPago                String         @db.VarChar(20)
+  RequiereFactura           Boolean        @default(false, map: "DF__Venta__RequiereF__151B244E")
+  AutorizacionFel           String?        @db.VarChar(255)
+  NumeroFel                 String?        @db.VarChar(255)
+  SerieFel                  String?        @db.VarChar(255)
+  QrFel                     String?        @db.VarChar(Max)
+  FechaEmisionFel           DateTime?      @db.DateTime
+  NitFacturado              String?        @db.VarChar(255)
+  NombreClienteFacturado    String?        @db.VarChar(255)
+  DireccionClienteFacturado String?        @db.VarChar(255)
+  LugarEntrega              String?        @db.VarChar(255)
+  FechaEntregaEsperada      DateTime?      @db.Date
+  FechaRegistro             DateTime?      @default(now(), map: "DF__Venta__FechaRegi__160F4887") @db.DateTime
+  IdUsuarioModificador      Int?
+  FechaModificacion         DateTime?      @db.DateTime
+  Anulado                   Boolean        @default(false, map: "DF__Venta__Anulado__17036CC0")
+  IdUsuarioAnulador         Int?
+  FechaAnulacion            DateTime?      @db.DateTime
+  DetalleVenta              DetalleVenta[]
+  PagoVenta                 PagoVenta[]
+  Cliente                   Cliente        @relation(fields: [IdCliente], references: [Id], onUpdate: NoAction, map: "FK_Venta_Cliente")
+  RutaSesion                RutaSesion?    @relation(fields: [IdRutaSesion], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Venta_RutaSesion")
+  Talonario                 Talonario?     @relation(fields: [IdTalonario], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Venta_Talonario")
+  Usuario                   Usuario        @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Venta_Usuario")
+}
