@@ -7,13 +7,14 @@ import {
   listRolesController,
   updateRoleController,
 } from '../controllers/role.controller';
+import { requireAdminRole } from '../middlewares/auth.middleware';
 
 const roleRouter = Router();
 
-roleRouter.get('/', listRolesController);
-roleRouter.get('/:id', getRoleByIdController);
-roleRouter.post('/', createRoleController);
-roleRouter.patch('/:id', updateRoleController);
-roleRouter.delete('/:id', deleteRoleController);
+roleRouter.get('/', requireAdminRole, listRolesController);
+roleRouter.get('/:id', requireAdminRole, getRoleByIdController);
+roleRouter.post('/', requireAdminRole, createRoleController);
+roleRouter.patch('/:id', requireAdminRole, updateRoleController);
+roleRouter.delete('/:id', requireAdminRole, deleteRoleController);
 
 export default roleRouter;
