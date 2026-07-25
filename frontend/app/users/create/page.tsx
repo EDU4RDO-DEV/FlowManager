@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, ShieldCheck, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -11,7 +10,6 @@ import {
 } from "@/app/users/_components/user-form-card";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
-import { Card, CardContent } from "@/components/ui/card";
 import { getApiErrorMessage } from "@/lib/api";
 import { createUser, listRoles } from "@/services/users.service";
 import type { RoleDto } from "@/types/users";
@@ -21,7 +19,20 @@ const EMPTY_FORM: UserFormValues = {
   correo: "",
   clave: "",
   idRol: "",
+  entidadNombreCompleto: "",
+  entidadSexo: "",
+  entidadFechaNacimiento: "",
+  entidadTelefono1: "",
+  entidadTelefono2: "",
+  entidadCorreoElectronico: "",
+  entidadNit: "",
+  entidadDpi: "",
 };
+
+function emptyToUndefined(value: string): string | undefined {
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
 
 export default function CreateUserPage() {
   const router = useRouter();
@@ -61,6 +72,16 @@ export default function CreateUserPage() {
         correo: form.correo.trim(),
         clave: form.clave,
         ...(selectedRoleId ? { idRol: selectedRoleId } : {}),
+        entidad: {
+          nombreCompleto: emptyToUndefined(form.entidadNombreCompleto),
+          sexo: emptyToUndefined(form.entidadSexo),
+          fechaNacimiento: emptyToUndefined(form.entidadFechaNacimiento),
+          telefono1: emptyToUndefined(form.entidadTelefono1),
+          telefono2: emptyToUndefined(form.entidadTelefono2),
+          correoElectronico: emptyToUndefined(form.entidadCorreoElectronico),
+          nit: emptyToUndefined(form.entidadNit),
+          dpi: emptyToUndefined(form.entidadDpi),
+        },
       });
 
       toast.success("Usuario creado correctamente.");
@@ -79,51 +100,17 @@ export default function CreateUserPage() {
         title="Crear Usuario"
         description="Submodulo corporativo para alta de usuarios en Industrias Basan."
       >
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
-          <div className="space-y-4 lg:col-span-1">
-            <Card className="rounded-xl border border-border bg-background">
-              <CardContent className="p-4">
-                <div className="mb-2 inline-flex rounded-lg border border-border bg-muted/50 p-2">
-                  <UserPlus className="size-4 text-sky-600" />
-                </div>
-                <p className="text-sm font-semibold tracking-tight">Alta controlada</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Registra usuarios siguiendo lineamientos de acceso interno Basan.
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-xl border border-border bg-muted/50">
-              <CardContent className="p-4 text-sm text-muted-foreground">
-                <div className="mb-2 inline-flex rounded-lg border border-border bg-background p-2">
-                  <ShieldCheck className="size-4 text-sky-600" />
-                </div>
-                Rol y clave se aplican al crear para minimizar retrabajo operativo.
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-xl border border-border bg-background">
-              <CardContent className="p-4 text-sm text-muted-foreground">
-                <div className="mb-2 inline-flex rounded-lg border border-border bg-muted/50 p-2">
-                  <Building2 className="size-4 text-sky-600" />
-                </div>
-                Estandar visual Enterprise alineado con la identidad Basan.
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="lg:col-span-3">
-            <UserFormCard
-              mode="create"
-              title="Nuevo usuario"
-              roles={roles}
-              form={form}
-              saving={saving}
-              onChange={setForm}
-              onCancel={() => router.push("/users")}
-              onSubmit={handleSubmit}
-            />
-          </div>
+        <div className="w-full">
+          <UserFormCard
+            mode="create"
+            title="Nuevo usuario"
+            roles={roles}
+            form={form}
+            saving={saving}
+            onChange={setForm}
+            onCancel={() => router.push("/users")}
+            onSubmit={handleSubmit}
+          />
         </div>
       </DashboardShell>
     </RequireAuth>

@@ -5,12 +5,13 @@ import {
 	loginController,
 	registerController,
 } from '../controllers/auth.controller';
-import { requireAuth, requireBootstrapOrAuth } from '../middlewares/auth.middleware';
+import { requireAuth } from '../middlewares/auth.middleware';
 
 const authRouter = Router();
 
 authRouter.post('/login', loginController);
-authRouter.post('/register', requireBootstrapOrAuth, registerController);
+// TODO(seguridad): volver a requireBootstrapOrAuth o proteger con invite key antes de produccion.
+authRouter.post('/register', registerController);
 authRouter.patch('/users/:idUsuario/assignment', requireAuth, assignUserRoleEntityController);
 
 export default authRouter;

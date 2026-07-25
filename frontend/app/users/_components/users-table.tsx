@@ -1,18 +1,12 @@
 "use client";
 
-import { Ellipsis, KeyRound, Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { KeyRound, Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -70,7 +64,7 @@ export function UsersTable({
             {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
             Recargar
           </Button>
-          <Button size="sm" asChild className="bg-sky-600 text-white hover:bg-sky-700 transition-colors">
+          <Button size="sm" asChild className="bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors">
             <Link href="/users/create">
               <Plus className="size-4" />
               Crear usuario
@@ -111,7 +105,7 @@ export function UsersTable({
         </div>
 
         <div className="overflow-x-auto rounded-xl border border-border">
-          <Table className="min-w-190">
+          <Table className="min-w-full">
             <TableHeader className="bg-muted/50">
               <TableRow className="hover:bg-muted/50">
                 <TableHead>ID</TableHead>
@@ -144,25 +138,35 @@ export function UsersTable({
                     </TableCell>
                     <TableCell>{formatDate(item.fechaRegistro)}</TableCell>
                     <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background transition-colors hover:bg-muted/50">
-                          <Ellipsis className="size-4" />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent>
-                          <DropdownMenuItem onClick={() => router.push(`/users/edit/${item.id}`)}>
-                            <Pencil className="size-4" />
-                            Editar
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => onResetPassword(item)}>
-                            <KeyRound className="size-4" />
-                            Reset clave
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => onDelete(item)} className="text-destructive">
-                            <Trash2 className="size-4" />
-                            Eliminar
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() => router.push(`/users/edit/${item.id}`)}
+                          className="hover:bg-muted/50 transition-colors"
+                        >
+                          <Pencil className="size-3.5" />
+                          Editar
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="secondary"
+                          onClick={() => onResetPassword(item)}
+                          className="hover:bg-muted/50 transition-colors"
+                        >
+                          <KeyRound className="size-3.5" />
+                          Reset clave
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="destructive"
+                          onClick={() => onDelete(item)}
+                          className="transition-colors"
+                        >
+                          <Trash2 className="size-3.5" />
+                          Eliminar
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

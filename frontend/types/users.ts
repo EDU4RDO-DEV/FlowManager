@@ -36,6 +36,17 @@ export interface CreateUserPayload {
   correo: string;
   clave: string;
   idRol?: number;
+  entidad?: {
+    nombreCompleto?: string;
+    sexo?: string;
+    fechaNacimiento?: string;
+    telefono1?: string;
+    telefono2?: string;
+    correoElectronico?: string;
+    rutaImagen?: string;
+    nit?: string;
+    dpi?: string;
+  };
 }
 
 export interface UpdateUserPayload {

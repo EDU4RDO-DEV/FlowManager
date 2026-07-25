@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { Droplet, ShieldCheck, Waves } from "lucide-react";
 
+import { ThemeToggle } from "@/components/theme-toggle";
+
 // Marco visual compartido para las pantallas de autenticación.
 // Panel izquierdo: identidad "agua industrial" de Industrias Basán.
 // Panel derecho: formulario (login / registro).
@@ -53,7 +55,10 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Panel de formulario */}
-      <main className="flex flex-1 items-center justify-center bg-background px-6 py-12">
+      <main className="relative flex flex-1 items-center justify-center bg-background px-6 py-12">
+        <div className="absolute right-4 top-4">
+          <ThemeToggle />
+        </div>
         <div className="w-full max-w-sm">{children}</div>
       </main>
     </div>

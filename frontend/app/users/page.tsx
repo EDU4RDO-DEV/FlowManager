@@ -11,6 +11,8 @@ import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getApiErrorMessage } from "@/lib/api";
 import {
@@ -34,8 +36,15 @@ export default function UsersPage() {
   const [users, setUsers] = useState<UserDto[]>([]);
   const [roles, setRoles] = useState<RoleDto[]>([]);
   const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [deleteCandidate, setDeleteCandidate] = useState<UserDto | null>(null);
+  const [resetCandidate, setResetCandidate] = useState<UserDto | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState("");
+  const [showOwnPasswordModal, setShowOwnPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [nextPassword, setNextPassword] = useState("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -85,68 +94,80 @@ export default function UsersPage() {
     return { total, activos, inactivos, conRol };
   }, [users]);
 
-  async function handleDelete(item: UserDto) {
-    const ok = window.confirm(`Anular usuario ${item.nombre}?`);
-    if (!ok) return;
+  async function confirmDelete() {
+    if (!deleteCandidate) return;
 
+    setActionLoading(true);
     try {
-      await deleteUser(item.id, user?.id ? { idUsuarioAnulador: user.id } : undefined);
+      await deleteUser(
+        deleteCandidate.id,
+        user?.id ? { idUsuarioAnulador: user.id } : undefined,
+      );
       toast.success("Usuario eliminado correctamente.");
+      setDeleteCandidate(null);
       await loadData();
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo anular el usuario."));
+    } finally {
+      setActionLoading(false);
     }
   }
 
-  async function handleResetPassword(item: UserDto) {
-    const nuevaClave = window.prompt(
-      `Nueva clave para ${item.nombre} (minimo 8 caracteres):`,
-      "",
-    );
-    if (!nuevaClave) return;
+  async function confirmResetPassword() {
+    if (!resetCandidate) return;
 
-    if (nuevaClave.length < 8) {
+    if (!resetPasswordValue || resetPasswordValue.length < 8) {
       toast.error("La nueva clave debe tener al menos 8 caracteres.");
       return;
     }
 
+    setActionLoading(true);
     try {
-      await resetUserPassword(item.id, {
-        nuevaClave,
+      await resetUserPassword(resetCandidate.id, {
+        nuevaClave: resetPasswordValue,
         ...(user?.id ? { idUsuarioModificador: user.id } : {}),
       });
       toast.success("Clave restablecida correctamente.");
+      setResetCandidate(null);
+      setResetPasswordValue("");
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo restablecer la clave."));
+    } finally {
+      setActionLoading(false);
     }
   }
 
-  async function handleChangeOwnPassword() {
+  async function submitOwnPasswordChange() {
     if (!user?.id) {
       toast.error("No se pudo identificar el usuario autenticado.");
       return;
     }
 
-    const claveActual = window.prompt("Ingresa tu clave actual:", "");
-    if (!claveActual) return;
+    if (!currentPassword) {
+      toast.error("Ingresa tu clave actual.");
+      return;
+    }
 
-    const nuevaClave = window.prompt("Ingresa tu nueva clave (minimo 8 caracteres):", "");
-    if (!nuevaClave) return;
-
-    if (nuevaClave.length < 8) {
+    if (!nextPassword || nextPassword.length < 8) {
       toast.error("La nueva clave debe tener al menos 8 caracteres.");
       return;
     }
 
+    setActionLoading(true);
     try {
       await changeUserPassword(user.id, {
-        claveActual,
-        nuevaClave,
+        claveActual: currentPassword,
+        nuevaClave: nextPassword,
         idUsuarioModificador: user.id,
       });
       toast.success("Tu clave fue actualizada correctamente.");
+      setShowOwnPasswordModal(false);
+      setCurrentPassword("");
+      setNextPassword("");
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cambiar tu clave."));
+    } finally {
+      setActionLoading(false);
     }
   }
 
@@ -215,8 +236,8 @@ export default function UsersPage() {
                 onQueryChange={setQuery}
                 onRoleFilterChange={setRoleFilter}
                 onReload={loadData}
-                onDelete={handleDelete}
-                onResetPassword={handleResetPassword}
+                onDelete={setDeleteCandidate}
+                onResetPassword={setResetCandidate}
                 roleNameByUser={(item) =>
                   item.idRol ? roleById.get(item.idRol)?.nombre ?? `Rol ${item.idRol}` : "Sin rol"
                 }
@@ -238,7 +259,7 @@ export default function UsersPage() {
                   </div>
                   <Button
                     variant="outline"
-                    onClick={handleChangeOwnPassword}
+                    onClick={() => setShowOwnPasswordModal(true)}
                     className="hover:bg-muted/50 transition-colors"
                   >
                     <KeyRound className="size-4" />
@@ -249,6 +270,129 @@ export default function UsersPage() {
             </TabsContent>
           </Tabs>
         </div>
+
+        {deleteCandidate ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <Card className="w-full max-w-md rounded-xl border border-border bg-background">
+              <CardHeader>
+                <CardTitle className="text-xl font-bold tracking-tight">Confirmar eliminacion</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Esta accion anulara al usuario <span className="font-medium text-foreground">{deleteCandidate.nombre}</span>.
+                </p>
+              </CardHeader>
+              <CardContent className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteCandidate(null)}
+                  disabled={actionLoading}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={confirmDelete}
+                  disabled={actionLoading}
+                >
+                  Confirmar
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
+
+        {resetCandidate ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <Card className="w-full max-w-md rounded-xl border border-border bg-background">
+              <CardHeader>
+                <CardTitle className="text-xl font-bold tracking-tight">Restablecer clave</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Define una nueva clave para <span className="font-medium text-foreground">{resetCandidate.nombre}</span>.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="reset-password">Nueva clave</Label>
+                  <Input
+                    id="reset-password"
+                    type="password"
+                    value={resetPasswordValue}
+                    onChange={(event) => setResetPasswordValue(event.target.value)}
+                    placeholder="Minimo 8 caracteres"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setResetCandidate(null);
+                      setResetPasswordValue("");
+                    }}
+                    disabled={actionLoading}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button onClick={confirmResetPassword} disabled={actionLoading}>
+                    Guardar
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
+
+        {showOwnPasswordModal ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <Card className="w-full max-w-md rounded-xl border border-border bg-background">
+              <CardHeader>
+                <CardTitle className="text-xl font-bold tracking-tight">Cambiar mi clave</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Actualiza tu contraseña de acceso de forma segura.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="current-password">Clave actual</Label>
+                  <Input
+                    id="current-password"
+                    type="password"
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
+                    placeholder="Ingresa clave actual"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="next-password">Nueva clave</Label>
+                  <Input
+                    id="next-password"
+                    type="password"
+                    value={nextPassword}
+                    onChange={(event) => setNextPassword(event.target.value)}
+                    placeholder="Minimo 8 caracteres"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowOwnPasswordModal(false);
+                      setCurrentPassword("");
+                      setNextPassword("");
+                    }}
+                    disabled={actionLoading}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button onClick={submitOwnPasswordChange} disabled={actionLoading}>
+                    Actualizar
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
       </DashboardShell>
     </RequireAuth>
   );
