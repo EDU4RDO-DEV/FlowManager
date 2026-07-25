@@ -15,6 +15,7 @@ type LoginResult = {
     nombre: string;
     correo: string;
     idRol: number | null;
+    nombreRol: string | null;
   };
 };
 
@@ -62,6 +63,11 @@ export async function login(input: LoginInput): Promise<LoginResult> {
       Correo: true,
       Clave: true,
       IdRol: true,
+      Rol_Usuario_IdRolToRol: {
+        select: {
+          Nombre: true,
+        },
+      },
     },
   });
 
@@ -97,6 +103,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
       nombre: usuario.Nombre,
       correo: usuario.Correo,
       idRol: usuario.IdRol,
+      nombreRol: usuario.Rol_Usuario_IdRolToRol?.Nombre ?? null,
     },
   };
 }

@@ -39,12 +39,10 @@ function normalizeRoleName(value: string): string {
     .toUpperCase();
 }
 
-function parseAdminRoleNames(): string[] {
-  const configured = process.env.RBAC_ADMIN_ROLE_NAMES;
+function parseRoleNamesFromEnv(envVarName: string, defaults: string[]): string[] {
+  const configured = process.env[envVarName];
   if (!configured) {
-    return ['ADMINISTRADOR / GERENTE', 'ADMINISTRADOR', 'GERENTE'].map(
-      normalizeRoleName,
-    );
+    return defaults.map(normalizeRoleName);
   }
 
   return configured
@@ -52,6 +50,36 @@ function parseAdminRoleNames(): string[] {
     .map(normalizeRoleName)
     .filter((name) => name.length > 0);
 }
+
+const ADMIN_ROLE_NAMES = parseRoleNamesFromEnv('RBAC_ADMIN_ROLE_NAMES', [
+  'ADMINISTRADOR / GERENTE',
+  'ADMINISTRADOR',
+  'GERENTE',
+]);
+
+const PRODUCCION_ROLE_NAMES = parseRoleNamesFromEnv('RBAC_PRODUCCION_ROLE_NAMES', [
+  'PERSONAL DE PRODUCCION',
+]);
+
+const LOGISTICA_ROLE_NAMES = parseRoleNamesFromEnv('RBAC_LOGISTICA_ROLE_NAMES', [
+  'PERSONAL DE LOGISTICA / REPARTIDOR',
+]);
+
+const CAJERO_ROLE_NAMES = parseRoleNamesFromEnv('RBAC_CAJERO_ROLE_NAMES', [
+  'CAJERO / VENDEDOR (PUNTO DE VENTA)',
+]);
+
+const INVENTARIO_ROLE_NAMES = parseRoleNamesFromEnv('RBAC_INVENTARIO_ROLE_NAMES', [
+  'ENCARGADO DE INVENTARIO',
+]);
+
+export const ROLE_GROUPS = {
+  adminGerencia: ADMIN_ROLE_NAMES,
+  produccion: PRODUCCION_ROLE_NAMES,
+  logistica: LOGISTICA_ROLE_NAMES,
+  cajeroVendedor: CAJERO_ROLE_NAMES,
+  inventario: INVENTARIO_ROLE_NAMES,
+} as const;
 
 type TokenPayload = JwtPayload & {
   sub?: string | number;
@@ -132,47 +160,52 @@ export async function requireBootstrapOrAuth(
   return requireAuth(req, res, next);
 }
 
-export async function requireAdminRole(req: Request, res: Response, next: NextFunction) {
-  try {
-    if (!req.auth?.idRol) {
-      return res.status(403).json({
-        ok: false,
-        message: 'No tienes permisos para esta operación',
+export function requireRoleNames(allowedRoleNames: readonly string[]) {
+  const allowed = allowedRoleNames.map(normalizeRoleName);
+
+  return async function roleGuard(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.auth?.idRol) {
+        return res.status(403).json({
+          ok: false,
+          message: 'No tienes permisos para esta operación',
+        });
+      }
+
+      const role = await prisma.rol.findFirst({
+        where: {
+          Id: req.auth.idRol,
+          Anulado: false,
+        },
+        select: {
+          Nombre: true,
+        },
       });
+
+      if (!role) {
+        return res.status(403).json({
+          ok: false,
+          message: 'No tienes permisos para esta operación',
+        });
+      }
+
+      const roleName = normalizeRoleName(role.Nombre);
+      if (!allowed.includes(roleName)) {
+        return res.status(403).json({
+          ok: false,
+          message: 'No tienes permisos para esta operación',
+        });
+      }
+
+      return next();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Error interno';
+      return res.status(500).json({ ok: false, message });
     }
-
-    const role = await prisma.rol.findFirst({
-      where: {
-        Id: req.auth.idRol,
-        Anulado: false,
-      },
-      select: {
-        Nombre: true,
-      },
-    });
-
-    if (!role) {
-      return res.status(403).json({
-        ok: false,
-        message: 'No tienes permisos para esta operación',
-      });
-    }
-
-    const roleName = normalizeRoleName(role.Nombre);
-    const adminRoleNames = parseAdminRoleNames();
-    if (!adminRoleNames.includes(roleName)) {
-      return res.status(403).json({
-        ok: false,
-        message: 'No tienes permisos para esta operación',
-      });
-    }
-
-    return next();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Error interno';
-    return res.status(500).json({ ok: false, message });
-  }
+  };
 }
+
+export const requireAdminRole = requireRoleNames(ROLE_GROUPS.adminGerencia);
 
 export async function requireSelfOrAdmin(req: Request, res: Response, next: NextFunction) {
   const targetId = parsePositiveInt(req.params.id);
