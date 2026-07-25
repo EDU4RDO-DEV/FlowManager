@@ -2,6 +2,7 @@ import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
 
+import { requireAuth } from './middlewares/auth.middleware';
 import authRouter from './routes/auth.routes';
 import clientRouter from './routes/client.routes';
 import roleRouter from './routes/role.routes';
@@ -15,10 +16,10 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api/auth', authRouter);
-app.use('/api/clients', clientRouter);
-app.use('/api/roles', roleRouter);
-app.use('/api/sessions', sessionRouter);
-app.use('/api/users', userRouter);
+app.use('/api/clients', requireAuth, clientRouter);
+app.use('/api/roles', requireAuth, roleRouter);
+app.use('/api/sessions', requireAuth, sessionRouter);
+app.use('/api/users', requireAuth, userRouter);
 
 app.get('/health', (_req, res) => {
 	res.status(200).json({
