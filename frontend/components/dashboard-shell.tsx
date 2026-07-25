@@ -11,6 +11,7 @@ import {
   CircleUserRound,
   X,
   Building2,
+  BriefcaseBusiness,
   Droplet,
   Factory,
   LayoutDashboard,
@@ -70,6 +71,12 @@ const moduleCatalog: Record<AppModuleKey, ModuleItem> = {
     name: "Roles y Permisos",
     path: "/roles",
     icon: ShieldCheck,
+  },
+  empleados: {
+    key: "empleados",
+    name: "Empleados",
+    path: "/employees",
+    icon: BriefcaseBusiness,
   },
   clientes: {
     key: "clientes",

@@ -10,6 +10,7 @@ export type AppModuleKey =
   | 'resumen'
   | 'usuarios'
   | 'roles'
+  | 'empleados'
   | 'clientes'
   | 'proveedores'
   | 'sesiones'
@@ -20,6 +21,7 @@ const ALL_MODULES: AppModuleKey[] = [
   'resumen',
   'usuarios',
   'roles',
+  'empleados',
   'clientes',
   'proveedores',
   'sesiones',
@@ -49,8 +51,8 @@ const roleMap: Record<RoleGroup, string[]> = {
 };
 
 const moduleByRole: Record<RoleGroup, AppModuleKey[]> = {
-  adminGerencia: ['resumen', 'usuarios', 'roles', 'clientes', 'proveedores', 'sesiones', 'produccion', 'inventario'],
-  produccion: ['resumen', 'produccion'],
+  adminGerencia: ['resumen', 'usuarios', 'roles', 'empleados', 'clientes', 'proveedores', 'sesiones', 'produccion', 'inventario'],
+  produccion: ['resumen', 'empleados', 'produccion'],
   logistica: ['resumen', 'clientes', 'sesiones'],
   cajeroVendedor: ['resumen', 'clientes', 'sesiones'],
   inventario: ['resumen', 'proveedores', 'inventario'],

@@ -5,6 +5,7 @@ import express from 'express';
 import { requireAuth } from './middlewares/auth.middleware';
 import authRouter from './routes/auth.routes';
 import clientRouter from './routes/client.routes';
+import employeeRouter from './routes/employee.routes';
 import providerRouter from './routes/provider.routes';
 import roleRouter from './routes/role.routes';
 import sessionRouter from './routes/session.routes';
@@ -18,6 +19,7 @@ app.use(express.json());
 
 app.use('/api/auth', authRouter);
 app.use('/api/clients', requireAuth, clientRouter);
+app.use('/api/employees', requireAuth, employeeRouter);
 app.use('/api/providers', requireAuth, providerRouter);
 app.use('/api/roles', requireAuth, roleRouter);
 app.use('/api/sessions', requireAuth, sessionRouter);

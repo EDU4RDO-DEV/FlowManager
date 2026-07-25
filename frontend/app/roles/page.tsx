@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { KeyRound, Loader2, Pencil, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -21,20 +22,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getApiErrorMessage } from "@/lib/api";
-import { createRole, deleteRole, listRoles, updateRole } from "@/services/roles.service";
+import { deleteRole, listRoles } from "@/services/roles.service";
 import type { RoleDto } from "@/types/roles";
-
-type FormMode = "create" | "edit";
-
-type RoleForm = {
-  nombre: string;
-  descripcion: string;
-};
-
-const EMPTY_FORM: RoleForm = {
-  nombre: "",
-  descripcion: "",
-};
 
 function formatDate(value: string | null): string {
   if (!value) return "-";
@@ -47,12 +36,7 @@ export default function RolesPage() {
   const { user } = useAuth();
   const [roles, setRoles] = useState<RoleDto[]>([]);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
-  const [formOpen, setFormOpen] = useState(false);
-  const [formMode, setFormMode] = useState<FormMode>("create");
-  const [editingRole, setEditingRole] = useState<RoleDto | null>(null);
-  const [form, setForm] = useState<RoleForm>(EMPTY_FORM);
   const [deleteCandidate, setDeleteCandidate] = useState<RoleDto | null>(null);
 
   async function loadData() {
@@ -89,63 +73,6 @@ export default function RolesPage() {
     const conDescripcion = roles.filter((item) => (item.descripcion ?? "").trim().length > 0).length;
     return { total, activos, conDescripcion };
   }, [roles]);
-
-  function openCreateForm() {
-    setFormMode("create");
-    setEditingRole(null);
-    setForm(EMPTY_FORM);
-    setFormOpen(true);
-  }
-
-  function openEditForm(role: RoleDto) {
-    setFormMode("edit");
-    setEditingRole(role);
-    setForm({
-      nombre: role.nombre,
-      descripcion: role.descripcion ?? "",
-    });
-    setFormOpen(true);
-  }
-
-  async function saveRole() {
-    if (!user?.id) {
-      toast.error("No se pudo identificar el usuario autenticado.");
-      return;
-    }
-
-    if (!form.nombre.trim()) {
-      toast.error("El nombre del rol es obligatorio.");
-      return;
-    }
-
-    setSaving(true);
-    try {
-      if (formMode === "create") {
-        await createRole({
-          idUsuario: user.id,
-          nombre: form.nombre.trim(),
-          descripcion: form.descripcion.trim() || undefined,
-        });
-        toast.success("Rol creado correctamente.");
-      } else if (editingRole) {
-        await updateRole(editingRole.id, {
-          nombre: form.nombre.trim(),
-          descripcion: form.descripcion.trim() || null,
-          idUsuarioModificador: user.id,
-        });
-        toast.success("Rol actualizado correctamente.");
-      }
-
-      setFormOpen(false);
-      setForm(EMPTY_FORM);
-      setEditingRole(null);
-      await loadData();
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "No se pudo guardar el rol."));
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function confirmDeleteRole() {
     if (!deleteCandidate) return;
@@ -223,11 +150,13 @@ export default function RolesPage() {
                 </Button>
                 <Button
                   size="sm"
-                  onClick={openCreateForm}
+                  asChild
                   className="bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
                 >
-                  <Plus className="size-4" />
-                  Nuevo rol
+                  <Link href="/roles/create">
+                    <Plus className="size-4" />
+                    Nuevo rol
+                  </Link>
                 </Button>
               </div>
             </CardHeader>
@@ -277,11 +206,13 @@ export default function RolesPage() {
                               <Button
                                 size="xs"
                                 variant="outline"
-                                onClick={() => openEditForm(role)}
+                                asChild
                                 className="hover:bg-muted/50 transition-colors"
                               >
-                                <Pencil className="size-3.5" />
-                                Editar
+                                <Link href={`/roles/edit/${role.id}`}>
+                                  <Pencil className="size-3.5" />
+                                  Editar
+                                </Link>
                               </Button>
                               <Button
                                 size="xs"
@@ -302,61 +233,6 @@ export default function RolesPage() {
             </CardContent>
           </Card>
         </div>
-
-        {formOpen ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <Card className="w-full max-w-xl rounded-xl border border-border bg-background">
-              <CardHeader>
-                <CardTitle className="text-xl font-bold tracking-tight">
-                  {formMode === "create" ? "Nuevo rol" : "Editar rol"}
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Define un nombre claro y una descripcion operativa para el permiso.
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="role-name">Nombre</Label>
-                  <Input
-                    id="role-name"
-                    value={form.nombre}
-                    onChange={(event) => setForm((prev) => ({ ...prev, nombre: event.target.value }))}
-                    placeholder="Ej. Supervisor de produccion"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="role-description">Descripcion</Label>
-                  <textarea
-                    id="role-description"
-                    className="min-h-24 w-full rounded-lg border border-input bg-background px-2.5 py-2 text-sm"
-                    value={form.descripcion}
-                    onChange={(event) => setForm((prev) => ({ ...prev, descripcion: event.target.value }))}
-                    placeholder="Describe alcance y responsabilidad del rol"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setFormOpen(false);
-                      setEditingRole(null);
-                      setForm(EMPTY_FORM);
-                    }}
-                    disabled={saving}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button onClick={saveRole} disabled={saving}>
-                    {saving ? <Loader2 className="size-4 animate-spin" /> : null}
-                    Guardar
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        ) : null}
 
         {deleteCandidate ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
