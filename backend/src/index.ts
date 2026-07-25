@@ -3,6 +3,7 @@ import cors from 'cors';
 import express from 'express';
 
 import authRouter from './routes/auth.routes';
+import sessionRouter from './routes/session.routes';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 4000;
@@ -11,6 +12,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api/auth', authRouter);
+app.use('/api/sessions', sessionRouter);
 
 app.get('/health', (_req, res) => {
 	res.status(200).json({

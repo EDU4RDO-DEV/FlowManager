@@ -34,6 +34,20 @@ type RegisterResult = {
   idEntidad: number | null;
 };
 
+type AssignRoleEntityInput = {
+  idUsuario: number;
+  idRol: number;
+  idEntidad?: number;
+};
+
+type AssignRoleEntityResult = {
+  id: number;
+  nombre: string;
+  correo: string;
+  idRol: number | null;
+  idEntidad: number | null;
+};
+
 export async function login(input: LoginInput): Promise<LoginResult> {
   const { correo, clave } = input;
 
@@ -128,5 +142,86 @@ export async function register(input: RegisterInput): Promise<RegisterResult> {
     correo: created.Correo,
     idRol: created.IdRol,
     idEntidad: created.IdEntidad,
+  };
+}
+
+export async function assignUserRoleEntity(
+  input: AssignRoleEntityInput,
+): Promise<AssignRoleEntityResult> {
+  const { idUsuario, idRol, idEntidad } = input;
+
+  const usuario = await prisma.usuario.findFirst({
+    where: {
+      Id: idUsuario,
+      Anulado: false,
+    },
+    select: {
+      Id: true,
+      Nombre: true,
+      Correo: true,
+      IdRol: true,
+      IdEntidad: true,
+    },
+  });
+
+  if (!usuario) {
+    throw new Error('Usuario no existe');
+  }
+
+  const rol = await prisma.rol.findFirst({
+    where: {
+      Id: idRol,
+      Anulado: false,
+    },
+    select: { Id: true },
+  });
+
+  if (!rol) {
+    throw new Error('Rol no existe');
+  }
+
+  if (idEntidad !== undefined) {
+    const entidad = await prisma.entidad.findFirst({
+      where: {
+        Id: idEntidad,
+        Anulado: false,
+      },
+      select: { Id: true },
+    });
+
+    if (!entidad) {
+      throw new Error('Entidad no existe');
+    }
+  }
+
+  const isNoOpConflict =
+    usuario.IdRol === idRol &&
+    (idEntidad === undefined || usuario.IdEntidad === idEntidad);
+
+  if (isNoOpConflict) {
+    throw new Error('El usuario ya tiene la misma asignación de rol/entidad');
+  }
+
+  const updated = await prisma.usuario.update({
+    where: { Id: idUsuario },
+    data: {
+      IdRol: idRol,
+      ...(idEntidad !== undefined ? { IdEntidad: idEntidad } : {}),
+    },
+    select: {
+      Id: true,
+      Nombre: true,
+      Correo: true,
+      IdRol: true,
+      IdEntidad: true,
+    },
+  });
+
+  return {
+    id: updated.Id,
+    nombre: updated.Nombre,
+    correo: updated.Correo,
+    idRol: updated.IdRol,
+    idEntidad: updated.IdEntidad,
   };
 }
