@@ -1,0 +1,7 @@
+# Base de datos local
+.sql/
+
+# Dependencias y entorno
+node_modules/
+.env
+dist/
