@@ -17,7 +17,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import type { RoleDto, UserDto } from "@/types/users";
+import { UsersEmptyState } from "@/app/users/_components/users-empty-state";
+import { UsersTableSkeleton } from "@/app/users/_components/users-skeletons";
 
 type UsersTableProps = {
   users: UserDto[];
@@ -25,6 +28,7 @@ type UsersTableProps = {
   query: string;
   roleFilter: string;
   loading: boolean;
+  hasLoadedOnce: boolean;
   onQueryChange: (value: string) => void;
   onRoleFilterChange: (value: string) => void;
   onReload: () => void;
@@ -40,6 +44,7 @@ export function UsersTable({
   query,
   roleFilter,
   loading,
+  hasLoadedOnce,
   onQueryChange,
   onRoleFilterChange,
   onReload,
@@ -73,6 +78,10 @@ export function UsersTable({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {loading && hasLoadedOnce ? (
+          <p className="text-xs text-muted-foreground">Actualizando usuarios...</p>
+        ) : null}
+
         <div className="grid gap-3 rounded-xl border border-border bg-muted/50 p-4 md:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="search-users">Busqueda</Label>
@@ -104,76 +113,76 @@ export function UsersTable({
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border border-border">
-          <Table className="min-w-full">
-            <TableHeader className="bg-muted/50">
-              <TableRow className="hover:bg-muted/50">
-                <TableHead>ID</TableHead>
-                <TableHead>Nombre</TableHead>
-                <TableHead>Correo</TableHead>
-                <TableHead>Rol</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Registro</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.length === 0 ? (
-                <TableRow>
-                  <TableCell className="py-8 text-center text-muted-foreground" colSpan={7}>
-                    No hay usuarios para mostrar.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                users.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-mono text-xs text-muted-foreground">#{item.id}</TableCell>
-                    <TableCell className="font-medium text-foreground">{item.nombre}</TableCell>
-                    <TableCell>{item.correo}</TableCell>
-                    <TableCell>{roleNameByUser(item)}</TableCell>
-                    <TableCell>
-                      <Badge variant={item.anulado ? "destructive" : "default"}>
-                        {item.anulado ? "Inactivo" : "Activo"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{formatDate(item.fechaRegistro)}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          onClick={() => router.push(`/users/edit/${item.id}`)}
-                          className="hover:bg-muted/50 transition-colors"
-                        >
-                          <Pencil className="size-3.5" />
-                          Editar
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="secondary"
-                          onClick={() => onResetPassword(item)}
-                          className="hover:bg-muted/50 transition-colors"
-                        >
-                          <KeyRound className="size-3.5" />
-                          Reset clave
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="destructive"
-                          onClick={() => onDelete(item)}
-                          className="transition-colors"
-                        >
-                          <Trash2 className="size-3.5" />
-                          Eliminar
-                        </Button>
-                      </div>
-                    </TableCell>
+        {loading && !hasLoadedOnce ? (
+          <UsersTableSkeleton rows={8} />
+        ) : users.length === 0 ? (
+          <UsersEmptyState onReload={onReload} />
+        ) : (
+          <div className={cn("transition-opacity duration-300", loading ? "opacity-75" : "opacity-100")}>
+            <div className="overflow-x-auto rounded-xl border border-border">
+              <Table className="min-w-full">
+                <TableHeader className="bg-muted/50">
+                  <TableRow className="hover:bg-muted/50">
+                    <TableHead>ID</TableHead>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Correo</TableHead>
+                    <TableHead>Rol</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Registro</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                </TableHeader>
+                <TableBody>
+                  {users.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-mono text-xs text-muted-foreground">#{item.id}</TableCell>
+                      <TableCell className="font-medium text-foreground">{item.nombre}</TableCell>
+                      <TableCell>{item.correo}</TableCell>
+                      <TableCell>{roleNameByUser(item)}</TableCell>
+                      <TableCell>
+                        <Badge variant={item.anulado ? "destructive" : "default"}>
+                          {item.anulado ? "Inactivo" : "Activo"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{formatDate(item.fechaRegistro)}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            onClick={() => router.push(`/users/edit/${item.id}`)}
+                            className="hover:bg-muted/50 transition-colors"
+                          >
+                            <Pencil className="size-3.5" />
+                            Editar
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="secondary"
+                            onClick={() => onResetPassword(item)}
+                            className="hover:bg-muted/50 transition-colors"
+                          >
+                            <KeyRound className="size-3.5" />
+                            Reset clave
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="destructive"
+                            onClick={() => onDelete(item)}
+                            className="transition-colors"
+                          >
+                            <Trash2 className="size-3.5" />
+                            Eliminar
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

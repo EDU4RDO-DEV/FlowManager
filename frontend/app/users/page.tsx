@@ -35,7 +35,8 @@ export default function UsersPage() {
   const { user } = useAuth();
   const [users, setUsers] = useState<UserDto[]>([]);
   const [roles, setRoles] = useState<RoleDto[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
@@ -56,6 +57,7 @@ export default function UsersPage() {
       toast.error(getApiErrorMessage(error, "No se pudo cargar el modulo de usuarios."));
     } finally {
       setLoading(false);
+      setHasLoadedOnce(true);
     }
   }, []);
 
@@ -233,6 +235,7 @@ export default function UsersPage() {
                 query={query}
                 roleFilter={roleFilter}
                 loading={loading}
+                hasLoadedOnce={hasLoadedOnce}
                 onQueryChange={setQuery}
                 onRoleFilterChange={setRoleFilter}
                 onReload={loadData}
