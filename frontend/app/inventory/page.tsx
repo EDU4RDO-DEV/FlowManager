@@ -10,6 +10,7 @@ import {
   Plus,
   RefreshCw,
   Trash2,
+  ListTree,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -265,6 +266,19 @@ export default function InventoryPage() {
                           <TableCell>{formatDate(product.fechaRegistro)}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
+                              {product.esProductoFinal && (
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  asChild
+                                  className="hover:bg-muted/50 transition-colors"
+                                >
+                                  <Link href={`/inventory/${product.id}/structure`}>
+                                    <ListTree className="size-3.5" />
+                                    BOM
+                                  </Link>
+                                </Button>
+                              )}
                               <Button
                                 size="xs"
                                 variant="outline"
