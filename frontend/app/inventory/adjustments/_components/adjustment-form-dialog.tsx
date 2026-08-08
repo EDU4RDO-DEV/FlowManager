@@ -71,8 +71,23 @@ export function AdjustmentFormDialog({ open, onOpenChange, onSuccess }: Adjustme
   async function loadProducts() {
     setLoadingProducts(true);
     try {
-      const result = await listProducts({ anulado: false, limit: 1000 });
-      setProducts(result.items);
+      const firstPage = await listProducts({ anulado: false, page: 1, limit: 100 });
+
+      if (firstPage.pagination.totalPages <= 1) {
+        setProducts(firstPage.items);
+        return;
+      }
+
+      const restPages = await Promise.all(
+        Array.from({ length: firstPage.pagination.totalPages - 1 }, (_, idx) =>
+          listProducts({ anulado: false, page: idx + 2, limit: 100 }),
+        ),
+      );
+
+      setProducts([
+        ...firstPage.items,
+        ...restPages.flatMap((pageResult) => pageResult.items),
+      ]);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cargar los productos"));
     } finally {
