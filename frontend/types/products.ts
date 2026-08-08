@@ -39,6 +39,7 @@ export interface ProductListResult {
 }
 
 export type ProductsListResponse = ApiResponse<ProductListResult>;
+export type AnulatedProductsListResponse = ApiResponse<ProductDto[]>;
 
 export interface ProductFilters {
   page?: number;
@@ -75,6 +76,10 @@ export interface UpdateProductPayload {
 
 export interface DeleteProductPayload {
   idUsuarioAnulador?: number;
+}
+
+export interface RestoreProductPayload {
+  idUsuarioModificador?: number;
 }
 
 export interface UploadProductImageResult {

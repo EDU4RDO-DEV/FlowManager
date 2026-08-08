@@ -9,6 +9,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Trash2,
   ListTree,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   Table,
@@ -34,7 +36,12 @@ import {
 import { InventoryEmptyState } from "@/app/inventory/_components/inventory-empty-state";
 import { CardSkeleton, TableSkeleton } from "@/app/inventory/_components/inventory-skeletons";
 import { getApiErrorMessage } from "@/lib/api";
-import { deleteProduct, listProducts } from "@/services/products.service";
+import {
+  deleteProduct,
+  listAnulatedProducts,
+  listProducts,
+  restoreProduct,
+} from "@/services/products.service";
 import type { ProductDto } from "@/types/products";
 
 function formatDate(value: string | null): string {
@@ -57,7 +64,8 @@ type CategoryFilter = "" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA" | "INSUMO" | "
 
 export default function InventoryPage() {
   const { user } = useAuth();
-  const [products, setProducts] = useState<ProductDto[]>([]);
+  const [activeProducts, setActiveProducts] = useState<ProductDto[]>([]);
+  const [anulatedProducts, setAnulatedProducts] = useState<ProductDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
@@ -71,13 +79,33 @@ export default function InventoryPage() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const response = await listProducts({
+      const filters = {
         page: 1,
         limit: 100,
         ...(query.trim() ? { busqueda: query.trim() } : {}),
         ...(category ? { categoria: category } : {}),
+      };
+
+      const [activeResponse, trashItems] = await Promise.all([
+        listProducts(filters),
+        listAnulatedProducts(),
+      ]);
+
+      const normalizedQuery = query.trim().toLowerCase();
+      const filteredTrash = trashItems.filter((item) => {
+        if (normalizedQuery.length === 0) return true;
+        return (
+          item.nombre.toLowerCase().includes(normalizedQuery) ||
+          item.proveedor.nombre.toLowerCase().includes(normalizedQuery)
+        );
       });
-      setProducts(response.items);
+
+      const filteredByCategory = category
+        ? filteredTrash.filter((item) => item.categoria === category)
+        : filteredTrash;
+
+      setActiveProducts(activeResponse.items);
+      setAnulatedProducts(filteredByCategory);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cargar el catalogo de productos."));
     } finally {
@@ -87,12 +115,12 @@ export default function InventoryPage() {
   }
 
   const metrics = useMemo(() => {
-    const total = products.length;
-    const activos = products.filter((item) => !item.anulado).length;
-    const sinExistencia = products.filter((item) => item.existencia <= 0).length;
-    const finales = products.filter((item) => item.esProductoFinal).length;
+    const total = activeProducts.length + anulatedProducts.length;
+    const activos = activeProducts.length;
+    const sinExistencia = activeProducts.filter((item) => item.existencia <= 0).length;
+    const finales = activeProducts.filter((item) => item.esProductoFinal).length;
     return { total, activos, sinExistencia, finales };
-  }, [products]);
+  }, [activeProducts, anulatedProducts]);
 
   async function confirmDeleteProduct() {
     if (!deleteCandidate) return;
@@ -102,11 +130,35 @@ export default function InventoryPage() {
         deleteCandidate.id,
         user?.id ? { idUsuarioAnulador: user.id } : undefined,
       );
+
+      const movedToTrash: ProductDto = {
+        ...deleteCandidate,
+        anulado: true,
+        idUsuarioAnulador: user?.id ?? deleteCandidate.idUsuarioAnulador,
+        fechaAnulacion: new Date().toISOString(),
+      };
+
+      setActiveProducts((prev) => prev.filter((item) => item.id !== deleteCandidate.id));
+      setAnulatedProducts((prev) => [movedToTrash, ...prev]);
       toast.success("Producto anulado correctamente.");
       setDeleteCandidate(null);
-      await loadData();
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo anular el producto."));
+    }
+  }
+
+  async function restoreProductFromTrash(candidate: ProductDto) {
+    try {
+      const restored = await restoreProduct(
+        candidate.id,
+        user?.id ? { idUsuarioModificador: user.id } : undefined,
+      );
+
+      setAnulatedProducts((prev) => prev.filter((item) => item.id !== candidate.id));
+      setActiveProducts((prev) => [restored, ...prev]);
+      toast.success("Producto restaurado correctamente.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo restaurar el producto."));
     }
   }
 
@@ -239,95 +291,159 @@ export default function InventoryPage() {
                 </div>
               </div>
 
-              {isLoading && !hasLoadedOnce ? (
-                <TableSkeleton rows={8} columns={9} />
-              ) : products.length === 0 ? (
-                <InventoryEmptyState
-                  title="No hay productos registrados"
-                  description="Agrega productos al catalogo para comenzar a gestionar inventario y estructura BOM."
-                  actionLabel="Recargar"
-                  onAction={loadData}
-                />
-              ) : (
-                <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
-                  <div className="overflow-x-auto rounded-xl border border-border">
-                    <Table className="min-w-full">
-                      <TableHeader className="bg-muted/50">
-                        <TableRow>
-                          <TableHead>ID</TableHead>
-                          <TableHead>Producto</TableHead>
-                          <TableHead>Categoria</TableHead>
-                          <TableHead>Proveedor</TableHead>
-                          <TableHead>Existencia</TableHead>
-                          <TableHead>Costo</TableHead>
-                          <TableHead>Precio</TableHead>
-                          <TableHead>Registro</TableHead>
-                          <TableHead className="text-right">Acciones</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {products.map((product) => (
-                          <TableRow key={product.id}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">#{product.id}</TableCell>
-                            <TableCell className="font-medium">
-                              <div className="flex items-center gap-2">
-                                <span>{product.nombre}</span>
-                                {product.esProductoFinal ? (
-                                  <Badge variant="secondary">Final</Badge>
-                                ) : (
-                                  <Badge variant="outline">Insumo</Badge>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>{product.categoria}</TableCell>
-                            <TableCell>{product.proveedor.nombre}</TableCell>
-                            <TableCell>{product.existencia}</TableCell>
-                            <TableCell>{formatMoney(product.costoPromedio)}</TableCell>
-                            <TableCell>{formatMoney(product.precioVenta)}</TableCell>
-                            <TableCell>{formatDate(product.fechaRegistro)}</TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                {product.esProductoFinal && (
+              <Tabs defaultValue="activos">
+                <TabsList>
+                  <TabsTrigger value="activos">Activos ({activeProducts.length})</TabsTrigger>
+                  <TabsTrigger value="anulados">Anulados ({anulatedProducts.length})</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="activos" className="mt-4">
+                  {isLoading && !hasLoadedOnce ? (
+                    <TableSkeleton rows={8} columns={9} />
+                  ) : activeProducts.length === 0 ? (
+                    <InventoryEmptyState
+                      title="No hay productos registrados"
+                      description="Agrega productos al catalogo para comenzar a gestionar inventario y estructura BOM."
+                      actionLabel="Recargar"
+                      onAction={loadData}
+                    />
+                  ) : (
+                    <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
+                      <div className="overflow-x-auto rounded-xl border border-border">
+                        <Table className="min-w-full">
+                          <TableHeader className="bg-muted/50">
+                            <TableRow>
+                              <TableHead>ID</TableHead>
+                              <TableHead>Producto</TableHead>
+                              <TableHead>Categoria</TableHead>
+                              <TableHead>Proveedor</TableHead>
+                              <TableHead>Existencia</TableHead>
+                              <TableHead>Costo</TableHead>
+                              <TableHead>Precio</TableHead>
+                              <TableHead>Registro</TableHead>
+                              <TableHead className="text-right">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {activeProducts.map((product) => (
+                              <TableRow key={product.id}>
+                                <TableCell className="font-mono text-xs text-muted-foreground">#{product.id}</TableCell>
+                                <TableCell className="font-medium">
+                                  <div className="flex items-center gap-2">
+                                    <span>{product.nombre}</span>
+                                    {product.esProductoFinal ? (
+                                      <Badge variant="secondary">Final</Badge>
+                                    ) : (
+                                      <Badge variant="outline">Insumo</Badge>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell>{product.categoria}</TableCell>
+                                <TableCell>{product.proveedor.nombre}</TableCell>
+                                <TableCell>{product.existencia}</TableCell>
+                                <TableCell>{formatMoney(product.costoPromedio)}</TableCell>
+                                <TableCell>{formatMoney(product.precioVenta)}</TableCell>
+                                <TableCell>{formatDate(product.fechaRegistro)}</TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    {product.esProductoFinal && (
+                                      <Button
+                                        size="xs"
+                                        variant="outline"
+                                        asChild
+                                        className="hover:bg-muted/50 transition-colors"
+                                      >
+                                        <Link href={`/inventory/${product.id}/structure`}>
+                                          <ListTree className="size-3.5" />
+                                          BOM
+                                        </Link>
+                                      </Button>
+                                    )}
+                                    <Button
+                                      size="xs"
+                                      variant="outline"
+                                      asChild
+                                      className="hover:bg-muted/50 transition-colors"
+                                    >
+                                      <Link href={`/inventory/edit/${product.id}`}>
+                                        <Pencil className="size-3.5" />
+                                        Editar
+                                      </Link>
+                                    </Button>
+                                    <Button
+                                      size="xs"
+                                      variant="destructive"
+                                      onClick={() => setDeleteCandidate(product)}
+                                    >
+                                      <Trash2 className="size-3.5" />
+                                      Anular
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="anulados" className="mt-4">
+                  {isLoading && !hasLoadedOnce ? (
+                    <TableSkeleton rows={8} columns={8} />
+                  ) : anulatedProducts.length === 0 ? (
+                    <InventoryEmptyState
+                      title="No hay productos anulados"
+                      description="Cuando anules productos, apareceran aqui para restaurarlos cuando sea necesario."
+                      actionLabel="Recargar"
+                      onAction={loadData}
+                    />
+                  ) : (
+                    <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
+                      <div className="overflow-x-auto rounded-xl border border-border">
+                        <Table className="min-w-full">
+                          <TableHeader className="bg-muted/50">
+                            <TableRow>
+                              <TableHead>ID</TableHead>
+                              <TableHead>Producto</TableHead>
+                              <TableHead>Categoria</TableHead>
+                              <TableHead>Proveedor</TableHead>
+                              <TableHead>Existencia</TableHead>
+                              <TableHead>Costo</TableHead>
+                              <TableHead>Anulacion</TableHead>
+                              <TableHead className="text-right">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {anulatedProducts.map((product) => (
+                              <TableRow key={product.id}>
+                                <TableCell className="font-mono text-xs text-muted-foreground">#{product.id}</TableCell>
+                                <TableCell className="font-medium">{product.nombre}</TableCell>
+                                <TableCell>{product.categoria}</TableCell>
+                                <TableCell>{product.proveedor.nombre}</TableCell>
+                                <TableCell>{product.existencia}</TableCell>
+                                <TableCell>{formatMoney(product.costoPromedio)}</TableCell>
+                                <TableCell>{formatDate(product.fechaAnulacion)}</TableCell>
+                                <TableCell className="text-right">
                                   <Button
                                     size="xs"
-                                    variant="outline"
-                                    asChild
-                                    className="hover:bg-muted/50 transition-colors"
+                                    variant="secondary"
+                                    onClick={() => restoreProductFromTrash(product)}
                                   >
-                                    <Link href={`/inventory/${product.id}/structure`}>
-                                      <ListTree className="size-3.5" />
-                                      BOM
-                                    </Link>
+                                    <RotateCcw className="size-3.5" />
+                                    Restaurar
                                   </Button>
-                                )}
-                                <Button
-                                  size="xs"
-                                  variant="outline"
-                                  asChild
-                                  className="hover:bg-muted/50 transition-colors"
-                                >
-                                  <Link href={`/inventory/edit/${product.id}`}>
-                                    <Pencil className="size-3.5" />
-                                    Editar
-                                  </Link>
-                                </Button>
-                                <Button
-                                  size="xs"
-                                  variant="destructive"
-                                  onClick={() => setDeleteCandidate(product)}
-                                >
-                                  <Trash2 className="size-3.5" />
-                                  Anular
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </div>

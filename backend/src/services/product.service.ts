@@ -198,6 +198,26 @@ export async function listProducts(input: ListProductsInput) {
   };
 }
 
+export async function listAnulatedProducts() {
+  const products = await prisma.inventarioItem.findMany({
+    where: {
+      Anulado: true,
+    },
+    orderBy: { FechaAnulacion: 'desc' },
+    include: {
+      Proveedor: {
+        select: {
+          Id: true,
+          Nombre: true,
+          Anulado: true,
+        },
+      },
+    },
+  });
+
+  return products.map(toProductDto);
+}
+
 export async function getProductById(id: number) {
   const product = await prisma.inventarioItem.findFirst({
     where: { Id: id, Anulado: false },
@@ -353,4 +373,43 @@ export async function deleteProduct(id: number, idUsuarioAnulador?: number) {
       FechaAnulacion: new Date(),
     },
   });
+}
+
+export async function restoreProduct(id: number, idUsuarioModificador?: number) {
+  const existing = await prisma.inventarioItem.findFirst({
+    where: { Id: id, Anulado: true },
+    select: { Id: true },
+  });
+
+  if (!existing) {
+    throw new Error('Producto anulado no existe');
+  }
+
+  if (idUsuarioModificador !== undefined) {
+    await validateUsuarioExists(idUsuarioModificador);
+  }
+
+  const restored = await prisma.inventarioItem.update({
+    where: { Id: id },
+    data: {
+      Anulado: false,
+      ...(idUsuarioModificador !== undefined
+        ? { IdUsuarioModificador: idUsuarioModificador }
+        : {}),
+      FechaModificacion: new Date(),
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
+    },
+    include: {
+      Proveedor: {
+        select: {
+          Id: true,
+          Nombre: true,
+          Anulado: true,
+        },
+      },
+    },
+  });
+
+  return toProductDto(restored);
 }

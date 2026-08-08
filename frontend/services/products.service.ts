@@ -1,12 +1,14 @@
 import { api } from "@/lib/api";
 import type { ApiResponse } from "@/types/auth";
 import type {
+  AnulatedProductsListResponse,
   CreateProductPayload,
   DeleteProductPayload,
   ProductDto,
   ProductFilters,
   ProductListResult,
   ProductsListResponse,
+  RestoreProductPayload,
   UploadProductImageResponse,
   UploadProductImageResult,
   UpdateProductPayload,
@@ -66,6 +68,22 @@ export async function updateProduct(id: number, payload: UpdateProductPayload): 
 
 export async function deleteProduct(id: number, payload?: DeleteProductPayload): Promise<void> {
   await api.delete(`/api/products/${id}`, { data: payload });
+}
+
+export async function listAnulatedProducts(): Promise<ProductDto[]> {
+  const { data } = await api.get<AnulatedProductsListResponse>("/api/products/anulados");
+  return data.data ?? [];
+}
+
+export async function restoreProduct(
+  id: number,
+  payload?: RestoreProductPayload,
+): Promise<ProductDto> {
+  const { data } = await api.patch<ApiResponse<ProductDto>>(`/api/products/${id}/restaurar`, payload);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al restaurar producto");
+  }
+  return data.data;
 }
 
 export async function uploadProductImage(file: File): Promise<UploadProductImageResult> {

@@ -5,7 +5,9 @@ import {
   createProduct,
   deleteProduct,
   getProductById,
+  listAnulatedProducts,
   listProducts,
+  restoreProduct,
   updateProduct,
 } from '../services/product.service';
 import {
@@ -13,6 +15,7 @@ import {
   deleteProductBodySchema,
   listProductsQuerySchema,
   productIdParamsSchema,
+  restoreProductBodySchema,
   updateProductSchema,
 } from '../validators/product.validators';
 import { getZodErrorMessage } from '../validators/validation';
@@ -64,6 +67,16 @@ export async function listProductsController(req: Request, res: Response) {
       return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
     }
 
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function listAnulatedProductsController(_req: Request, res: Response) {
+  try {
+    const data = await listAnulatedProducts();
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno';
     return res.status(500).json({ ok: false, message });
   }
@@ -190,6 +203,29 @@ export async function deleteProductController(req: Request, res: Response) {
       message === 'No se puede anular porque participa en una estructura de producto activa'
     ) {
       return res.status(400).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function restoreProductController(req: Request, res: Response) {
+  try {
+    const { id } = productIdParamsSchema.parse(req.params);
+    const { idUsuarioModificador } = restoreProductBodySchema.parse(req.body ?? {});
+
+    const data = await restoreProduct(id, req.auth?.userId ?? idUsuarioModificador);
+
+    return res.status(200).json({ ok: true, data, message: 'Producto restaurado correctamente' });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message === 'Producto anulado no existe' || message === 'Usuario no existe') {
+      return res.status(404).json({ ok: false, message });
     }
 
     return res.status(500).json({ ok: false, message });

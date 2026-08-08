@@ -116,3 +116,7 @@ export const updateProductSchema = z
 export const deleteProductBodySchema = z.object({
   idUsuarioAnulador: positiveInt.optional(),
 });
+
+export const restoreProductBodySchema = z.object({
+  idUsuarioModificador: positiveInt.optional(),
+});
