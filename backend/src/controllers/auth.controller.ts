@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { ZodError } from 'zod';
 
 import {
   assignUserRoleEntity,
@@ -8,6 +9,15 @@ import {
   revokeAllUserSessions,
   revokeRefreshToken,
 } from '../services/auth.service';
+import {
+  assignUserRoleEntityBodySchema,
+  assignUserRoleEntityParamsSchema,
+  loginSchema,
+  logoutSchema,
+  refreshSchema,
+  registerSchema,
+} from '../validators/auth.validators';
+import { getZodErrorMessage } from '../validators/validation';
 
 function getClientIp(req: Request): string {
   const forwarded = req.headers['x-forwarded-for'];
@@ -39,14 +49,7 @@ function getDeviceName(req: Request): string {
 
 export async function loginController(req: Request, res: Response) {
   try {
-    const { correo, clave } = req.body as { correo?: string; clave?: string };
-
-    if (!correo || !clave) {
-      return res.status(400).json({
-        ok: false,
-        message: 'correo y clave son requeridos',
-      });
-    }
+    const { correo, clave } = loginSchema.parse(req.body);
 
     const result = await login({
       correo,
@@ -61,6 +64,10 @@ export async function loginController(req: Request, res: Response) {
       data: result,
     });
   } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
     const message = error instanceof Error ? error.message : 'Error interno';
 
     if (message === 'Credenciales inválidas') {
@@ -73,14 +80,7 @@ export async function loginController(req: Request, res: Response) {
 
 export async function refreshController(req: Request, res: Response) {
   try {
-    const { refreshToken } = req.body as { refreshToken?: string };
-
-    if (!refreshToken) {
-      return res.status(400).json({
-        ok: false,
-        message: 'refreshToken es requerido',
-      });
-    }
+    const { refreshToken } = refreshSchema.parse(req.body);
 
     const result = await refreshAuthTokens({ refreshToken });
 
@@ -90,6 +90,10 @@ export async function refreshController(req: Request, res: Response) {
       data: result,
     });
   } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
     const message = error instanceof Error ? error.message : 'Error interno';
 
     if (message === 'Refresh token inválido o expirado') {
@@ -110,7 +114,7 @@ export async function logoutController(req: Request, res: Response) {
       });
     }
 
-    const { refreshToken } = req.body as { refreshToken?: string };
+    const { refreshToken } = logoutSchema.parse(req.body ?? {});
 
     if (refreshToken) {
       const revoked = await revokeRefreshToken(refreshToken, userId);
@@ -129,6 +133,10 @@ export async function logoutController(req: Request, res: Response) {
       message: 'Sesión cerrada correctamente',
     });
   } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
     const message = error instanceof Error ? error.message : 'Error interno';
     return res.status(500).json({ ok: false, message });
   }
@@ -136,20 +144,7 @@ export async function logoutController(req: Request, res: Response) {
 
 export async function registerController(req: Request, res: Response) {
   try {
-    const { nombre, correo, clave, idRol, idEntidad } = req.body as {
-      nombre?: string;
-      correo?: string;
-      clave?: string;
-      idRol?: number;
-      idEntidad?: number;
-    };
-
-    if (!nombre || !correo || !clave) {
-      return res.status(400).json({
-        ok: false,
-        message: 'nombre, correo y clave son requeridos',
-      });
-    }
+    const { nombre, correo, clave, idRol, idEntidad } = registerSchema.parse(req.body);
 
     const created = await register({ nombre, correo, clave, idRol, idEntidad });
 
@@ -159,6 +154,10 @@ export async function registerController(req: Request, res: Response) {
       data: created,
     });
   } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
     const message = error instanceof Error ? error.message : 'Error interno';
 
     if (message === 'El correo ya está registrado') {
@@ -185,44 +184,13 @@ export async function registerController(req: Request, res: Response) {
 
 export async function assignUserRoleEntityController(req: Request, res: Response) {
   try {
-    const idUsuario = Number(req.params.idUsuario);
-    const { idRol, idEntidad } = req.body as {
-      idRol?: number;
-      idEntidad?: number;
-    };
-
-    if (!Number.isInteger(idUsuario) || idUsuario <= 0) {
-      return res.status(400).json({
-        ok: false,
-        message: 'idUsuario en URL debe ser un entero positivo',
-      });
-    }
-
-    if (!Number.isInteger(idRol) || Number(idRol) <= 0) {
-      return res.status(400).json({
-        ok: false,
-        message: 'idRol es obligatorio y debe ser un entero positivo',
-      });
-    }
-
-    const idRolValue = Number(idRol);
-
-    if (
-      idEntidad !== undefined &&
-      (!Number.isInteger(idEntidad) || Number(idEntidad) <= 0)
-    ) {
-      return res.status(400).json({
-        ok: false,
-        message: 'idEntidad debe ser un entero positivo cuando se envía',
-      });
-    }
-
-    const idEntidadValue = idEntidad !== undefined ? Number(idEntidad) : undefined;
+    const { idUsuario } = assignUserRoleEntityParamsSchema.parse(req.params);
+    const { idRol, idEntidad } = assignUserRoleEntityBodySchema.parse(req.body);
 
     const updated = await assignUserRoleEntity({
       idUsuario,
-      idRol: idRolValue,
-      idEntidad: idEntidadValue,
+      idRol,
+      idEntidad,
     });
 
     return res.status(200).json({
@@ -231,6 +199,10 @@ export async function assignUserRoleEntityController(req: Request, res: Response
       data: updated,
     });
   } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
     const message = error instanceof Error ? error.message : 'Error interno';
 
     if (message === 'Usuario no existe') {

@@ -7,14 +7,14 @@ import {
   listRolesController,
   updateRoleController,
 } from '../controllers/role.controller';
-import { requireAdminRole } from '../middlewares/auth.middleware';
+import { requireModulePermission } from '../middlewares/auth.middleware';
 
 const roleRouter = Router();
 
-roleRouter.get('/', requireAdminRole, listRolesController);
-roleRouter.get('/:id', requireAdminRole, getRoleByIdController);
-roleRouter.post('/', requireAdminRole, createRoleController);
-roleRouter.patch('/:id', requireAdminRole, updateRoleController);
-roleRouter.delete('/:id', requireAdminRole, deleteRoleController);
+roleRouter.get('/', requireModulePermission('roles', 'read'), listRolesController);
+roleRouter.get('/:id', requireModulePermission('roles', 'read'), getRoleByIdController);
+roleRouter.post('/', requireModulePermission('roles', 'create'), createRoleController);
+roleRouter.patch('/:id', requireModulePermission('roles', 'update'), updateRoleController);
+roleRouter.delete('/:id', requireModulePermission('roles', 'delete'), deleteRoleController);
 
 export default roleRouter;

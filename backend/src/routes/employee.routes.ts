@@ -7,18 +7,14 @@ import {
   listEmployeesController,
   updateEmployeeController,
 } from '../controllers/employee.controller';
-import { requireRoleNames, ROLE_GROUPS } from '../middlewares/auth.middleware';
+import { requireModulePermission } from '../middlewares/auth.middleware';
 
 const employeeRouter = Router();
-const requireEmployeesAccess = requireRoleNames([
-  ...ROLE_GROUPS.adminGerencia,
-  ...ROLE_GROUPS.produccion,
-]);
 
-employeeRouter.get('/', requireEmployeesAccess, listEmployeesController);
-employeeRouter.get('/:id', requireEmployeesAccess, getEmployeeByIdController);
-employeeRouter.post('/', requireEmployeesAccess, createEmployeeController);
-employeeRouter.patch('/:id', requireEmployeesAccess, updateEmployeeController);
-employeeRouter.delete('/:id', requireEmployeesAccess, deleteEmployeeController);
+employeeRouter.get('/', requireModulePermission('empleados', 'read'), listEmployeesController);
+employeeRouter.get('/:id', requireModulePermission('empleados', 'read'), getEmployeeByIdController);
+employeeRouter.post('/', requireModulePermission('empleados', 'create'), createEmployeeController);
+employeeRouter.patch('/:id', requireModulePermission('empleados', 'update'), updateEmployeeController);
+employeeRouter.delete('/:id', requireModulePermission('empleados', 'delete'), deleteEmployeeController);
 
 export default employeeRouter;

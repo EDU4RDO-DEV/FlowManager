@@ -4,6 +4,7 @@ declare global {
       auth?: {
         userId: number;
         idRol: number | null;
+        nombreRol?: string | null;
         correo?: string;
         nombre?: string;
       };

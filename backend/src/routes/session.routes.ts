@@ -7,19 +7,14 @@ import {
   listSessionsController,
   updateSessionController,
 } from '../controllers/session.controller';
-import { requireRoleNames, ROLE_GROUPS } from '../middlewares/auth.middleware';
+import { requireModulePermission } from '../middlewares/auth.middleware';
 
 const sessionRouter = Router();
-const requireSessionsAccess = requireRoleNames([
-  ...ROLE_GROUPS.adminGerencia,
-  ...ROLE_GROUPS.logistica,
-  ...ROLE_GROUPS.cajeroVendedor,
-]);
 
-sessionRouter.get('/', requireSessionsAccess, listSessionsController);
-sessionRouter.get('/:id', requireSessionsAccess, getSessionByIdController);
-sessionRouter.post('/', requireSessionsAccess, createSessionController);
-sessionRouter.patch('/:id', requireSessionsAccess, updateSessionController);
-sessionRouter.delete('/:id', requireSessionsAccess, deleteSessionController);
+sessionRouter.get('/', requireModulePermission('sesiones', 'read'), listSessionsController);
+sessionRouter.get('/:id', requireModulePermission('sesiones', 'read'), getSessionByIdController);
+sessionRouter.post('/', requireModulePermission('sesiones', 'create'), createSessionController);
+sessionRouter.patch('/:id', requireModulePermission('sesiones', 'update'), updateSessionController);
+sessionRouter.delete('/:id', requireModulePermission('sesiones', 'delete'), deleteSessionController);
 
 export default sessionRouter;

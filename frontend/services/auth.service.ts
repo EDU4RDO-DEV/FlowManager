@@ -18,6 +18,18 @@ export async function login(payload: LoginRequest): Promise<LoginResult> {
   return data.data;
 }
 
+export async function refreshSession(refreshToken: string): Promise<LoginResult> {
+  const { data } = await api.post<LoginResponse>('/api/auth/refresh', { refreshToken });
+  if (!data.data) {
+    throw new Error(data.message || 'Respuesta de refresh inválida');
+  }
+  return data.data;
+}
+
+export async function logout(refreshToken?: string): Promise<void> {
+  await api.post('/api/auth/logout', { refreshToken });
+}
+
 // Registro: libre en bootstrap (sin usuarios); luego requiere token (lo adjunta el interceptor).
 export async function register(payload: RegisterRequest): Promise<RegisteredUser> {
   const { data } = await api.post<RegisterResponse>('/api/auth/register', payload);

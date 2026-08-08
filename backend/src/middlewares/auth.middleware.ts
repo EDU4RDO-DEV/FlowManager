@@ -84,10 +84,60 @@ export const ROLE_GROUPS = {
   inventario: INVENTARIO_ROLE_NAMES,
 } as const;
 
+type RoleGroupKey = keyof typeof ROLE_GROUPS;
+type CrudAction = 'read' | 'create' | 'update' | 'delete';
+type BackendModuleKey =
+  | 'usuarios'
+  | 'roles'
+  | 'clientes'
+  | 'empleados'
+  | 'proveedores'
+  | 'sesiones';
+
+const RBAC_MATRIX: Record<BackendModuleKey, Record<CrudAction, readonly RoleGroupKey[]>> = {
+  usuarios: {
+    read: ['adminGerencia'],
+    create: ['adminGerencia'],
+    update: ['adminGerencia'],
+    delete: ['adminGerencia'],
+  },
+  roles: {
+    read: ['adminGerencia'],
+    create: ['adminGerencia'],
+    update: ['adminGerencia'],
+    delete: ['adminGerencia'],
+  },
+  clientes: {
+    read: ['adminGerencia', 'cajeroVendedor', 'logistica'],
+    create: ['adminGerencia', 'cajeroVendedor'],
+    update: ['adminGerencia', 'cajeroVendedor'],
+    delete: ['adminGerencia'],
+  },
+  empleados: {
+    read: ['adminGerencia', 'produccion'],
+    create: ['adminGerencia'],
+    update: ['adminGerencia'],
+    delete: ['adminGerencia'],
+  },
+  proveedores: {
+    read: ['adminGerencia', 'inventario'],
+    create: ['adminGerencia', 'inventario'],
+    update: ['adminGerencia', 'inventario'],
+    delete: ['adminGerencia'],
+  },
+  sesiones: {
+    read: ['adminGerencia', 'logistica', 'cajeroVendedor'],
+    create: ['adminGerencia'],
+    update: ['adminGerencia'],
+    delete: ['adminGerencia'],
+  },
+};
+
 type TokenPayload = JwtPayload & {
   sub?: string | number;
   correo?: string;
   idRol?: number | null;
+  nombreRol?: string | null;
   nombre?: string;
   tokenType?: string;
 };
@@ -146,6 +196,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     req.auth = {
       userId,
       idRol: roleId !== null && Number.isInteger(roleId) && roleId > 0 ? roleId : null,
+      nombreRol: payload.nombreRol,
       correo: payload.correo,
       nombre: payload.nombre,
     };
@@ -180,6 +231,20 @@ export function requireRoleNames(allowedRoleNames: readonly string[]) {
 
   return async function roleGuard(req: Request, res: Response, next: NextFunction) {
     try {
+      const tokenRoleName = req.auth?.nombreRol;
+      if (typeof tokenRoleName === 'string' && tokenRoleName.trim().length > 0) {
+        const normalizedTokenRole = normalizeRoleName(tokenRoleName);
+
+        if (allowed.includes(normalizedTokenRole)) {
+          return next();
+        }
+
+        return res.status(403).json({
+          ok: false,
+          message: 'No tienes permisos para esta operación',
+        });
+      }
+
       if (!req.auth?.idRol) {
         return res.status(403).json({
           ok: false,
@@ -236,4 +301,14 @@ export async function requireSelfOrAdmin(req: Request, res: Response, next: Next
   }
 
   return requireAdminRole(req, res, next);
+}
+
+function roleNamesFromGroups(groups: readonly RoleGroupKey[]): string[] {
+  return groups.flatMap((group) => ROLE_GROUPS[group]);
+}
+
+export function requireModulePermission(moduleKey: BackendModuleKey, action: CrudAction) {
+  const allowedGroups = RBAC_MATRIX[moduleKey][action];
+  const allowedRoleNames = roleNamesFromGroups(allowedGroups);
+  return requireRoleNames(allowedRoleNames);
 }

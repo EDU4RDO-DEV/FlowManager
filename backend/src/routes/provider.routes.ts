@@ -7,18 +7,14 @@ import {
   listProvidersController,
   updateProviderController,
 } from '../controllers/provider.controller';
-import { requireRoleNames, ROLE_GROUPS } from '../middlewares/auth.middleware';
+import { requireModulePermission } from '../middlewares/auth.middleware';
 
 const providerRouter = Router();
-const requireProvidersAccess = requireRoleNames([
-  ...ROLE_GROUPS.adminGerencia,
-  ...ROLE_GROUPS.inventario,
-]);
 
-providerRouter.get('/', requireProvidersAccess, listProvidersController);
-providerRouter.get('/:id', requireProvidersAccess, getProviderByIdController);
-providerRouter.post('/', requireProvidersAccess, createProviderController);
-providerRouter.patch('/:id', requireProvidersAccess, updateProviderController);
-providerRouter.delete('/:id', requireProvidersAccess, deleteProviderController);
+providerRouter.get('/', requireModulePermission('proveedores', 'read'), listProvidersController);
+providerRouter.get('/:id', requireModulePermission('proveedores', 'read'), getProviderByIdController);
+providerRouter.post('/', requireModulePermission('proveedores', 'create'), createProviderController);
+providerRouter.patch('/:id', requireModulePermission('proveedores', 'update'), updateProviderController);
+providerRouter.delete('/:id', requireModulePermission('proveedores', 'delete'), deleteProviderController);
 
 export default providerRouter;

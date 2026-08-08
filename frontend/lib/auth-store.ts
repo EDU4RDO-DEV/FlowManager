@@ -1,7 +1,15 @@
 // Store de autenticación basado en localStorage, consumible con useSyncExternalStore.
 // Evita setState-en-efecto y previene mismatches de hidratación (snapshot de servidor estable).
 
-import { clearAuth, getStoredUser, getToken, setStoredUser, setToken } from './auth-storage';
+import {
+  clearAuth,
+  getRefreshToken,
+  getStoredUser,
+  getToken,
+  setRefreshToken,
+  setStoredUser,
+  setToken,
+} from './auth-storage';
 import type { AuthUser } from '@/types/auth';
 
 export interface AuthSnapshot {
@@ -17,8 +25,9 @@ let cachedSnapshot: AuthSnapshot | null = null;
 
 function computeSnapshot(): AuthSnapshot {
   const token = getToken();
+  const refreshToken = getRefreshToken();
   const user = getStoredUser<AuthUser>();
-  return { user: token && user ? user : null, hydrated: true };
+  return { user: token && refreshToken && user ? user : null, hydrated: true };
 }
 
 function emit(): void {
@@ -45,8 +54,9 @@ export function getServerSnapshot(): AuthSnapshot {
   return SERVER_SNAPSHOT;
 }
 
-export function persistLogin(token: string, user: AuthUser): void {
-  setToken(token);
+export function persistLogin(accessToken: string, refreshToken: string, user: AuthUser): void {
+  setToken(accessToken);
+  setRefreshToken(refreshToken);
   setStoredUser(user);
   emit();
 }

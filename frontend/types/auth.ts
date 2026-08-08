@@ -22,6 +22,9 @@ export interface LoginRequest {
 
 export interface LoginResult {
   token: string;
+  accessToken: string;
+  refreshToken: string;
+  accessTokenExpiresIn: string;
   user: AuthUser;
 }
 

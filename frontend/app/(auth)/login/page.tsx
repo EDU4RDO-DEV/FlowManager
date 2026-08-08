@@ -1,9 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { Droplet, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
@@ -11,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -48,16 +46,8 @@ export default function LoginPage() {
 
   return (
     <Card className="border-border/70 shadow-sm">
-      <CardHeader className="space-y-3">
-        <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary lg:hidden">
-          <Droplet className="size-6" />
-        </span>
-        <div className="space-y-1.5">
-          <CardTitle className="text-2xl tracking-tight">Iniciar sesión</CardTitle>
-          <CardDescription>
-            Accede al panel operativo de Industrias Basán.
-          </CardDescription>
-        </div>
+      <CardHeader>
+        <CardTitle className="text-2xl tracking-tight">Iniciar sesión</CardTitle>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-5" noValidate>
@@ -99,15 +89,6 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-muted-foreground">
-          ¿Configuración inicial?{" "}
-          <Link
-            href="/register"
-            className="font-medium text-primary underline-offset-4 hover:underline"
-          >
-            Crear primer usuario
-          </Link>
-        </p>
       </CardContent>
     </Card>
   );

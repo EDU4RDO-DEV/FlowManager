@@ -63,6 +63,7 @@ const ACCESS_TOKEN_EXPIRES_IN_MINUTES = Number(process.env.JWT_ACCESS_EXPIRES_IN
 const REFRESH_TOKEN_EXPIRES_IN_DAYS = Number(process.env.JWT_REFRESH_EXPIRES_IN_DAYS ?? '7');
 const JWT_ISSUER = process.env.JWT_ISSUER ?? 'flowmanager.api';
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE ?? 'flowmanager.web';
+const BCRYPT_SALT_ROUNDS = Number(process.env.BCRYPT_SALT_ROUNDS ?? '12');
 
 function getJwtSecrets() {
   const accessSecret = process.env.JWT_SECRET;
@@ -97,6 +98,18 @@ function sanitizeRefreshDays(): number {
   return Math.floor(REFRESH_TOKEN_EXPIRES_IN_DAYS);
 }
 
+function sanitizeSaltRounds(): number {
+  if (!Number.isFinite(BCRYPT_SALT_ROUNDS) || BCRYPT_SALT_ROUNDS < 10) {
+    return 12;
+  }
+
+  return Math.floor(BCRYPT_SALT_ROUNDS);
+}
+
+function normalizeEmail(correo: string): string {
+  return correo.trim().toLowerCase();
+}
+
 function sanitizeAccessMinutes(): number {
   if (!Number.isFinite(ACCESS_TOKEN_EXPIRES_IN_MINUTES) || ACCESS_TOKEN_EXPIRES_IN_MINUTES < 1) {
     return 480;
@@ -126,6 +139,7 @@ function signAccessToken(input: {
   userId: number;
   correo: string;
   idRol: number | null;
+  nombreRol: string | null;
   nombre: string;
   sessionId: number;
 }): string {
@@ -136,6 +150,7 @@ function signAccessToken(input: {
       sub: input.userId,
       correo: input.correo,
       idRol: input.idRol,
+      nombreRol: input.nombreRol,
       nombre: input.nombre,
       sid: input.sessionId,
       tokenType: 'access',
@@ -203,7 +218,8 @@ function verifyRefreshToken(refreshToken: string, refreshSecret: string): Refres
 }
 
 export async function login(input: LoginInput): Promise<LoginResult> {
-  const { correo, clave, ip, nombreDispositivo } = input;
+  const { clave, ip, nombreDispositivo } = input;
+  const correo = normalizeEmail(input.correo);
 
   const usuario = await prisma.usuario.findFirst({
     where: {
@@ -264,6 +280,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
     userId: usuario.Id,
     correo: usuario.Correo,
     idRol: usuario.IdRol,
+    nombreRol: usuario.Rol_Usuario_IdRolToRol?.Nombre ?? null,
     nombre: usuario.Nombre,
     sessionId: createdSession.Id,
   });
@@ -356,6 +373,7 @@ export async function refreshAuthTokens(input: RefreshInput): Promise<LoginResul
     userId: usuario.Id,
     correo: usuario.Correo,
     idRol: usuario.IdRol,
+    nombreRol: usuario.Rol_Usuario_IdRolToRol?.Nombre ?? null,
     nombre: usuario.Nombre,
     sessionId: session.Id,
   });
@@ -421,7 +439,8 @@ export async function revokeAllUserSessions(idUsuario: number, idUsuarioAnulador
 }
 
 export async function register(input: RegisterInput): Promise<RegisterResult> {
-  const { nombre, correo, clave, idRol, idEntidad } = input;
+  const { nombre, clave, idRol, idEntidad } = input;
+  const correo = normalizeEmail(input.correo);
 
   const existing = await prisma.usuario.findFirst({
     where: {
@@ -435,7 +454,7 @@ export async function register(input: RegisterInput): Promise<RegisterResult> {
     throw new Error('El correo ya está registrado');
   }
 
-  const hashedPassword = await bcrypt.hash(clave, 10);
+  const hashedPassword = await bcrypt.hash(clave, sanitizeSaltRounds());
 
   const created = await prisma.usuario.create({
     data: {

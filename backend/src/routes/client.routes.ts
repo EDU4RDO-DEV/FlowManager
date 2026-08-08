@@ -7,19 +7,14 @@ import {
   listClientsController,
   updateClientController,
 } from '../controllers/client.controller';
-import { requireRoleNames, ROLE_GROUPS } from '../middlewares/auth.middleware';
+import { requireModulePermission } from '../middlewares/auth.middleware';
 
 const clientRouter = Router();
-const requireClientsAccess = requireRoleNames([
-  ...ROLE_GROUPS.adminGerencia,
-  ...ROLE_GROUPS.cajeroVendedor,
-  ...ROLE_GROUPS.logistica,
-]);
 
-clientRouter.get('/', requireClientsAccess, listClientsController);
-clientRouter.get('/:id', requireClientsAccess, getClientByIdController);
-clientRouter.post('/', requireClientsAccess, createClientController);
-clientRouter.patch('/:id', requireClientsAccess, updateClientController);
-clientRouter.delete('/:id', requireClientsAccess, deleteClientController);
+clientRouter.get('/', requireModulePermission('clientes', 'read'), listClientsController);
+clientRouter.get('/:id', requireModulePermission('clientes', 'read'), getClientByIdController);
+clientRouter.post('/', requireModulePermission('clientes', 'create'), createClientController);
+clientRouter.patch('/:id', requireModulePermission('clientes', 'update'), updateClientController);
+clientRouter.delete('/:id', requireModulePermission('clientes', 'delete'), deleteClientController);
 
 export default clientRouter;
