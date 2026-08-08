@@ -1,4 +1,9 @@
 import { prisma } from '../config/prisma';
+import {
+  anulateInventoryMovementByReference,
+  registerInventoryMovement,
+  restoreInventoryMovementByReference,
+} from './inventory-movement.service';
 
 type ListProductsInput = {
   page?: number;
@@ -244,28 +249,44 @@ export async function createProduct(input: CreateProductInput) {
   await validateProveedorExists(input.idProveedor);
   await validateUniqueNameInCategory(input.nombre, input.categoria);
 
-  const created = await prisma.inventarioItem.create({
-    data: {
-      IdUsuario: input.idUsuario,
-      IdProveedor: input.idProveedor,
-      Nombre: input.nombre,
-      Categoria: input.categoria,
-      Existencia: 0,
-      CostoPromedio: input.costoPromedio,
-      PrecioVenta: input.precioVenta,
-      EsProductoFinal: input.esProductoFinal,
-      RutaImagen: input.rutaImagen,
-      Anulado: false,
-    },
-    include: {
-      Proveedor: {
-        select: {
-          Id: true,
-          Nombre: true,
-          Anulado: true,
+  const created = await prisma.$transaction(async (tx) => {
+    const product = await tx.inventarioItem.create({
+      data: {
+        IdUsuario: input.idUsuario,
+        IdProveedor: input.idProveedor,
+        Nombre: input.nombre,
+        Categoria: input.categoria,
+        Existencia: 0,
+        CostoPromedio: input.costoPromedio,
+        PrecioVenta: input.precioVenta,
+        EsProductoFinal: input.esProductoFinal,
+        RutaImagen: input.rutaImagen,
+        Anulado: false,
+      },
+      include: {
+        Proveedor: {
+          select: {
+            Id: true,
+            Nombre: true,
+            Anulado: true,
+          },
         },
       },
-    },
+    });
+
+    await registerInventoryMovement(tx, {
+      idInventarioItem: product.Id,
+      idUsuario: input.idUsuario,
+      tipoDocumento: 'PRD',
+      documento: product.Id.toString(),
+      nombre: `Alta de producto ${product.Nombre}`,
+      tipoMovimiento: true,
+      existenciaAnterior: 0,
+      cantidad: 0,
+      nuevaExistencia: 0,
+    });
+
+    return product;
   });
 
   return toProductDto(created);
@@ -365,13 +386,24 @@ export async function deleteProduct(id: number, idUsuarioAnulador?: number) {
 
   await validateProductCanBeAnulated(id);
 
-  await prisma.inventarioItem.update({
-    where: { Id: id },
-    data: {
-      Anulado: true,
-      IdUsuarioAnulador: idUsuarioAnulador,
-      FechaAnulacion: new Date(),
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.inventarioItem.update({
+      where: { Id: id },
+      data: {
+        Anulado: true,
+        IdUsuarioAnulador: idUsuarioAnulador,
+        FechaAnulacion: new Date(),
+      },
+    });
+
+    await anulateInventoryMovementByReference(
+      tx,
+      {
+        tipoDocumento: 'PRD',
+        documento: id.toString(),
+      },
+      idUsuarioAnulador,
+    );
   });
 }
 
@@ -389,26 +421,35 @@ export async function restoreProduct(id: number, idUsuarioModificador?: number) 
     await validateUsuarioExists(idUsuarioModificador);
   }
 
-  const restored = await prisma.inventarioItem.update({
-    where: { Id: id },
-    data: {
-      Anulado: false,
-      ...(idUsuarioModificador !== undefined
-        ? { IdUsuarioModificador: idUsuarioModificador }
-        : {}),
-      FechaModificacion: new Date(),
-      IdUsuarioAnulador: null,
-      FechaAnulacion: null,
-    },
-    include: {
-      Proveedor: {
-        select: {
-          Id: true,
-          Nombre: true,
-          Anulado: true,
+  const restored = await prisma.$transaction(async (tx) => {
+    const product = await tx.inventarioItem.update({
+      where: { Id: id },
+      data: {
+        Anulado: false,
+        ...(idUsuarioModificador !== undefined
+          ? { IdUsuarioModificador: idUsuarioModificador }
+          : {}),
+        FechaModificacion: new Date(),
+        IdUsuarioAnulador: null,
+        FechaAnulacion: null,
+      },
+      include: {
+        Proveedor: {
+          select: {
+            Id: true,
+            Nombre: true,
+            Anulado: true,
+          },
         },
       },
-    },
+    });
+
+    await restoreInventoryMovementByReference(tx, {
+      tipoDocumento: 'PRD',
+      documento: id.toString(),
+    });
+
+    return product;
   });
 
   return toProductDto(restored);

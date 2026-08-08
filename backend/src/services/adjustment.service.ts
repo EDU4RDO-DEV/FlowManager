@@ -1,4 +1,9 @@
 import { prisma } from '../config/prisma';
+import {
+  anulateInventoryMovementByReference,
+  registerInventoryMovement,
+  restoreInventoryMovementByReference,
+} from './inventory-movement.service';
 
 type ListAdjustmentsInput = {
   page?: number;
@@ -245,19 +250,16 @@ export async function createAdjustment(input: CreateAdjustmentInput) {
     });
 
     // 3. Registrar en bitácora
-    await tx.bitacoraInventario.create({
-      data: {
-        IdInventarioItem: input.idInventarioItem,
-        IdUsuario: input.idUsuario,
-        TipoDocumento: 'AJ',
-        Documento: numeroAjuste.toString(),
-        Nombre: `Ajuste ${input.tipoAjuste.toLowerCase()} #${numeroAjuste}`,
-        TipoMovimiento: input.tipoAjuste === 'ENTRADA', // true = entrada, false = salida
-        ExistenciaAnterior: existenciaActual,
-        Cantidad: input.cantidadAjustada,
-        NuevaExistencia: nuevaExistencia,
-        Anulado: false,
-      },
+    await registerInventoryMovement(tx, {
+      idInventarioItem: input.idInventarioItem,
+      idUsuario: input.idUsuario,
+      tipoDocumento: 'AJ',
+      documento: ajuste.Id.toString(),
+      nombre: `Ajuste ${input.tipoAjuste.toLowerCase()} #${numeroAjuste}`,
+      tipoMovimiento: input.tipoAjuste === 'ENTRADA',
+      existenciaAnterior: existenciaActual,
+      cantidad: input.cantidadAjustada,
+      nuevaExistencia: nuevaExistencia,
     });
 
     return ajuste;
@@ -329,18 +331,14 @@ export async function deleteAdjustment(id: number, idUsuarioAnulador?: number) {
     });
 
     // 3. Anular el movimiento en bitácora correspondiente
-    await tx.bitacoraInventario.updateMany({
-      where: {
-        TipoDocumento: 'AJ',
-        Documento: existing.Id.toString(),
-        Anulado: false,
+    await anulateInventoryMovementByReference(
+      tx,
+      {
+        tipoDocumento: 'AJ',
+        documento: existing.Id.toString(),
       },
-      data: {
-        Anulado: true,
-        IdUsuarioAnulador: idUsuarioAnulador,
-        FechaAnulacion: new Date(),
-      },
-    });
+      idUsuarioAnulador,
+    );
   });
 }
 
@@ -420,17 +418,9 @@ export async function restoreAdjustment(id: number, idUsuarioModificador?: numbe
     });
 
     // 3. Restaurar el movimiento en bitácora
-    await tx.bitacoraInventario.updateMany({
-      where: {
-        TipoDocumento: 'AJ',
-        Documento: existing.Id.toString(),
-        Anulado: true,
-      },
-      data: {
-        Anulado: false,
-        IdUsuarioAnulador: null,
-        FechaAnulacion: null,
-      },
+    await restoreInventoryMovementByReference(tx, {
+      tipoDocumento: 'AJ',
+      documento: existing.Id.toString(),
     });
 
     return restored;
