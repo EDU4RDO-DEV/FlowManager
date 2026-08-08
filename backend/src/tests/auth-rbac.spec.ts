@@ -76,6 +76,26 @@ describe('Auth/RBAC critical flows', () => {
     expect(response.body.ok).toBe(false);
   });
 
+  it('returns 403 when role has no permission to create products', async () => {
+    const app = createApp();
+    const token = buildAccessToken('CAJERO / VENDEDOR (PUNTO DE VENTA)');
+
+    const response = await request(app)
+      .post('/api/products')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        idUsuario: 1,
+        idProveedor: 1,
+        nombre: 'Garrafon 18L',
+        categoria: 'PRODUCTO_TERMINADO',
+        costoPromedio: 1,
+        precioVenta: 2,
+      });
+
+    expect(response.status).toBe(403);
+    expect(response.body.ok).toBe(false);
+  });
+
   it('returns 401 on refresh with invalid token', async () => {
     const app = createApp();
 
