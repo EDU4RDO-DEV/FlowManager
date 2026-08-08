@@ -250,8 +250,10 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                 {
                   id: "inventario-kardex",
                   name: "Bitácora / Kardex",
+                  path: "/inventory/kardex",
                   icon: FileText,
-                  available: false,
+                  available: has.inventario,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/inventory/kardex"),
                 },
               ],
             },

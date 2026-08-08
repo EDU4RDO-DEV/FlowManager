@@ -8,6 +8,7 @@ import adjustmentRouter from './routes/adjustment.routes';
 import authRouter from './routes/auth.routes';
 import clientRouter from './routes/client.routes';
 import employeeRouter from './routes/employee.routes';
+import inventoryLogRouter from './routes/inventory-log.routes';
 import productRouter from './routes/product.routes';
 import productStructureRouter from './routes/product-structure.routes';
 import providerRouter from './routes/provider.routes';
@@ -28,6 +29,7 @@ export function createApp() {
   app.use('/api/adjustments', requireAuth, adjustmentRouter);
   app.use('/api/clients', requireAuth, clientRouter);
   app.use('/api/employees', requireAuth, employeeRouter);
+  app.use('/api/inventory-log', requireAuth, inventoryLogRouter);
   app.use('/api/products', requireAuth, productRouter);
   app.use('/api/product-structure', requireAuth, productStructureRouter);
   app.use('/api/providers', requireAuth, providerRouter);
