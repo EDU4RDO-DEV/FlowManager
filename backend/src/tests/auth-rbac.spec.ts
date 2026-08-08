@@ -1,0 +1,82 @@
+import request from 'supertest';
+import jwt from 'jsonwebtoken';
+import { beforeAll, describe, expect, it } from 'vitest';
+
+import { createApp } from '../app';
+
+const accessSecret = 'test-access-secret';
+const refreshSecret = 'test-refresh-secret';
+
+function buildAccessToken(roleName: string) {
+  return jwt.sign(
+    {
+      sub: 101,
+      correo: 'tester@basan.com',
+      idRol: 5,
+      nombreRol: roleName,
+      nombre: 'Tester',
+      tokenType: 'access',
+    },
+    accessSecret,
+    {
+      algorithm: 'HS256',
+      expiresIn: 60,
+      issuer: 'flowmanager.api',
+      audience: 'flowmanager.web',
+    },
+  );
+}
+
+describe('Auth/RBAC critical flows', () => {
+  beforeAll(() => {
+    process.env.JWT_SECRET = accessSecret;
+    process.env.JWT_REFRESH_SECRET = refreshSecret;
+    process.env.JWT_ISSUER = 'flowmanager.api';
+    process.env.JWT_AUDIENCE = 'flowmanager.web';
+  });
+
+  it('returns 401 when protected route is called without token', async () => {
+    const app = createApp();
+
+    const response = await request(app).get('/api/users');
+
+    expect(response.status).toBe(401);
+    expect(response.body.ok).toBe(false);
+  });
+
+  it('returns 403 when role has no permission for module/action', async () => {
+    const app = createApp();
+    const token = buildAccessToken('ENCARGADO DE INVENTARIO');
+
+    const response = await request(app)
+      .get('/api/users')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(403);
+    expect(response.body.ok).toBe(false);
+  });
+
+  it('returns 401 on refresh with invalid token', async () => {
+    const app = createApp();
+
+    const response = await request(app)
+      .post('/api/auth/refresh')
+      .send({ refreshToken: 'invalid-token' });
+
+    expect(response.status).toBe(401);
+    expect(response.body.ok).toBe(false);
+  });
+
+  it('returns 404 on logout revoke with invalid refresh token', async () => {
+    const app = createApp();
+    const token = buildAccessToken('ADMINISTRADOR / GERENTE');
+
+    const response = await request(app)
+      .post('/api/auth/logout')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ refreshToken: 'invalid-token' });
+
+    expect(response.status).toBe(404);
+    expect(response.body.ok).toBe(false);
+  });
+});

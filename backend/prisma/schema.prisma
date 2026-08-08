@@ -350,6 +350,8 @@ model Rol {
   FechaAnulacion                 DateTime? @db.DateTime
   Usuario_Rol_IdUsuarioToUsuario Usuario   @relation("Rol_IdUsuarioToUsuario", fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Rol_Usuario")
   Usuario_Usuario_IdRolToRol     Usuario[] @relation("Usuario_IdRolToRol")
+
+  @@index([Anulado, Nombre], map: "IX_Rol_Anulado_Nombre")
 }
 
 model Ruta {
@@ -400,6 +402,8 @@ model Sesion {
   IdUsuarioAnulador    Int?
   FechaAnulacion       DateTime? @db.DateTime
   Usuario              Usuario   @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Sesion_Usuario")
+
+  @@index([IdUsuario, Anulado, FechaExpiracionToken], map: "IX_Sesion_Usuario_Activo_Expira")
 }
 
 model Talonario {
@@ -454,6 +458,10 @@ model Usuario {
   other_Usuario                                    Usuario[]               @relation("UsuarioToUsuario")
   Vehiculo                                         Vehiculo[]
   Venta                                            Venta[]
+
+  @@index([Correo, Anulado], map: "IX_Usuario_Correo_Activo")
+  @@index([IdRol, Anulado], map: "IX_Usuario_Rol_Activo")
+  @@index([IdEntidad, Anulado], map: "IX_Usuario_Entidad_Activo")
 }
 
 model Vehiculo {

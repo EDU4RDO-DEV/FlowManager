@@ -199,22 +199,26 @@ type RefreshPayload = {
 };
 
 function verifyRefreshToken(refreshToken: string, refreshSecret: string): RefreshPayload {
-  const decoded = jwt.verify(refreshToken, refreshSecret, {
-    algorithms: ['HS256'],
-    issuer: JWT_ISSUER,
-    audience: JWT_AUDIENCE,
-  });
+  try {
+    const decoded = jwt.verify(refreshToken, refreshSecret, {
+      algorithms: ['HS256'],
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    });
 
-  if (typeof decoded !== 'object' || decoded === null) {
+    if (typeof decoded !== 'object' || decoded === null) {
+      throw new Error('Refresh token inválido o expirado');
+    }
+
+    const payload = decoded as RefreshPayload;
+    if (payload.tokenType !== 'refresh') {
+      throw new Error('Refresh token inválido o expirado');
+    }
+
+    return payload;
+  } catch {
     throw new Error('Refresh token inválido o expirado');
   }
-
-  const payload = decoded as RefreshPayload;
-  if (payload.tokenType !== 'refresh') {
-    throw new Error('Refresh token inválido o expirado');
-  }
-
-  return payload;
 }
 
 export async function login(input: LoginInput): Promise<LoginResult> {
