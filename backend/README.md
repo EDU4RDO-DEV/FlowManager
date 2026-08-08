@@ -14,11 +14,11 @@ Backend Node.js + TypeScript para modulos criticos de autenticacion, control de 
 ## Scripts
 
 ```bash
-npm run dev
-npm run build
-npm run start
-npm test
-npm run test:watch
+pnpm run dev
+pnpm run build
+pnpm run start
+pnpm test
+pnpm run test:watch
 ```
 
 ## Variables de entorno minimas
@@ -93,5 +93,5 @@ Cobertura critica actual:
 Ejecucion:
 
 ```bash
-npm test
+pnpm test
 ```
