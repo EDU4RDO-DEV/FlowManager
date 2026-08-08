@@ -4,7 +4,9 @@ import {
   createEmployee,
   deleteEmployee,
   getEmployeeById,
+  listAnulatedEmployees,
   listEmployees,
+  restoreEmployee,
   updateEmployee,
 } from '../services/employee.service';
 
@@ -31,6 +33,16 @@ function isValidNumber(value: unknown): boolean {
 export async function listEmployeesController(_req: Request, res: Response) {
   try {
     const data = await listEmployees();
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function listAnulatedEmployeesController(_req: Request, res: Response) {
+  try {
+    const data = await listAnulatedEmployees();
     return res.status(200).json({ ok: true, data });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno';
@@ -397,6 +409,45 @@ export async function deleteEmployeeController(req: Request, res: Response) {
     const message = error instanceof Error ? error.message : 'Error interno';
 
     if (message === 'Empleado no existe' || message === 'Usuario no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function restoreEmployeeController(req: Request, res: Response) {
+  try {
+    const id = parseId(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, message: 'id debe ser un entero positivo' });
+    }
+
+    const { idUsuarioModificador } = req.body as { idUsuarioModificador?: number };
+
+    if (
+      idUsuarioModificador !== undefined &&
+      !isValidPositiveInteger(idUsuarioModificador)
+    ) {
+      return res.status(400).json({
+        ok: false,
+        message: 'idUsuarioModificador debe ser entero positivo cuando se envía',
+      });
+    }
+
+    const data = await restoreEmployee(
+      id,
+      req.auth?.userId ??
+        (idUsuarioModificador !== undefined
+          ? Number(idUsuarioModificador)
+          : undefined),
+    );
+
+    return res.status(200).json({ ok: true, data, message: 'Empleado restaurado correctamente' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message === 'Empleado anulado no existe' || message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
     }
 

@@ -165,6 +165,37 @@ export async function listEmployees() {
   return employees.map(toEmployeeDto);
 }
 
+export async function listAnulatedEmployees() {
+  const employees = await prisma.empleado.findMany({
+    where: {
+      Anulado: true,
+      Entidad: {
+        Anulado: false,
+      },
+    },
+    orderBy: { FechaAnulacion: 'desc' },
+    include: {
+      Entidad: {
+        select: {
+          Id: true,
+          NombreCompleto: true,
+          Sexo: true,
+          FechaNacimiento: true,
+          Telefono1: true,
+          Telefono2: true,
+          CorreoElectronico: true,
+          RutaImagen: true,
+          Nit: true,
+          Dpi: true,
+          Anulado: true,
+        },
+      },
+    },
+  });
+
+  return employees.map(toEmployeeDto);
+}
+
 export async function getEmployeeById(id: number) {
   const employee = await prisma.empleado.findFirst({
     where: {
@@ -398,4 +429,51 @@ export async function deleteEmployee(id: number, idUsuarioAnulador?: number) {
       FechaAnulacion: new Date(),
     },
   });
+}
+
+export async function restoreEmployee(id: number, idUsuarioModificador?: number) {
+  const existing = await prisma.empleado.findFirst({
+    where: { Id: id, Anulado: true },
+    select: { Id: true },
+  });
+
+  if (!existing) {
+    throw new Error('Empleado anulado no existe');
+  }
+
+  if (idUsuarioModificador !== undefined) {
+    await validateUsuarioExists(idUsuarioModificador);
+  }
+
+  const restored = await prisma.empleado.update({
+    where: { Id: id },
+    data: {
+      Anulado: false,
+      ...(idUsuarioModificador !== undefined
+        ? { IdUsuarioModificador: idUsuarioModificador }
+        : {}),
+      FechaModificacion: new Date(),
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
+    },
+    include: {
+      Entidad: {
+        select: {
+          Id: true,
+          NombreCompleto: true,
+          Sexo: true,
+          FechaNacimiento: true,
+          Telefono1: true,
+          Telefono2: true,
+          CorreoElectronico: true,
+          RutaImagen: true,
+          Nit: true,
+          Dpi: true,
+          Anulado: true,
+        },
+      },
+    },
+  });
+
+  return toEmployeeDto(restored);
 }

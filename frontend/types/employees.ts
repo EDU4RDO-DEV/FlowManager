@@ -81,3 +81,7 @@ export interface UpdateEmployeePayload {
 export interface DeleteEmployeePayload {
   idUsuarioAnulador?: number;
 }
+
+export interface RestoreEmployeePayload {
+  idUsuarioModificador?: number;
+}

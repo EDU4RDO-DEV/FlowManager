@@ -5,11 +5,17 @@ import type {
   DeleteEmployeePayload,
   EmployeeDto,
   EmployeesListResponse,
+  RestoreEmployeePayload,
   UpdateEmployeePayload,
 } from "@/types/employees";
 
 export async function listEmployees(): Promise<EmployeeDto[]> {
   const { data } = await api.get<EmployeesListResponse>("/api/employees");
+  return data.data ?? [];
+}
+
+export async function listAnulatedEmployees(): Promise<EmployeeDto[]> {
+  const { data } = await api.get<EmployeesListResponse>("/api/employees/anulados");
   return data.data ?? [];
 }
 
@@ -39,4 +45,15 @@ export async function updateEmployee(id: number, payload: UpdateEmployeePayload)
 
 export async function deleteEmployee(id: number, payload?: DeleteEmployeePayload): Promise<void> {
   await api.delete(`/api/employees/${id}`, { data: payload });
+}
+
+export async function restoreEmployee(
+  id: number,
+  payload?: RestoreEmployeePayload,
+): Promise<EmployeeDto> {
+  const { data } = await api.patch<ApiResponse<EmployeeDto>>(`/api/employees/${id}/restaurar`, payload);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al restaurar empleado");
+  }
+  return data.data;
 }
