@@ -116,6 +116,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
         clientes: allowedModules.includes("clientes"),
         inventario: allowedModules.includes("inventario"),
         proveedores: allowedModules.includes("proveedores"),
+        compras: allowedModules.includes("compras"),
         empleados: allowedModules.includes("empleados"),
         usuarios: allowedModules.includes("usuarios"),
         roles: allowedModules.includes("roles"),
@@ -266,14 +267,18 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                 {
                   id: "compras-registro",
                   name: "Registro de Compras",
+                  path: "/purchases",
                   icon: ReceiptText,
-                  available: false,
+                  available: has.compras,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/purchases"),
                 },
                 {
                   id: "compras-gastos",
                   name: "Gastos de Compra",
+                  path: "/purchases",
                   icon: Wrench,
-                  available: false,
+                  available: has.compras,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/purchases"),
                 },
                 {
                   id: "compras-proveedores",

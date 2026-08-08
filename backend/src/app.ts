@@ -11,6 +11,7 @@ import employeeRouter from './routes/employee.routes';
 import inventoryLogRouter from './routes/inventory-log.routes';
 import productRouter from './routes/product.routes';
 import productStructureRouter from './routes/product-structure.routes';
+import purchaseRouter from './routes/purchase.routes';
 import providerRouter from './routes/provider.routes';
 import roleRouter from './routes/role.routes';
 import sessionRouter from './routes/session.routes';
@@ -32,6 +33,7 @@ export function createApp() {
   app.use('/api/inventory-log', requireAuth, inventoryLogRouter);
   app.use('/api/products', requireAuth, productRouter);
   app.use('/api/product-structure', requireAuth, productStructureRouter);
+  app.use('/api/compras', requireAuth, purchaseRouter);
   app.use('/api/providers', requireAuth, providerRouter);
   app.use('/api/roles', requireAuth, roleRouter);
   app.use('/api/sessions', requireAuth, sessionRouter);

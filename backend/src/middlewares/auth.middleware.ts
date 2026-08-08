@@ -92,6 +92,7 @@ type BackendModuleKey =
   | 'clientes'
   | 'empleados'
   | 'proveedores'
+  | 'compras'
   | 'inventario'
   | 'sesiones';
 
@@ -125,6 +126,12 @@ const RBAC_MATRIX: Record<BackendModuleKey, Record<CrudAction, readonly RoleGrou
     create: ['adminGerencia', 'inventario'],
     update: ['adminGerencia', 'inventario'],
     delete: ['adminGerencia'],
+  },
+  compras: {
+    read: ['adminGerencia', 'inventario'],
+    create: ['adminGerencia', 'inventario'],
+    update: ['adminGerencia', 'inventario'],
+    delete: ['adminGerencia', 'inventario'],
   },
   inventario: {
     read: ['adminGerencia', 'inventario', 'cajeroVendedor', 'logistica', 'produccion'],

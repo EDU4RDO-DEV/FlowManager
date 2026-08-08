@@ -1,0 +1,352 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+
+import { PurchaseFormDialog } from "@/app/purchases/_components/purchase-form-dialog";
+import { PurchasesEmptyState } from "@/app/purchases/_components/purchases-empty-state";
+import { PurchasesTableSkeleton } from "@/app/purchases/_components/purchases-skeletons";
+import { useAuth } from "@/components/auth-provider";
+import { DashboardShell } from "@/components/dashboard-shell";
+import { RequireAuth } from "@/components/require-auth";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { getApiErrorMessage } from "@/lib/api";
+import { listProviders } from "@/services/providers.service";
+import { anulatePurchase, listPurchases } from "@/services/purchases.service";
+import type { ProviderDto } from "@/types/providers";
+import type { PurchaseDto } from "@/types/purchases";
+
+function formatDate(value: string | null): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleDateString("es-GT", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+function formatMoney(value: number): string {
+  return value.toLocaleString("es-GT", {
+    style: "currency",
+    currency: "GTQ",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+export default function PurchasesPage() {
+  const { user } = useAuth();
+  const [activePurchases, setActivePurchases] = useState<PurchaseDto[]>([]);
+  const [anulatedPurchases, setAnulatedPurchases] = useState<PurchaseDto[]>([]);
+  const [providers, setProviders] = useState<ProviderDto[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [query, setQuery] = useState("");
+  const [idProveedor, setIdProveedor] = useState<number | "">("");
+  const [soloGastos, setSoloGastos] = useState(false);
+  const [deleteCandidate, setDeleteCandidate] = useState<PurchaseDto | null>(null);
+  const [formDialogOpen, setFormDialogOpen] = useState(false);
+
+  useEffect(() => {
+    void loadData();
+  }, []);
+
+  async function loadData() {
+    setIsLoading(true);
+    try {
+      const baseFilters = {
+        limit: 100,
+        ...(query.trim() ? { busqueda: query.trim() } : {}),
+        ...(idProveedor !== "" ? { idProveedor } : {}),
+        ...(soloGastos ? { esGasto: true } : {}),
+      };
+
+      const [providersList, activeResult, anulatedResult] = await Promise.all([
+        listProviders(),
+        listPurchases({ ...baseFilters, anulado: false }),
+        listPurchases({ ...baseFilters, anulado: true }),
+      ]);
+
+      setProviders(providersList);
+      setActivePurchases(activeResult.items);
+      setAnulatedPurchases(anulatedResult.items);
+      setHasLoadedOnce(true);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo cargar las compras"));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const hasFilters =
+    query.trim().length > 0 || idProveedor !== "" || soloGastos;
+
+  const sortedActivePurchases = useMemo(
+    () => [...activePurchases].sort((a, b) => b.id - a.id),
+    [activePurchases],
+  );
+
+  const sortedAnulatedPurchases = useMemo(
+    () => [...anulatedPurchases].sort((a, b) => b.id - a.id),
+    [anulatedPurchases],
+  );
+
+  async function confirmDeletePurchase(purchase: PurchaseDto) {
+    try {
+      await anulatePurchase(
+        purchase.id,
+        user?.id ? { idUsuarioAnulador: user.id } : undefined,
+      );
+
+      setActivePurchases((prev) => prev.filter((item) => item.id !== purchase.id));
+      setAnulatedPurchases((prev) => [
+        {
+          ...purchase,
+          anulado: true,
+          idUsuarioAnulador: user?.id ?? purchase.idUsuarioAnulador,
+          fechaAnulacion: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+      setDeleteCandidate(null);
+      toast.success("Compra anulada correctamente");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo anular la compra"));
+    }
+  }
+
+  function handlePurchaseCreated(newPurchase: PurchaseDto) {
+    setActivePurchases((prev) => [newPurchase, ...prev]);
+    setFormDialogOpen(false);
+    toast.success("Compra registrada correctamente");
+  }
+
+  return (
+    <RequireAuth>
+      <DashboardShell
+        title="Administración de Compras"
+        description="Controla compras de inventario, gastos asociados y su estado de anulación"
+      >
+        <Tabs defaultValue="activos">
+          <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <TabsList>
+              <TabsTrigger value="activos">Activos ({sortedActivePurchases.length})</TabsTrigger>
+              <TabsTrigger value="anulados">Anulados ({sortedAnulatedPurchases.length})</TabsTrigger>
+            </TabsList>
+
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="purchases-search" className="text-xs text-muted-foreground">
+                  Búsqueda
+                </Label>
+                <Input
+                  id="purchases-search"
+                  placeholder="Factura o proveedor"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="w-56"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="purchases-provider" className="text-xs text-muted-foreground">
+                  Proveedor
+                </Label>
+                <select
+                  id="purchases-provider"
+                  className="h-9 w-56 rounded-md border border-input bg-background px-3 text-sm"
+                  value={idProveedor === "" ? "" : String(idProveedor)}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setIdProveedor(value ? Number(value) : "");
+                  }}
+                >
+                  <option value="">Todos</option>
+                  {providers.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <label className="flex h-9 items-center gap-2 rounded-md border border-input px-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={soloGastos}
+                  onChange={(event) => setSoloGastos(event.target.checked)}
+                />
+                Sólo Gastos
+              </label>
+
+              <Button variant="outline" onClick={() => void loadData()} disabled={isLoading}>
+                {isLoading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                Recargar
+              </Button>
+
+              <Button onClick={() => setFormDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Nueva Compra
+              </Button>
+            </div>
+          </div>
+
+          <TabsContent value="activos" className="mt-0">
+            {isLoading && !hasLoadedOnce ? (
+              <PurchasesTableSkeleton />
+            ) : sortedActivePurchases.length === 0 ? (
+              <PurchasesEmptyState
+                isEmpty={activePurchases.length === 0}
+                hasFilters={hasFilters}
+              />
+            ) : (
+              <Card>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead># Compra</TableHead>
+                          <TableHead>Factura</TableHead>
+                          <TableHead>Proveedor</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Fecha Factura</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                          <TableHead className="text-right">Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sortedActivePurchases.map((purchase) => (
+                          <TableRow key={purchase.id}>
+                            <TableCell className="font-mono">#{purchase.numeroCompra}</TableCell>
+                            <TableCell>{purchase.numeroFactura}</TableCell>
+                            <TableCell>{purchase.proveedor.nombre}</TableCell>
+                            <TableCell>
+                              <Badge variant={purchase.esGasto ? "secondary" : "default"}>
+                                {purchase.esGasto ? "Gasto" : "Compra"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{formatDate(purchase.fechaFactura)}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              {formatMoney(purchase.totalGeneral)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {deleteCandidate?.id === purchase.id ? (
+                                <div className="flex items-center justify-end gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => void confirmDeletePurchase(purchase)}
+                                  >
+                                    Confirmar
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setDeleteCandidate(null)}
+                                  >
+                                    Cancelar
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => setDeleteCandidate(purchase)}
+                                  title="Anular compra"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="anulados" className="mt-0">
+            {isLoading && !hasLoadedOnce ? (
+              <PurchasesTableSkeleton />
+            ) : sortedAnulatedPurchases.length === 0 ? (
+              <PurchasesEmptyState
+                isEmpty={anulatedPurchases.length === 0}
+                hasFilters={hasFilters}
+                isTrash
+              />
+            ) : (
+              <Card>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead># Compra</TableHead>
+                          <TableHead>Factura</TableHead>
+                          <TableHead>Proveedor</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Fecha Factura</TableHead>
+                          <TableHead>Anulación</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sortedAnulatedPurchases.map((purchase) => (
+                          <TableRow key={purchase.id} className="opacity-65">
+                            <TableCell className="font-mono">#{purchase.numeroCompra}</TableCell>
+                            <TableCell>{purchase.numeroFactura}</TableCell>
+                            <TableCell>{purchase.proveedor.nombre}</TableCell>
+                            <TableCell>
+                              <Badge variant={purchase.esGasto ? "secondary" : "default"}>
+                                {purchase.esGasto ? "Gasto" : "Compra"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{formatDate(purchase.fechaFactura)}</TableCell>
+                            <TableCell>{formatDate(purchase.fechaAnulacion)}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              {formatMoney(purchase.totalGeneral)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        </Tabs>
+
+        <PurchaseFormDialog
+          open={formDialogOpen}
+          onOpenChange={setFormDialogOpen}
+          onSuccess={handlePurchaseCreated}
+        />
+      </DashboardShell>
+    </RequireAuth>
+  );
+}
