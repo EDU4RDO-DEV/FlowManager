@@ -43,9 +43,9 @@ function normalizeRoleName(value: string): string {
 
 const roleMap: Record<RoleGroup, string[]> = {
   adminGerencia: ['ADMINISTRADOR / GERENTE', 'ADMINISTRADOR', 'GERENTE'],
-  produccion: ['PERSONAL DE PRODUCCION'],
-  logistica: ['PERSONAL DE LOGISTICA / REPARTIDOR'],
-  cajeroVendedor: ['CAJERO / VENDEDOR (PUNTO DE VENTA)'],
+  produccion: ['PERSONAL DE PRODUCCION', 'ENCARGADO DE PRODUCCION'],
+  logistica: ['PERSONAL DE LOGISTICA / REPARTIDOR', 'REPARTIDOR / LOGISTICA'],
+  cajeroVendedor: ['CAJERO / VENDEDOR (PUNTO DE VENTA)', 'CAJERO / VENTAS'],
   inventario: ['ENCARGADO DE INVENTARIO'],
   sinRol: [],
 };
