@@ -4,7 +4,9 @@ import {
   createProvider,
   deleteProvider,
   getProviderById,
+  listAnulatedProviders,
   listProviders,
+  restoreProvider,
   updateProvider,
 } from '../services/provider.service';
 
@@ -274,6 +276,55 @@ export async function deleteProviderController(req: Request, res: Response) {
     const message = error instanceof Error ? error.message : 'Error interno';
 
     if (message === 'Proveedor no existe' || message === 'Usuario no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function listAnulatedProvidersController(_req: Request, res: Response) {
+  try {
+    const data = await listAnulatedProviders();
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function restoreProviderController(req: Request, res: Response) {
+  try {
+    const id = parseId(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, message: 'id debe ser un entero positivo' });
+    }
+
+    const { idUsuarioModificador } = req.body as { idUsuarioModificador?: number };
+
+    if (
+      idUsuarioModificador !== undefined &&
+      !isValidPositiveInteger(idUsuarioModificador)
+    ) {
+      return res.status(400).json({
+        ok: false,
+        message: 'idUsuarioModificador debe ser entero positivo cuando se envía',
+      });
+    }
+
+    const data = await restoreProvider(
+      id,
+      req.auth?.userId ??
+        (idUsuarioModificador !== undefined
+          ? Number(idUsuarioModificador)
+          : undefined),
+    );
+
+    return res.status(200).json({ ok: true, data, message: 'Proveedor restaurado correctamente' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message === 'Proveedor anulado no existe' || message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
     }
 

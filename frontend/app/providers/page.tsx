@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { BadgeCheck, Loader2, Pencil, Plus, RefreshCw, Trash2, Truck } from "lucide-react";
+import { BadgeCheck, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2, Truck } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -28,7 +29,12 @@ import {
   ProvidersTableSkeleton,
 } from "@/app/providers/_components/providers-skeletons";
 import { getApiErrorMessage } from "@/lib/api";
-import { deleteProvider, listProviders } from "@/services/providers.service";
+import {
+  deleteProvider,
+  listAnulatedProviders,
+  listProviders,
+  restoreProvider,
+} from "@/services/providers.service";
 import type { ProviderDto } from "@/types/providers";
 
 function formatDate(value: string | null): string {
@@ -40,7 +46,8 @@ function formatDate(value: string | null): string {
 
 export default function ProvidersPage() {
   const { user } = useAuth();
-  const [providers, setProviders] = useState<ProviderDto[]>([]);
+  const [activeProviders, setActiveProviders] = useState<ProviderDto[]>([]);
+  const [anulatedProviders, setAnulatedProviders] = useState<ProviderDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
@@ -49,8 +56,9 @@ export default function ProvidersPage() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const data = await listProviders();
-      setProviders(data);
+      const [activos, anulados] = await Promise.all([listProviders(), listAnulatedProviders()]);
+      setActiveProviders(activos);
+      setAnulatedProviders(anulados);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cargar el modulo de proveedores."));
     } finally {
@@ -66,7 +74,7 @@ export default function ProvidersPage() {
   const filteredProviders = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return providers.filter((provider) => {
+    return activeProviders.filter((provider) => {
       if (normalizedQuery.length === 0) return true;
       return (
         provider.nombre.toLowerCase().includes(normalizedQuery) ||
@@ -74,14 +82,27 @@ export default function ProvidersPage() {
         (provider.entidad.correoElectronico ?? "").toLowerCase().includes(normalizedQuery)
       );
     });
-  }, [providers, query]);
+  }, [activeProviders, query]);
+
+  const filteredAnulatedProviders = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return anulatedProviders.filter((provider) => {
+      if (normalizedQuery.length === 0) return true;
+      return (
+        provider.nombre.toLowerCase().includes(normalizedQuery) ||
+        provider.entidad.nombreCompleto.toLowerCase().includes(normalizedQuery) ||
+        (provider.entidad.correoElectronico ?? "").toLowerCase().includes(normalizedQuery)
+      );
+    });
+  }, [anulatedProviders, query]);
 
   const metrics = useMemo(() => {
-    const total = providers.length;
-    const activos = providers.filter((item) => !item.anulado).length;
-    const conCorreo = providers.filter((item) => (item.entidad.correoElectronico ?? "").trim().length > 0).length;
+    const total = activeProviders.length + anulatedProviders.length;
+    const activos = activeProviders.length;
+    const conCorreo = activeProviders.filter((item) => (item.entidad.correoElectronico ?? "").trim().length > 0).length;
     return { total, activos, conCorreo };
-  }, [providers]);
+  }, [activeProviders, anulatedProviders]);
 
   async function confirmDeleteProvider() {
     if (!deleteCandidate) return;
@@ -91,11 +112,34 @@ export default function ProvidersPage() {
         deleteCandidate.id,
         user?.id ? { idUsuarioAnulador: user.id } : undefined,
       );
-      toast.success("Proveedor eliminado correctamente.");
+
+      const movedToTrash: ProviderDto = {
+        ...deleteCandidate,
+        anulado: true,
+        idUsuarioAnulador: user?.id ?? deleteCandidate.idUsuarioAnulador,
+        fechaAnulacion: new Date().toISOString(),
+      };
+
+      setActiveProviders((prev) => prev.filter((item) => item.id !== deleteCandidate.id));
+      setAnulatedProviders((prev) => [movedToTrash, ...prev]);
+      toast.success("Proveedor anulado correctamente.");
       setDeleteCandidate(null);
-      await loadData();
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo eliminar el proveedor."));
+    }
+  }
+
+  async function restoreProviderFromTrash(candidate: ProviderDto) {
+    try {
+      const restored = await restoreProvider(
+        candidate.id,
+        user?.id ? { idUsuarioModificador: user.id } : undefined,
+      );
+      setAnulatedProviders((prev) => prev.filter((item) => item.id !== candidate.id));
+      setActiveProviders((prev) => [restored, ...prev]);
+      toast.success("Proveedor restaurado correctamente.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo restaurar el proveedor."));
     }
   }
 
@@ -191,62 +235,117 @@ export default function ProvidersPage() {
                 </div>
               </div>
 
-              {isLoading && !hasLoadedOnce ? (
-                <ProvidersTableSkeleton rows={8} />
-              ) : filteredProviders.length === 0 ? (
-                <ProvidersEmptyState onReload={loadData} />
-              ) : (
-                <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
-                  <div className="overflow-x-auto rounded-xl border border-border">
-                    <Table className="min-w-full">
-                      <TableHeader className="bg-muted/50">
-                        <TableRow>
-                          <TableHead>ID</TableHead>
-                          <TableHead>Nombre comercial</TableHead>
-                          <TableHead>Contacto</TableHead>
-                          <TableHead>Telefono</TableHead>
-                          <TableHead>Registro</TableHead>
-                          <TableHead className="text-right">Acciones</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredProviders.map((provider) => (
-                          <TableRow key={provider.id}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">#{provider.id}</TableCell>
-                            <TableCell className="font-medium">{provider.nombre}</TableCell>
-                            <TableCell>{provider.entidad.nombreCompleto}</TableCell>
-                            <TableCell>{provider.entidad.telefono1?.trim() || "-"}</TableCell>
-                            <TableCell>{formatDate(provider.fechaRegistro)}</TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button
-                                  size="xs"
-                                  variant="outline"
-                                  asChild
-                                  className="hover:bg-muted/50 transition-colors"
-                                >
-                                  <Link href={`/providers/edit/${provider.id}`}>
-                                    <Pencil className="size-3.5" />
-                                    Editar
-                                  </Link>
-                                </Button>
-                                <Button
-                                  size="xs"
-                                  variant="destructive"
-                                  onClick={() => setDeleteCandidate(provider)}
-                                >
-                                  <Trash2 className="size-3.5" />
-                                  Eliminar
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
+              <Tabs defaultValue="activos">
+                <TabsList>
+                  <TabsTrigger value="activos">Activos ({filteredProviders.length})</TabsTrigger>
+                  <TabsTrigger value="anulados">Anulados ({filteredAnulatedProviders.length})</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="activos" className="mt-4">
+                  {isLoading && !hasLoadedOnce ? (
+                    <ProvidersTableSkeleton rows={8} />
+                  ) : filteredProviders.length === 0 ? (
+                    <ProvidersEmptyState mode="activos" onReload={loadData} />
+                  ) : (
+                    <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
+                      <div className="overflow-x-auto rounded-xl border border-border">
+                        <Table className="min-w-full">
+                          <TableHeader className="bg-muted/50">
+                            <TableRow>
+                              <TableHead>ID</TableHead>
+                              <TableHead>Nombre comercial</TableHead>
+                              <TableHead>Contacto</TableHead>
+                              <TableHead>Telefono</TableHead>
+                              <TableHead>Registro</TableHead>
+                              <TableHead className="text-right">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filteredProviders.map((provider) => (
+                              <TableRow key={provider.id}>
+                                <TableCell className="font-mono text-xs text-muted-foreground">#{provider.id}</TableCell>
+                                <TableCell className="font-medium">{provider.nombre}</TableCell>
+                                <TableCell>{provider.entidad.nombreCompleto}</TableCell>
+                                <TableCell>{provider.entidad.telefono1?.trim() || "-"}</TableCell>
+                                <TableCell>{formatDate(provider.fechaRegistro)}</TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      size="xs"
+                                      variant="outline"
+                                      asChild
+                                      className="hover:bg-muted/50 transition-colors"
+                                    >
+                                      <Link href={`/providers/edit/${provider.id}`}>
+                                        <Pencil className="size-3.5" />
+                                        Editar
+                                      </Link>
+                                    </Button>
+                                    <Button
+                                      size="xs"
+                                      variant="destructive"
+                                      onClick={() => setDeleteCandidate(provider)}
+                                    >
+                                      <Trash2 className="size-3.5" />
+                                      Anular
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="anulados" className="mt-4">
+                  {isLoading && !hasLoadedOnce ? (
+                    <ProvidersTableSkeleton rows={8} />
+                  ) : filteredAnulatedProviders.length === 0 ? (
+                    <ProvidersEmptyState mode="anulados" onReload={loadData} />
+                  ) : (
+                    <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
+                      <div className="overflow-x-auto rounded-xl border border-border">
+                        <Table className="min-w-full">
+                          <TableHeader className="bg-muted/50">
+                            <TableRow>
+                              <TableHead>ID</TableHead>
+                              <TableHead>Nombre comercial</TableHead>
+                              <TableHead>Contacto</TableHead>
+                              <TableHead>Telefono</TableHead>
+                              <TableHead>Anulacion</TableHead>
+                              <TableHead className="text-right">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filteredAnulatedProviders.map((provider) => (
+                              <TableRow key={provider.id}>
+                                <TableCell className="font-mono text-xs text-muted-foreground">#{provider.id}</TableCell>
+                                <TableCell className="font-medium">{provider.nombre}</TableCell>
+                                <TableCell>{provider.entidad.nombreCompleto}</TableCell>
+                                <TableCell>{provider.entidad.telefono1?.trim() || "-"}</TableCell>
+                                <TableCell>{formatDate(provider.fechaAnulacion)}</TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    size="xs"
+                                    variant="secondary"
+                                    onClick={() => restoreProviderFromTrash(provider)}
+                                  >
+                                    <RotateCcw className="size-3.5" />
+                                    Restaurar
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </div>

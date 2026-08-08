@@ -66,3 +66,7 @@ export interface UpdateProviderPayload {
 export interface DeleteProviderPayload {
   idUsuarioAnulador?: number;
 }
+
+export interface RestoreProviderPayload {
+  idUsuarioModificador?: number;
+}

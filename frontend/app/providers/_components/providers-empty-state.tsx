@@ -3,10 +3,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 type ProvidersEmptyStateProps = {
+  mode?: "activos" | "anulados";
   onReload?: () => void;
 };
 
-export function ProvidersEmptyState({ onReload }: ProvidersEmptyStateProps) {
+export function ProvidersEmptyState({ mode = "activos", onReload }: ProvidersEmptyStateProps) {
+  const isAnulatedMode = mode === "anulados";
+
   return (
     <Card className="rounded-xl border border-dashed border-slate-300/90 bg-slate-50/60 dark:border-slate-700 dark:bg-slate-900/30">
       <CardContent className="flex flex-col items-center justify-center gap-3 py-10 text-center">
@@ -14,10 +17,12 @@ export function ProvidersEmptyState({ onReload }: ProvidersEmptyStateProps) {
           <Truck className="size-6" />
         </span>
         <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-          No hay proveedores registrados
+          {isAnulatedMode ? "No hay proveedores anulados" : "No hay proveedores registrados"}
         </h3>
         <p className="max-w-md text-sm text-slate-600 dark:text-slate-300">
-          Registre proveedores para gestionar compras y abastecimiento de forma ordenada.
+          {isAnulatedMode
+            ? "Cuando anule proveedores, apareceran aqui para restaurarlos cuando sea necesario."
+            : "Registre proveedores para gestionar compras y abastecimiento de forma ordenada."}
         </p>
         {onReload ? (
           <Button variant="outline" onClick={onReload} className="mt-2">

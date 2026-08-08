@@ -132,6 +132,37 @@ export async function listProviders() {
   return providers.map(toProviderDto);
 }
 
+export async function listAnulatedProviders() {
+  const providers = await prisma.proveedor.findMany({
+    where: {
+      Anulado: true,
+      Entidad: {
+        Anulado: false,
+      },
+    },
+    orderBy: { FechaAnulacion: 'desc' },
+    include: {
+      Entidad: {
+        select: {
+          Id: true,
+          NombreCompleto: true,
+          Sexo: true,
+          FechaNacimiento: true,
+          Telefono1: true,
+          Telefono2: true,
+          CorreoElectronico: true,
+          RutaImagen: true,
+          Nit: true,
+          Dpi: true,
+          Anulado: true,
+        },
+      },
+    },
+  });
+
+  return providers.map(toProviderDto);
+}
+
 export async function getProviderById(id: number) {
   const provider = await prisma.proveedor.findFirst({
     where: {
@@ -328,4 +359,51 @@ export async function deleteProvider(id: number, idUsuarioAnulador?: number) {
       FechaAnulacion: new Date(),
     },
   });
+}
+
+export async function restoreProvider(id: number, idUsuarioModificador?: number) {
+  const existing = await prisma.proveedor.findFirst({
+    where: { Id: id, Anulado: true },
+    select: { Id: true },
+  });
+
+  if (!existing) {
+    throw new Error('Proveedor anulado no existe');
+  }
+
+  if (idUsuarioModificador !== undefined) {
+    await validateUsuarioExists(idUsuarioModificador);
+  }
+
+  const restored = await prisma.proveedor.update({
+    where: { Id: id },
+    data: {
+      Anulado: false,
+      ...(idUsuarioModificador !== undefined
+        ? { IdUsuarioModificador: idUsuarioModificador }
+        : {}),
+      FechaModificacion: new Date(),
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
+    },
+    include: {
+      Entidad: {
+        select: {
+          Id: true,
+          NombreCompleto: true,
+          Sexo: true,
+          FechaNacimiento: true,
+          Telefono1: true,
+          Telefono2: true,
+          CorreoElectronico: true,
+          RutaImagen: true,
+          Nit: true,
+          Dpi: true,
+          Anulado: true,
+        },
+      },
+    },
+  });
+
+  return toProviderDto(restored);
 }

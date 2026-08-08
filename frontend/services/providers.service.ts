@@ -5,11 +5,17 @@ import type {
   DeleteProviderPayload,
   ProviderDto,
   ProvidersListResponse,
+  RestoreProviderPayload,
   UpdateProviderPayload,
 } from "@/types/providers";
 
 export async function listProviders(): Promise<ProviderDto[]> {
   const { data } = await api.get<ProvidersListResponse>("/api/providers");
+  return data.data ?? [];
+}
+
+export async function listAnulatedProviders(): Promise<ProviderDto[]> {
+  const { data } = await api.get<ProvidersListResponse>("/api/providers/anulados");
   return data.data ?? [];
 }
 
@@ -39,4 +45,15 @@ export async function updateProvider(id: number, payload: UpdateProviderPayload)
 
 export async function deleteProvider(id: number, payload?: DeleteProviderPayload): Promise<void> {
   await api.delete(`/api/providers/${id}`, { data: payload });
+}
+
+export async function restoreProvider(
+  id: number,
+  payload?: RestoreProviderPayload,
+): Promise<ProviderDto> {
+  const { data } = await api.patch<ApiResponse<ProviderDto>>(`/api/providers/${id}/restaurar`, payload);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al restaurar proveedor");
+  }
+  return data.data;
 }
