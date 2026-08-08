@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
   Loader2,
@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -30,6 +31,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { InventoryEmptyState } from "@/app/inventory/_components/inventory-empty-state";
+import { CardSkeleton, TableSkeleton } from "@/app/inventory/_components/inventory-skeletons";
 import { getApiErrorMessage } from "@/lib/api";
 import { deleteProduct, listProducts } from "@/services/products.service";
 import type { ProductDto } from "@/types/products";
@@ -55,13 +58,18 @@ type CategoryFilter = "" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA" | "INSUMO" | "
 export default function InventoryPage() {
   const { user } = useAuth();
   const [products, setProducts] = useState<ProductDto[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<CategoryFilter>("");
   const [deleteCandidate, setDeleteCandidate] = useState<ProductDto | null>(null);
 
+  useEffect(() => {
+    void loadData();
+  }, []);
+
   async function loadData() {
-    setLoading(true);
+    setIsLoading(true);
     try {
       const response = await listProducts({
         page: 1,
@@ -73,7 +81,8 @@ export default function InventoryPage() {
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cargar el catalogo de productos."));
     } finally {
-      setLoading(false);
+      setIsLoading(false);
+      setHasLoadedOnce(true);
     }
   }
 
@@ -108,41 +117,45 @@ export default function InventoryPage() {
         description="Catalogo maestro de productos, costos, precios y existencias."
       >
         <div className="space-y-6">
-          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card className="rounded-xl border border-border bg-background">
-              <CardContent className="flex items-center justify-between p-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">Productos totales</p>
-                  <p className="text-2xl font-bold tracking-tight">{metrics.total}</p>
-                </div>
-                <PackageSearch className="size-5 text-sky-600" />
-              </CardContent>
-            </Card>
+          {isLoading && !hasLoadedOnce ? (
+            <CardSkeleton count={4} />
+          ) : (
+            <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4 transition-opacity duration-300">
+              <Card className="rounded-xl border border-border bg-background">
+                <CardContent className="flex items-center justify-between p-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Productos totales</p>
+                    <p className="text-2xl font-bold tracking-tight">{metrics.total}</p>
+                  </div>
+                  <PackageSearch className="size-5 text-sky-600" />
+                </CardContent>
+              </Card>
 
-            <Card className="rounded-xl border border-border bg-background">
-              <CardContent className="flex items-center justify-between p-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">Activos</p>
-                  <p className="text-2xl font-bold tracking-tight">{metrics.activos}</p>
-                </div>
-                <BadgeCheck className="size-5 text-sky-600" />
-              </CardContent>
-            </Card>
+              <Card className="rounded-xl border border-border bg-background">
+                <CardContent className="flex items-center justify-between p-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Activos</p>
+                    <p className="text-2xl font-bold tracking-tight">{metrics.activos}</p>
+                  </div>
+                  <BadgeCheck className="size-5 text-sky-600" />
+                </CardContent>
+              </Card>
 
-            <Card className="rounded-xl border border-border bg-muted/50">
-              <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground">Sin existencia</p>
-                <p className="mt-1 text-2xl font-bold tracking-tight">{metrics.sinExistencia}</p>
-              </CardContent>
-            </Card>
+              <Card className="rounded-xl border border-border bg-muted/50">
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Sin existencia</p>
+                  <p className="mt-1 text-2xl font-bold tracking-tight">{metrics.sinExistencia}</p>
+                </CardContent>
+              </Card>
 
-            <Card className="rounded-xl border border-border bg-muted/50">
-              <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground">Productos finales</p>
-                <p className="mt-1 text-2xl font-bold tracking-tight">{metrics.finales}</p>
-              </CardContent>
-            </Card>
-          </section>
+              <Card className="rounded-xl border border-border bg-muted/50">
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Productos finales</p>
+                  <p className="mt-1 text-2xl font-bold tracking-tight">{metrics.finales}</p>
+                </CardContent>
+              </Card>
+            </section>
+          )}
 
           <Card className="rounded-xl border border-border bg-background">
             <CardHeader className="flex flex-row items-center justify-between gap-4">
@@ -157,10 +170,10 @@ export default function InventoryPage() {
                   variant="outline"
                   size="sm"
                   onClick={loadData}
-                  disabled={loading}
+                  disabled={isLoading}
                   className="hover:bg-muted/50 transition-colors"
                 >
-                  {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                  {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                   Recargar
                 </Button>
                 <Button
@@ -176,6 +189,10 @@ export default function InventoryPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              {isLoading && hasLoadedOnce ? (
+                <p className="text-xs text-muted-foreground">Actualizando datos...</p>
+              ) : null}
+
               <div className="grid gap-4 rounded-xl border border-border bg-muted/50 p-4 md:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="search-products">Busqueda</Label>
@@ -210,7 +227,7 @@ export default function InventoryPage() {
                       size="sm"
                       variant="outline"
                       onClick={loadData}
-                      disabled={loading}
+                      disabled={isLoading}
                       className="hover:bg-muted/50 transition-colors"
                     >
                       Aplicar filtros
@@ -222,90 +239,95 @@ export default function InventoryPage() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-border">
-                <Table className="min-w-full">
-                  <TableHeader className="bg-muted/50">
-                    <TableRow>
-                      <TableHead>ID</TableHead>
-                      <TableHead>Producto</TableHead>
-                      <TableHead>Categoria</TableHead>
-                      <TableHead>Proveedor</TableHead>
-                      <TableHead>Existencia</TableHead>
-                      <TableHead>Costo</TableHead>
-                      <TableHead>Precio</TableHead>
-                      <TableHead>Registro</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {products.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
-                          No hay productos para mostrar.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      products.map((product) => (
-                        <TableRow key={product.id}>
-                          <TableCell className="font-mono text-xs text-muted-foreground">#{product.id}</TableCell>
-                          <TableCell className="font-medium">
-                            <div className="flex items-center gap-2">
-                              <span>{product.nombre}</span>
-                              {product.esProductoFinal ? (
-                                <Badge variant="secondary">Final</Badge>
-                              ) : (
-                                <Badge variant="outline">Insumo</Badge>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>{product.categoria}</TableCell>
-                          <TableCell>{product.proveedor.nombre}</TableCell>
-                          <TableCell>{product.existencia}</TableCell>
-                          <TableCell>{formatMoney(product.costoPromedio)}</TableCell>
-                          <TableCell>{formatMoney(product.precioVenta)}</TableCell>
-                          <TableCell>{formatDate(product.fechaRegistro)}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              {product.esProductoFinal && (
+              {isLoading && !hasLoadedOnce ? (
+                <TableSkeleton rows={8} columns={9} />
+              ) : products.length === 0 ? (
+                <InventoryEmptyState
+                  title="No hay productos registrados"
+                  description="Agrega productos al catalogo para comenzar a gestionar inventario y estructura BOM."
+                  actionLabel="Recargar"
+                  onAction={loadData}
+                />
+              ) : (
+                <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
+                  <div className="overflow-x-auto rounded-xl border border-border">
+                    <Table className="min-w-full">
+                      <TableHeader className="bg-muted/50">
+                        <TableRow>
+                          <TableHead>ID</TableHead>
+                          <TableHead>Producto</TableHead>
+                          <TableHead>Categoria</TableHead>
+                          <TableHead>Proveedor</TableHead>
+                          <TableHead>Existencia</TableHead>
+                          <TableHead>Costo</TableHead>
+                          <TableHead>Precio</TableHead>
+                          <TableHead>Registro</TableHead>
+                          <TableHead className="text-right">Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {products.map((product) => (
+                          <TableRow key={product.id}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">#{product.id}</TableCell>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-2">
+                                <span>{product.nombre}</span>
+                                {product.esProductoFinal ? (
+                                  <Badge variant="secondary">Final</Badge>
+                                ) : (
+                                  <Badge variant="outline">Insumo</Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>{product.categoria}</TableCell>
+                            <TableCell>{product.proveedor.nombre}</TableCell>
+                            <TableCell>{product.existencia}</TableCell>
+                            <TableCell>{formatMoney(product.costoPromedio)}</TableCell>
+                            <TableCell>{formatMoney(product.precioVenta)}</TableCell>
+                            <TableCell>{formatDate(product.fechaRegistro)}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                {product.esProductoFinal && (
+                                  <Button
+                                    size="xs"
+                                    variant="outline"
+                                    asChild
+                                    className="hover:bg-muted/50 transition-colors"
+                                  >
+                                    <Link href={`/inventory/${product.id}/structure`}>
+                                      <ListTree className="size-3.5" />
+                                      BOM
+                                    </Link>
+                                  </Button>
+                                )}
                                 <Button
                                   size="xs"
                                   variant="outline"
                                   asChild
                                   className="hover:bg-muted/50 transition-colors"
                                 >
-                                  <Link href={`/inventory/${product.id}/structure`}>
-                                    <ListTree className="size-3.5" />
-                                    BOM
+                                  <Link href={`/inventory/edit/${product.id}`}>
+                                    <Pencil className="size-3.5" />
+                                    Editar
                                   </Link>
                                 </Button>
-                              )}
-                              <Button
-                                size="xs"
-                                variant="outline"
-                                asChild
-                                className="hover:bg-muted/50 transition-colors"
-                              >
-                                <Link href={`/inventory/edit/${product.id}`}>
-                                  <Pencil className="size-3.5" />
-                                  Editar
-                                </Link>
-                              </Button>
-                              <Button
-                                size="xs"
-                                variant="destructive"
-                                onClick={() => setDeleteCandidate(product)}
-                              >
-                                <Trash2 className="size-3.5" />
-                                Anular
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                                <Button
+                                  size="xs"
+                                  variant="destructive"
+                                  onClick={() => setDeleteCandidate(product)}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                  Anular
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Pencil, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -22,7 +23,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import { ProductStructureForm } from "@/app/inventory/_components/product-structure-form";
+import {
+  FormSkeleton,
+  TableSkeleton,
+} from "@/app/inventory/_components/inventory-skeletons";
+import { InventoryEmptyState } from "@/app/inventory/_components/inventory-empty-state";
+import { getApiErrorMessage } from "@/lib/api";
 import { getProductById, listProducts } from "@/services/products.service";
 import {
   listStructureByProduct,
@@ -42,6 +50,7 @@ export default function ProductStructurePage() {
   const [structure, setStructure] = useState<ProductStructureDto[]>([]);
   const [availableProducts, setAvailableProducts] = useState<ProductDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -80,8 +89,10 @@ export default function ProductStructurePage() {
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al cargar datos");
+      toast.error(getApiErrorMessage(err, "No se pudo cargar la estructura de producto."));
     } finally {
       setIsLoading(false);
+      setHasLoadedOnce(true);
     }
   }
 
@@ -93,10 +104,11 @@ export default function ProductStructurePage() {
         cantidadRequerida: data.cantidadRequerida,
       });
 
+      toast.success("Componente agregado correctamente.");
       setIsFormOpen(false);
       await loadData();
     } catch (err) {
-      throw err;
+      toast.error(getApiErrorMessage(err, "No se pudo agregar el componente."));
     }
   }
 
@@ -108,11 +120,13 @@ export default function ProductStructurePage() {
         cantidadRequerida: Number(editQuantity),
       });
 
+      toast.success("Cantidad actualizada correctamente.");
       setIsEditModalOpen(false);
       setSelectedComponent(null);
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al actualizar");
+      toast.error(getApiErrorMessage(err, "No se pudo actualizar el componente."));
     }
   }
 
@@ -121,11 +135,13 @@ export default function ProductStructurePage() {
 
     try {
       await deleteProductStructure(selectedComponent.id);
+      toast.success("Componente eliminado correctamente.");
       setIsDeleteModalOpen(false);
       setSelectedComponent(null);
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al eliminar");
+      toast.error(getApiErrorMessage(err, "No se pudo eliminar el componente."));
     }
   }
 
@@ -142,8 +158,9 @@ export default function ProductStructurePage() {
 
   if (isLoading && !product) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Cargando...</p>
+      <div className="space-y-6">
+        <FormSkeleton />
+        <TableSkeleton rows={6} columns={8} />
       </div>
     );
   }
@@ -177,11 +194,15 @@ export default function ProductStructurePage() {
             Lista de materias primas y componentes necesarios
           </p>
         </div>
-        <Button onClick={() => setIsFormOpen(true)}>
+        <Button onClick={() => setIsFormOpen(true)} disabled={isLoading}>
           <Plus className="h-4 w-4 mr-2" />
           Agregar Componente
         </Button>
       </div>
+
+      {isLoading && hasLoadedOnce ? (
+        <p className="text-xs text-muted-foreground">Actualizando estructura...</p>
+      ) : null}
 
       {isFormOpen && (
         <ProductStructureForm
@@ -191,67 +212,70 @@ export default function ProductStructurePage() {
         />
       )}
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Componente</TableHead>
-                <TableHead>Categoría</TableHead>
-                <TableHead className="text-right">Stock Disponible</TableHead>
-                <TableHead className="text-right">Cantidad Requerida</TableHead>
-                <TableHead className="text-right">Costo Unitario</TableHead>
-                <TableHead className="text-right">Costo Total</TableHead>
-                <TableHead className="text-center">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {structure.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                    No hay componentes registrados. Agregue el primero.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                structure.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.materiaPrima.id}</TableCell>
-                    <TableCell>{item.materiaPrima.nombre}</TableCell>
-                    <TableCell>{item.materiaPrima.categoria}</TableCell>
-                    <TableCell className="text-right">{item.materiaPrima.existencia}</TableCell>
-                    <TableCell className="text-right">{item.cantidadRequerida}</TableCell>
-                    <TableCell className="text-right">
-                      Q{item.materiaPrima.costoPromedio.toFixed(2)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      Q{(item.materiaPrima.costoPromedio * item.cantidadRequerida).toFixed(2)}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex justify-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openEditModal(item)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openDeleteModal(item)}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-600" />
-                        </Button>
-                      </div>
-                    </TableCell>
+      {isLoading && !hasLoadedOnce ? (
+        <TableSkeleton rows={6} columns={8} />
+      ) : structure.length === 0 ? (
+        <InventoryEmptyState
+          title="No hay componentes registrados"
+          description="Agregue materias primas, insumos o envases para construir la estructura BOM de este producto terminado."
+        />
+      ) : (
+        <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Componente</TableHead>
+                    <TableHead>Categoría</TableHead>
+                    <TableHead className="text-right">Stock Disponible</TableHead>
+                    <TableHead className="text-right">Cantidad Requerida</TableHead>
+                    <TableHead className="text-right">Costo Unitario</TableHead>
+                    <TableHead className="text-right">Costo Total</TableHead>
+                    <TableHead className="text-center">Acciones</TableHead>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                </TableHeader>
+                <TableBody>
+                  {structure.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-medium">{item.materiaPrima.id}</TableCell>
+                      <TableCell>{item.materiaPrima.nombre}</TableCell>
+                      <TableCell>{item.materiaPrima.categoria}</TableCell>
+                      <TableCell className="text-right">{item.materiaPrima.existencia}</TableCell>
+                      <TableCell className="text-right">{item.cantidadRequerida}</TableCell>
+                      <TableCell className="text-right">
+                        Q{item.materiaPrima.costoPromedio.toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        Q{(item.materiaPrima.costoPromedio * item.cantidadRequerida).toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex justify-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openEditModal(item)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openDeleteModal(item)}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {structure.length > 0 && (
         <Card>
