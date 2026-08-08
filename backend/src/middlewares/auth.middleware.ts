@@ -3,6 +3,9 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 
 import { prisma } from '../config/prisma';
 
+const JWT_ISSUER = process.env.JWT_ISSUER ?? 'flowmanager.api';
+const JWT_AUDIENCE = process.env.JWT_AUDIENCE ?? 'flowmanager.web';
+
 function getBearerToken(req: Request): string | null {
   const authorization = req.headers.authorization;
 
@@ -86,6 +89,7 @@ type TokenPayload = JwtPayload & {
   correo?: string;
   idRol?: number | null;
   nombre?: string;
+  tokenType?: string;
 };
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -106,7 +110,11 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
 
   try {
-    const decoded = jwt.verify(token, secret);
+    const decoded = jwt.verify(token, secret, {
+      algorithms: ['HS256'],
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    });
 
     if (typeof decoded !== 'object' || decoded === null) {
       return res.status(401).json({
@@ -116,6 +124,13 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     }
 
     const payload = decoded as TokenPayload;
+    if (payload.tokenType !== 'access') {
+      return res.status(401).json({
+        ok: false,
+        message: 'Token inválido o expirado',
+      });
+    }
+
     const userId = Number(payload.sub);
     const roleId = payload.idRol !== undefined && payload.idRol !== null
       ? Number(payload.idRol)

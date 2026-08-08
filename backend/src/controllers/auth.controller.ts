@@ -1,7 +1,13 @@
 import { Request, Response } from 'express';
 
-import { assignUserRoleEntity, login, register } from '../services/auth.service';
-import { createSession } from '../services/session.service';
+import {
+  assignUserRoleEntity,
+  login,
+  refreshAuthTokens,
+  register,
+  revokeAllUserSessions,
+  revokeRefreshToken,
+} from '../services/auth.service';
 
 function getClientIp(req: Request): string {
   const forwarded = req.headers['x-forwarded-for'];
@@ -42,16 +48,11 @@ export async function loginController(req: Request, res: Response) {
       });
     }
 
-    const result = await login({ correo, clave });
-
-    const fechaExpiracionToken = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
-
-    await createSession({
-      idUsuario: result.user.id,
+    const result = await login({
+      correo,
+      clave,
       ip: getClientIp(req),
       nombreDispositivo: getDeviceName(req),
-      tokenSesion: result.token,
-      fechaExpiracionToken,
     });
 
     return res.status(200).json({
@@ -66,6 +67,69 @@ export async function loginController(req: Request, res: Response) {
       return res.status(401).json({ ok: false, message });
     }
 
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function refreshController(req: Request, res: Response) {
+  try {
+    const { refreshToken } = req.body as { refreshToken?: string };
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        ok: false,
+        message: 'refreshToken es requerido',
+      });
+    }
+
+    const result = await refreshAuthTokens({ refreshToken });
+
+    return res.status(200).json({
+      ok: true,
+      message: 'Token renovado correctamente',
+      data: result,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message === 'Refresh token inválido o expirado') {
+      return res.status(401).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function logoutController(req: Request, res: Response) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        ok: false,
+        message: 'Token inválido o expirado',
+      });
+    }
+
+    const { refreshToken } = req.body as { refreshToken?: string };
+
+    if (refreshToken) {
+      const revoked = await revokeRefreshToken(refreshToken, userId);
+      if (!revoked) {
+        return res.status(404).json({
+          ok: false,
+          message: 'No se encontró una sesión activa para revocar',
+        });
+      }
+    } else {
+      await revokeAllUserSessions(userId, userId);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: 'Sesión cerrada correctamente',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
     return res.status(500).json({ ok: false, message });
   }
 }

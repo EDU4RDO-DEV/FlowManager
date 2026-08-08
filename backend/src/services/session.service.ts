@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+
 import { prisma } from '../config/prisma';
 
 type CreateSessionInput = {
@@ -18,7 +20,6 @@ function toSessionDto(session: {
   IdUsuario: number;
   IP: string;
   NombreDispositivo: string;
-  TokenSesion: string;
   Latitud: unknown;
   Longitud: unknown;
   Precision: unknown;
@@ -33,7 +34,6 @@ function toSessionDto(session: {
     idUsuario: session.IdUsuario,
     ip: session.IP,
     nombreDispositivo: session.NombreDispositivo,
-    tokenSesion: session.TokenSesion,
     latitud: session.Latitud !== null ? Number(session.Latitud) : null,
     longitud: session.Longitud !== null ? Number(session.Longitud) : null,
     precision: session.Precision !== null ? Number(session.Precision) : null,
@@ -43,6 +43,10 @@ function toSessionDto(session: {
     idUsuarioAnulador: session.IdUsuarioAnulador,
     fechaAnulacion: session.FechaAnulacion,
   };
+}
+
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
 }
 
 async function validateUsuarioExists(idUsuario: number) {
@@ -90,7 +94,7 @@ export async function createSession(input: CreateSessionInput) {
       IdUsuario: input.idUsuario,
       IP: input.ip,
       NombreDispositivo: input.nombreDispositivo,
-      TokenSesion: input.tokenSesion,
+      TokenSesion: hashToken(input.tokenSesion),
       Latitud: input.latitud,
       Longitud: input.longitud,
       Precision: input.precision,
@@ -132,7 +136,9 @@ export async function updateSession(id: number, input: UpdateSessionInput) {
       ...(input.nombreDispositivo !== undefined
         ? { NombreDispositivo: input.nombreDispositivo }
         : {}),
-      ...(input.tokenSesion !== undefined ? { TokenSesion: input.tokenSesion } : {}),
+      ...(input.tokenSesion !== undefined
+        ? { TokenSesion: hashToken(input.tokenSesion) }
+        : {}),
       ...(input.latitud !== undefined ? { Latitud: input.latitud } : {}),
       ...(input.longitud !== undefined ? { Longitud: input.longitud } : {}),
       ...(input.precision !== undefined ? { Precision: input.precision } : {}),
