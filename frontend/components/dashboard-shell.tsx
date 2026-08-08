@@ -18,6 +18,7 @@ import {
   Menu,
   LogOut,
   PackageSearch,
+  SlidersHorizontal,
   ReceiptText,
   ShieldCheck,
   Truck,
@@ -51,6 +52,18 @@ type ModuleItem = {
   name: string;
   path: string;
   icon: typeof LayoutDashboard;
+};
+
+type SidebarChildItem = {
+  id: string;
+  name: string;
+  path: string;
+  icon: typeof LayoutDashboard;
+  isActive: (currentPath: string) => boolean;
+};
+
+type SidebarItem = SidebarChildItem & {
+  children?: SidebarChildItem[];
 };
 
 const moduleCatalog: Record<AppModuleKey, ModuleItem> = {
@@ -118,6 +131,18 @@ function isPathActive(currentPath: string, modulePath: string): boolean {
   return currentPath === modulePath || currentPath.startsWith(`${modulePath}/`);
 }
 
+const secondaryModuleCatalog: Partial<Record<AppModuleKey, SidebarChildItem[]>> = {
+  inventario: [
+    {
+      id: "inventario-ajustes",
+      name: "Ajustes de Inventario",
+      path: "/inventory/adjustments",
+      icon: SlidersHorizontal,
+      isActive: (currentPath: string) => isPathActive(currentPath, "/inventory/adjustments"),
+    },
+  ],
+};
+
 export function DashboardShell({ title, description, children }: DashboardShellProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
@@ -125,8 +150,28 @@ export function DashboardShell({ title, description, children }: DashboardShellP
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [userPanelOpen, setUserPanelOpen] = useState(false);
   const allowedModules = getAllowedModulesByRole(user?.nombreRol);
-  const modules = useMemo(
-    () => allowedModules.map((key) => moduleCatalog[key]),
+  const sidebarItems = useMemo<SidebarItem[]>(
+    () => {
+      const baseItems: SidebarItem[] = allowedModules.map((key) => {
+        const module = moduleCatalog[key];
+        const secondaryItems = secondaryModuleCatalog[key] ?? [];
+
+        return {
+          id: module.key,
+          name: module.name,
+          path: module.path,
+          icon: module.icon,
+          isActive: (currentPath: string) => {
+            const activeInMain = isPathActive(currentPath, module.path);
+            const activeInSecondary = secondaryItems.some((item) => item.isActive(currentPath));
+            return activeInMain || activeInSecondary;
+          },
+          children: secondaryItems,
+        };
+      });
+
+      return baseItems;
+    },
     [allowedModules],
   );
 
@@ -185,28 +230,53 @@ export function DashboardShell({ title, description, children }: DashboardShellP
               {sidebarCollapsed ? "MOD" : "MODULOS"}
             </p>
             <nav className="space-y-1">
-              {modules.map((module) => {
-                const Icon = module.icon;
-                const active = isPathActive(pathname, module.path);
+              {sidebarItems.map((item) => {
+                const Icon = item.icon;
+                const active = item.isActive(pathname);
 
                 return (
-                  <Link
-                    key={module.key}
-                    href={module.path}
-                    className={`group flex items-center rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-muted/50 ${
-                      active
-                        ? "border-sky-300/60 bg-sky-100/70 text-sky-700"
-                        : "border-transparent text-foreground"
-                    } ${sidebarCollapsed ? "justify-center" : "gap-3"}`}
-                  >
-                    <Icon className="size-4 shrink-0" />
-                    <span className={`truncate ${sidebarCollapsed ? "hidden" : "block"}`}>
-                      {module.name}
-                    </span>
-                    {!sidebarCollapsed ? (
-                      <ChevronRight className="ml-auto size-3 text-muted-foreground group-hover:text-foreground" />
+                  <div key={item.id} className="space-y-1">
+                    <Link
+                      href={item.path}
+                      className={`group flex items-center rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-muted/50 ${
+                        active
+                          ? "border-sky-300/60 bg-sky-100/70 text-sky-700"
+                          : "border-transparent text-foreground"
+                      } ${sidebarCollapsed ? "justify-center" : "gap-3"}`}
+                    >
+                      <Icon className="size-4 shrink-0" />
+                      <span className={`truncate ${sidebarCollapsed ? "hidden" : "block"}`}>
+                        {item.name}
+                      </span>
+                      {!sidebarCollapsed ? (
+                        <ChevronRight className="ml-auto size-3 text-muted-foreground group-hover:text-foreground" />
+                      ) : null}
+                    </Link>
+
+                    {!sidebarCollapsed && item.children && item.children.length > 0 ? (
+                      <div className="ml-4 space-y-1 border-l border-border/70 pl-2">
+                        {item.children.map((child) => {
+                          const ChildIcon = child.icon;
+                          const childActive = child.isActive(pathname);
+
+                          return (
+                            <Link
+                              key={child.id}
+                              href={child.path}
+                              className={`group flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition-colors hover:bg-muted/50 ${
+                                childActive
+                                  ? "border-sky-300/60 bg-sky-100/70 text-sky-700"
+                                  : "border-transparent text-muted-foreground"
+                              }`}
+                            >
+                              <ChildIcon className="size-3.5 shrink-0" />
+                              <span className="truncate">{child.name}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
                     ) : null}
-                  </Link>
+                  </div>
                 );
               })}
             </nav>
@@ -247,24 +317,50 @@ export function DashboardShell({ title, description, children }: DashboardShellP
 
         <div className="h-[calc(100%-4rem)] overflow-y-auto p-4">
           <nav className="space-y-1">
-            {modules.map((module) => {
-              const Icon = module.icon;
-              const active = isPathActive(pathname, module.path);
+            {sidebarItems.map((item) => {
+              const Icon = item.icon;
+              const active = item.isActive(pathname);
 
               return (
-                <Link
-                  key={`mobile-${module.key}`}
-                  href={module.path}
-                  onClick={closeMobileMenu}
-                  className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors hover:bg-muted/50 ${
-                    active
-                      ? "border-sky-300/60 bg-sky-100/70 text-sky-700"
-                      : "border-transparent text-foreground"
-                  }`}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  <span className="truncate">{module.name}</span>
-                </Link>
+                <div key={`mobile-${item.id}`} className="space-y-1">
+                  <Link
+                    href={item.path}
+                    onClick={closeMobileMenu}
+                    className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors hover:bg-muted/50 ${
+                      active
+                        ? "border-sky-300/60 bg-sky-100/70 text-sky-700"
+                        : "border-transparent text-foreground"
+                    }`}
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    <span className="truncate">{item.name}</span>
+                  </Link>
+
+                  {item.children && item.children.length > 0 ? (
+                    <div className="ml-5 space-y-1 border-l border-border/70 pl-2">
+                      {item.children.map((child) => {
+                        const ChildIcon = child.icon;
+                        const childActive = child.isActive(pathname);
+
+                        return (
+                          <Link
+                            key={`mobile-${child.id}`}
+                            href={child.path}
+                            onClick={closeMobileMenu}
+                            className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors hover:bg-muted/50 ${
+                              childActive
+                                ? "border-sky-300/60 bg-sky-100/70 text-sky-700"
+                                : "border-transparent text-muted-foreground"
+                            }`}
+                          >
+                            <ChildIcon className="size-3.5 shrink-0" />
+                            <span className="truncate">{child.name}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
               );
             })}
           </nav>

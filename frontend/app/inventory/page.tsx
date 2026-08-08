@@ -12,7 +12,6 @@ import {
   RotateCcw,
   Trash2,
   ListTree,
-  SlidersHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -219,17 +218,6 @@ export default function InventoryPage() {
                 </p>
               </div>
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  asChild
-                  className="hover:bg-muted/50 transition-colors"
-                >
-                  <Link href="/inventory/adjustments">
-                    <SlidersHorizontal className="size-4" />
-                    Ajustes
-                  </Link>
-                </Button>
                 <Button
                   variant="outline"
                   size="sm"
