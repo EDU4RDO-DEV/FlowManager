@@ -90,7 +90,7 @@ function isPathActive(currentPath: string, modulePath: string): boolean {
 }
 
 function isInventoryStructureActive(currentPath: string): boolean {
-  return /^\/inventory\/\d+\/structure(?:\/|$)/.test(currentPath);
+  return currentPath === "/inventory/structure" || /^\/inventory\/\d+\/structure(?:\/|$)/.test(currentPath);
 }
 
 export function DashboardShell({ title, description, children }: DashboardShellProps) {
@@ -234,7 +234,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                 {
                   id: "inventario-bom",
                   name: "Estructura / Recetas (BOM)",
-                  path: "/inventory",
+                  path: "/inventory/structure",
                   icon: BookOpenText,
                   available: has.inventario,
                   isActive: (currentPath: string) => isInventoryStructureActive(currentPath),

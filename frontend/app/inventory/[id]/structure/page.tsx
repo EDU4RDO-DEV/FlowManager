@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { DashboardShell } from "@/components/dashboard-shell";
+import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -196,16 +198,12 @@ export default function ProductStructurePage() {
     setIsDeleteModalOpen(true);
   }
 
-  if (isLoading && !product) {
-    return (
-      <div className="space-y-6">
-        <FormSkeleton />
-        <TableSkeleton rows={6} columns={8} />
-      </div>
-    );
-  }
-
   return (
+    <RequireAuth>
+      <DashboardShell
+        title="Estructura de Producto"
+        description="Configura componentes y costos BOM por producto terminado"
+      >
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => router.back()}>
@@ -246,15 +244,12 @@ export default function ProductStructurePage() {
         <p className="text-xs text-muted-foreground">Actualizando estructura...</p>
       ) : null}
 
-      {isFormOpen && (
-        <ProductStructureForm
-          availableProducts={availableProducts}
-          onSubmit={handleCreate}
-          onCancel={() => setIsFormOpen(false)}
-        />
-      )}
-
-      {isLoading && !hasLoadedOnce ? (
+      {isLoading && !product ? (
+        <>
+          <FormSkeleton />
+          <TableSkeleton rows={6} columns={8} />
+        </>
+      ) : isLoading && !hasLoadedOnce ? (
         <TableSkeleton rows={6} columns={8} />
       ) : (
         <Tabs defaultValue="activos">
@@ -459,6 +454,24 @@ export default function ProductStructurePage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Agregar Componente</DialogTitle>
+            <DialogDescription>
+              Selecciona materia prima, insumo o envase para integrarlo en la estructura del producto.
+            </DialogDescription>
+          </DialogHeader>
+          <ProductStructureForm
+            availableProducts={availableProducts}
+            onSubmit={handleCreate}
+            onCancel={() => setIsFormOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
+      </DashboardShell>
+    </RequireAuth>
   );
 }
