@@ -12,7 +12,7 @@ import { useAuth } from "@/components/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
-import { getProductById, updateProduct } from "@/services/products.service";
+import { getProductById, updateProduct, uploadProductImage } from "@/services/products.service";
 import { listProviders } from "@/services/providers.service";
 import type { ProviderDto } from "@/types/providers";
 
@@ -32,6 +32,7 @@ export default function EditProductPage() {
   const { user } = useAuth();
   const [providers, setProviders] = useState<ProviderDto[]>([]);
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<ProductFormValues>(EMPTY_FORM);
 
@@ -136,6 +137,19 @@ export default function EditProductPage() {
     }
   }
 
+  async function handleUploadImage(file: File) {
+    setUploadingImage(true);
+    try {
+      const uploaded = await uploadProductImage(file);
+      setForm((prev) => ({ ...prev, rutaImagen: uploaded.rutaImagen }));
+      toast.success("Imagen subida correctamente.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo subir la imagen."));
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
   return (
     <RequireAuth>
       <DashboardShell
@@ -153,7 +167,9 @@ export default function EditProductPage() {
               form={form}
               providers={providers}
               saving={saving}
+              uploadingImage={uploadingImage}
               onChange={setForm}
+              onUploadImage={handleUploadImage}
               onCancel={() => router.push("/inventory")}
               onSubmit={handleSubmit}
             />

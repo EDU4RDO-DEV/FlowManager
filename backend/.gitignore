@@ -5,3 +5,6 @@
 node_modules/
 .env
 dist/
+
+# Archivos subidos en tiempo de ejecución
+uploads/

@@ -7,6 +7,8 @@ import type {
   ProductFilters,
   ProductListResult,
   ProductsListResponse,
+  UploadProductImageResponse,
+  UploadProductImageResult,
   UpdateProductPayload,
 } from "@/types/products";
 
@@ -64,4 +66,25 @@ export async function updateProduct(id: number, payload: UpdateProductPayload): 
 
 export async function deleteProduct(id: number, payload?: DeleteProductPayload): Promise<void> {
   await api.delete(`/api/products/${id}`, { data: payload });
+}
+
+export async function uploadProductImage(file: File): Promise<UploadProductImageResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const { data } = await api.post<UploadProductImageResponse>(
+    "/api/products/upload-image",
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    },
+  );
+
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al subir imagen");
+  }
+
+  return data.data;
 }

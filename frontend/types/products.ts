@@ -76,3 +76,13 @@ export interface UpdateProductPayload {
 export interface DeleteProductPayload {
   idUsuarioAnulador?: number;
 }
+
+export interface UploadProductImageResult {
+  rutaImagen: string;
+  url: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+}
+
+export type UploadProductImageResponse = ApiResponse<UploadProductImageResult>;

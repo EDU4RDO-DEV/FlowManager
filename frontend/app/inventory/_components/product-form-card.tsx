@@ -22,7 +22,9 @@ type ProductFormCardProps = {
   form: ProductFormValues;
   providers: ProviderDto[];
   saving: boolean;
+  uploadingImage: boolean;
   onChange: (next: ProductFormValues) => void;
+  onUploadImage: (file: File) => Promise<void>;
   onCancel: () => void;
   onSubmit: () => void;
 };
@@ -34,12 +36,35 @@ const CATEGORY_OPTIONS: ProductDto["categoria"][] = [
   "ENVASE",
 ];
 
+function resolveImagePreviewUrl(rutaImagen: string): string {
+  if (!rutaImagen) {
+    return "";
+  }
+
+  if (rutaImagen.startsWith("http://") || rutaImagen.startsWith("https://")) {
+    return rutaImagen;
+  }
+
+  const configuredBase = process.env.NEXT_PUBLIC_API_URL;
+  if (configuredBase) {
+    return `${configuredBase}${rutaImagen}`;
+  }
+
+  if (typeof window !== "undefined") {
+    return `http://${window.location.hostname}:4000${rutaImagen}`;
+  }
+
+  return rutaImagen;
+}
+
 export function ProductFormCard({
   title,
   form,
   providers,
   saving,
+  uploadingImage,
   onChange,
+  onUploadImage,
   onCancel,
   onSubmit,
 }: ProductFormCardProps) {
@@ -100,14 +125,31 @@ export function ProductFormCard({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="product-image">Ruta imagen (opcional)</Label>
+            <Label htmlFor="product-image">Ruta imagen</Label>
             <Input
               id="product-image"
               value={form.rutaImagen}
               onChange={(event) => onChange({ ...form, rutaImagen: event.target.value })}
-              placeholder="/images/productos/garrafon.png"
+              placeholder="/uploads/products/imagen.jpg"
               className="bg-background"
             />
+            <div className="space-y-2">
+              <Input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  await onUploadImage(file);
+                  event.target.value = "";
+                }}
+                className="bg-background"
+                disabled={uploadingImage || saving}
+              />
+              <p className="text-xs text-muted-foreground">
+                Formatos: JPG, PNG, WEBP. Tamaño máximo: 5MB.
+              </p>
+            </div>
           </div>
 
           <div className="space-y-1.5">
@@ -149,6 +191,20 @@ export function ProductFormCard({
             />
             Es producto final
           </label>
+
+          <div className="md:col-span-2">
+            {form.rutaImagen.trim() ? (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">Vista previa de imagen</p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={resolveImagePreviewUrl(form.rutaImagen)}
+                  alt="Vista previa del producto"
+                  className="h-32 w-32 rounded-lg border border-border object-cover"
+                />
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="flex justify-end gap-2">

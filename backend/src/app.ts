@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
+import multer from 'multer';
 
 import { requireAuth } from './middlewares/auth.middleware';
 import authRouter from './routes/auth.routes';
@@ -11,6 +12,7 @@ import providerRouter from './routes/provider.routes';
 import roleRouter from './routes/role.routes';
 import sessionRouter from './routes/session.routes';
 import userRouter from './routes/user.routes';
+import { uploadsRootPath } from './utils/paths';
 
 export function createApp() {
   const app = express();
@@ -18,6 +20,7 @@ export function createApp() {
   app.set('trust proxy', true);
   app.use(cors());
   app.use(express.json());
+  app.use('/uploads', express.static(uploadsRootPath));
 
   app.use('/api/auth', authRouter);
   app.use('/api/clients', requireAuth, clientRouter);
@@ -41,6 +44,18 @@ export function createApp() {
   });
 
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (error instanceof multer.MulterError) {
+      if (error.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ ok: false, message: 'La imagen excede el tamaño máximo de 5MB' });
+      }
+
+      return res.status(400).json({ ok: false, message: 'Error al procesar la imagen enviada' });
+    }
+
+    if (error instanceof Error && error.message.includes('Tipo de archivo no permitido')) {
+      return res.status(400).json({ ok: false, message: error.message });
+    }
+
     if (
       error &&
       typeof error === 'object' &&

@@ -12,7 +12,7 @@ import { useAuth } from "@/components/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
-import { createProduct } from "@/services/products.service";
+import { createProduct, uploadProductImage } from "@/services/products.service";
 import { listProviders } from "@/services/providers.service";
 import type { ProviderDto } from "@/types/providers";
 
@@ -32,6 +32,7 @@ export default function CreateProductPage() {
   const [providers, setProviders] = useState<ProviderDto[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [form, setForm] = useState<ProductFormValues>(EMPTY_FORM);
 
   useEffect(() => {
@@ -108,6 +109,19 @@ export default function CreateProductPage() {
     }
   }
 
+  async function handleUploadImage(file: File) {
+    setUploadingImage(true);
+    try {
+      const uploaded = await uploadProductImage(file);
+      setForm((prev) => ({ ...prev, rutaImagen: uploaded.rutaImagen }));
+      toast.success("Imagen subida correctamente.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo subir la imagen."));
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
   return (
     <RequireAuth>
       <DashboardShell
@@ -125,7 +139,9 @@ export default function CreateProductPage() {
               form={form}
               providers={providers}
               saving={saving}
+              uploadingImage={uploadingImage}
               onChange={setForm}
+              onUploadImage={handleUploadImage}
               onCancel={() => router.push("/inventory")}
               onSubmit={handleSubmit}
             />

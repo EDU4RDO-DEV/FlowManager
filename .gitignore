@@ -1,1 +1,4 @@
 node_modules
+
+# Uploads runtime (imagenes de productos)
+backend/uploads/
