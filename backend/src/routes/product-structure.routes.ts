@@ -4,7 +4,9 @@ import {
   createProductStructureController,
   deleteProductStructureController,
   getStructureByIdController,
+  listAnulatedStructureByProductController,
   listStructureByProductController,
+  restoreProductStructureController,
   updateProductStructureController,
 } from '../controllers/product-structure.controller';
 import { requireModulePermission } from '../middlewares/auth.middleware';
@@ -15,6 +17,11 @@ productStructureRouter.get(
   '/product/:idProducto',
   requireModulePermission('inventario', 'read'),
   listStructureByProductController,
+);
+productStructureRouter.get(
+  '/product/:idProducto/anulados',
+  requireModulePermission('inventario', 'read'),
+  listAnulatedStructureByProductController,
 );
 productStructureRouter.get(
   '/:id',
@@ -35,6 +42,11 @@ productStructureRouter.delete(
   '/:id',
   requireModulePermission('inventario', 'delete'),
   deleteProductStructureController,
+);
+productStructureRouter.patch(
+  '/:id/restaurar',
+  requireModulePermission('inventario', 'update'),
+  restoreProductStructureController,
 );
 
 export default productStructureRouter;

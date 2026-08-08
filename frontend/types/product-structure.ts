@@ -23,6 +23,7 @@ export interface ProductStructureDto {
 }
 
 export type ProductStructureListResponse = ApiResponse<ProductStructureDto[]>;
+export type AnulatedProductStructureListResponse = ApiResponse<ProductStructureDto[]>;
 
 export interface CreateProductStructurePayload {
   idProductoTerminado: number;
@@ -32,4 +33,8 @@ export interface CreateProductStructurePayload {
 
 export interface UpdateProductStructurePayload {
   cantidadRequerida?: number;
+}
+
+export interface RestoreProductStructurePayload {
+  // Sin payload por ahora; se mantiene tipo para consistencia de interfaz
 }

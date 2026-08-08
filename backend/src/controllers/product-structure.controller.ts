@@ -5,7 +5,9 @@ import {
   createProductStructure,
   deleteProductStructure,
   getStructureById,
+  listAnulatedStructureByProduct,
   listStructureByProduct,
+  restoreProductStructure,
   updateProductStructure,
 } from '../services/product-structure.service';
 import {
@@ -13,6 +15,7 @@ import {
   deleteProductStructureBodySchema,
   listStructureByProductQuerySchema,
   productIdParamsSchema,
+  restoreProductStructureBodySchema,
   structureIdParamsSchema,
   updateProductStructureSchema,
 } from '../validators/product-structure.validators';
@@ -27,6 +30,28 @@ export async function listStructureByProductController(req: Request, res: Respon
       idProducto,
       anulado: query.anulado,
     });
+
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message === 'Producto terminado no existe o no es un producto final') {
+      return res.status(404).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function listAnulatedStructureByProductController(req: Request, res: Response) {
+  try {
+    const { idProducto } = productIdParamsSchema.parse(req.params);
+
+    const data = await listAnulatedStructureByProduct(idProducto);
 
     return res.status(200).json({ ok: true, data });
   } catch (error) {
@@ -125,6 +150,7 @@ export async function updateProductStructureController(req: Request, res: Respon
 export async function deleteProductStructureController(req: Request, res: Response) {
   try {
     const { id } = structureIdParamsSchema.parse(req.params);
+    deleteProductStructureBodySchema.parse(req.body ?? {});
 
     await deleteProductStructure(id);
 
@@ -138,6 +164,41 @@ export async function deleteProductStructureController(req: Request, res: Respon
 
     if (message === 'Componente de estructura no existe') {
       return res.status(404).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function restoreProductStructureController(req: Request, res: Response) {
+  try {
+    const { id } = structureIdParamsSchema.parse(req.params);
+    restoreProductStructureBodySchema.parse(req.body ?? {});
+
+    const data = await restoreProductStructure(id);
+
+    return res.status(200).json({
+      ok: true,
+      data,
+      message: 'Componente de estructura restaurado correctamente',
+    });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (
+      message === 'Componente anulado no existe' ||
+      message === 'Producto terminado no existe o no es un producto final' ||
+      message === 'El componente debe ser una materia prima, insumo o envase activo'
+    ) {
+      return res.status(404).json({ ok: false, message });
+    }
+
+    if (message === 'Este componente ya existe en la estructura del producto') {
+      return res.status(409).json({ ok: false, message });
     }
 
     return res.status(500).json({ ok: false, message });

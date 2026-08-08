@@ -142,6 +142,35 @@ export async function listStructureByProduct(input: ListStructureByProductInput)
   return structures.map(toStructureDto);
 }
 
+export async function listAnulatedStructureByProduct(idProducto: number) {
+  await validateProductoTerminadoExists(idProducto);
+
+  const structures = await prisma.estructuraProducto.findMany({
+    where: {
+      IdProductoTerminado: idProducto,
+      Anulado: true,
+    },
+    orderBy: { Id: 'desc' },
+    include: {
+      InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
+        select: {
+          Id: true,
+          Nombre: true,
+          Categoria: true,
+          Existencia: true,
+          CostoPromedio: true,
+          PrecioVenta: true,
+          EsProductoFinal: true,
+          RutaImagen: true,
+          Anulado: true,
+        },
+      },
+    },
+  });
+
+  return structures.map(toStructureDto);
+}
+
 export async function getStructureById(id: number) {
   const structure = await prisma.estructuraProducto.findFirst({
     where: { Id: id, Anulado: false },
@@ -255,4 +284,47 @@ export async function deleteProductStructure(id: number) {
       Anulado: true,
     },
   });
+}
+
+export async function restoreProductStructure(id: number) {
+  const existing = await prisma.estructuraProducto.findFirst({
+    where: { Id: id, Anulado: true },
+    select: {
+      Id: true,
+      IdProductoTerminado: true,
+      IdMateriaPrima: true,
+    },
+  });
+
+  if (!existing) {
+    throw new Error('Componente anulado no existe');
+  }
+
+  await validateProductoTerminadoExists(existing.IdProductoTerminado);
+  await validateMateriaPrimaExists(existing.IdMateriaPrima);
+  await validateUniqueComponent(existing.IdProductoTerminado, existing.IdMateriaPrima, id);
+
+  const restored = await prisma.estructuraProducto.update({
+    where: { Id: id },
+    data: {
+      Anulado: false,
+    },
+    include: {
+      InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
+        select: {
+          Id: true,
+          Nombre: true,
+          Categoria: true,
+          Existencia: true,
+          CostoPromedio: true,
+          PrecioVenta: true,
+          EsProductoFinal: true,
+          RutaImagen: true,
+          Anulado: true,
+        },
+      },
+    },
+  });
+
+  return toStructureDto(restored);
 }

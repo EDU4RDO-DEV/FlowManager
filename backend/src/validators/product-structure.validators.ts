@@ -42,3 +42,7 @@ export const updateProductStructureSchema = z
 export const deleteProductStructureBodySchema = z.object({
   // No requiere idUsuarioAnulador porque no hay tracking de usuario en EstructuraProducto
 });
+
+export const restoreProductStructureBodySchema = z.object({
+  // No requiere idUsuarioModificador porque no hay tracking de usuario en EstructuraProducto
+});

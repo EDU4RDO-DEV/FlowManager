@@ -1,9 +1,11 @@
 import { api } from "@/lib/api";
 import type { ApiResponse } from "@/types/auth";
 import type {
+  AnulatedProductStructureListResponse,
   CreateProductStructurePayload,
   ProductStructureDto,
   ProductStructureListResponse,
+  RestoreProductStructurePayload,
   UpdateProductStructurePayload,
 } from "@/types/product-structure";
 
@@ -62,4 +64,27 @@ export async function updateProductStructure(
 
 export async function deleteProductStructure(id: number): Promise<void> {
   await api.delete(`/api/product-structure/${id}`);
+}
+
+export async function listAnulatedStructureByProduct(
+  idProducto: number,
+): Promise<ProductStructureDto[]> {
+  const { data } = await api.get<AnulatedProductStructureListResponse>(
+    `/api/product-structure/product/${idProducto}/anulados`,
+  );
+  return data.data ?? [];
+}
+
+export async function restoreProductStructure(
+  id: number,
+  payload?: RestoreProductStructurePayload,
+): Promise<ProductStructureDto> {
+  const { data } = await api.patch<ApiResponse<ProductStructureDto>>(
+    `/api/product-structure/${id}/restaurar`,
+    payload,
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al restaurar componente");
+  }
+  return data.data;
 }

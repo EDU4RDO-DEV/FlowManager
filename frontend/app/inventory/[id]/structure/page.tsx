@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { ProductStructureForm } from "@/app/inventory/_components/product-structure-form";
 import {
@@ -34,9 +35,11 @@ import { getApiErrorMessage } from "@/lib/api";
 import { getProductById, listProducts } from "@/services/products.service";
 import {
   listStructureByProduct,
+  listAnulatedStructureByProduct,
   createProductStructure,
   updateProductStructure,
   deleteProductStructure,
+  restoreProductStructure,
 } from "@/services/product-structure.service";
 import type { ProductDto } from "@/types/products";
 import type { ProductStructureDto } from "@/types/product-structure";
@@ -47,7 +50,8 @@ export default function ProductStructurePage() {
   const productId = Number(params.id);
 
   const [product, setProduct] = useState<ProductDto | null>(null);
-  const [structure, setStructure] = useState<ProductStructureDto[]>([]);
+  const [activeStructure, setActiveStructure] = useState<ProductStructureDto[]>([]);
+  const [anulatedStructure, setAnulatedStructure] = useState<ProductStructureDto[]>([]);
   const [availableProducts, setAvailableProducts] = useState<ProductDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
@@ -67,18 +71,20 @@ export default function ProductStructurePage() {
       setIsLoading(true);
       setError("");
 
-      const [productData, structureData, productsData] = await Promise.all([
+      const [productData, activeItems, anulatedItems, productsData] = await Promise.all([
         getProductById(productId),
         listStructureByProduct(productId),
+        listAnulatedStructureByProduct(productId),
         listProducts({ limit: 100, anulado: false }),
       ]);
 
       const existingComponentIds = new Set(
-        structureData.filter((item) => !item.anulado).map((item) => item.idMateriaPrima),
+        activeItems.filter((item) => !item.anulado).map((item) => item.idMateriaPrima),
       );
 
       setProduct(productData);
-      setStructure(structureData);
+      setActiveStructure(activeItems);
+      setAnulatedStructure(anulatedItems);
       setAvailableProducts(
         productsData.items.filter(
           (p) =>
@@ -120,6 +126,17 @@ export default function ProductStructurePage() {
         cantidadRequerida: Number(editQuantity),
       });
 
+      setActiveStructure((prev) =>
+        prev.map((item) =>
+          item.id === selectedComponent.id
+            ? {
+                ...item,
+                cantidadRequerida: Number(editQuantity),
+              }
+            : item,
+        ),
+      );
+
       toast.success("Cantidad actualizada correctamente.");
       setIsEditModalOpen(false);
       setSelectedComponent(null);
@@ -135,13 +152,36 @@ export default function ProductStructurePage() {
 
     try {
       await deleteProductStructure(selectedComponent.id);
-      toast.success("Componente eliminado correctamente.");
+
+      const movedToTrash: ProductStructureDto = {
+        ...selectedComponent,
+        anulado: true,
+      };
+
+      setActiveStructure((prev) => prev.filter((item) => item.id !== selectedComponent.id));
+      setAnulatedStructure((prev) => [movedToTrash, ...prev]);
+
+      toast.success("Componente anulado correctamente.");
       setIsDeleteModalOpen(false);
       setSelectedComponent(null);
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al eliminar");
       toast.error(getApiErrorMessage(err, "No se pudo eliminar el componente."));
+    }
+  }
+
+  async function handleRestore(component: ProductStructureDto) {
+    try {
+      const restored = await restoreProductStructure(component.id);
+
+      setAnulatedStructure((prev) => prev.filter((item) => item.id !== component.id));
+      setActiveStructure((prev) => [restored, ...prev]);
+
+      toast.success("Componente restaurado correctamente.");
+      await loadData();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "No se pudo restaurar el componente."));
     }
   }
 
@@ -189,7 +229,9 @@ export default function ProductStructurePage() {
 
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-semibold">Componentes ({structure.length})</h2>
+          <h2 className="text-xl font-semibold">
+            Componentes ({activeStructure.length + anulatedStructure.length})
+          </h2>
           <p className="text-sm text-muted-foreground">
             Lista de materias primas y componentes necesarios
           </p>
@@ -214,70 +256,138 @@ export default function ProductStructurePage() {
 
       {isLoading && !hasLoadedOnce ? (
         <TableSkeleton rows={6} columns={8} />
-      ) : structure.length === 0 ? (
-        <InventoryEmptyState
-          title="No hay componentes registrados"
-          description="Agregue materias primas, insumos o envases para construir la estructura BOM de este producto terminado."
-        />
       ) : (
-        <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Componente</TableHead>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead className="text-right">Stock Disponible</TableHead>
-                    <TableHead className="text-right">Cantidad Requerida</TableHead>
-                    <TableHead className="text-right">Costo Unitario</TableHead>
-                    <TableHead className="text-right">Costo Total</TableHead>
-                    <TableHead className="text-center">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {structure.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.materiaPrima.id}</TableCell>
-                      <TableCell>{item.materiaPrima.nombre}</TableCell>
-                      <TableCell>{item.materiaPrima.categoria}</TableCell>
-                      <TableCell className="text-right">{item.materiaPrima.existencia}</TableCell>
-                      <TableCell className="text-right">{item.cantidadRequerida}</TableCell>
-                      <TableCell className="text-right">
-                        Q{item.materiaPrima.costoPromedio.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        Q{(item.materiaPrima.costoPromedio * item.cantidadRequerida).toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <div className="flex justify-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openEditModal(item)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openDeleteModal(item)}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-600" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </div>
+        <Tabs defaultValue="activos">
+          <TabsList>
+            <TabsTrigger value="activos">Activos ({activeStructure.length})</TabsTrigger>
+            <TabsTrigger value="anulados">Anulados ({anulatedStructure.length})</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="activos" className="mt-4">
+            {activeStructure.length === 0 ? (
+              <InventoryEmptyState
+                title="No hay componentes registrados"
+                description="Agregue materias primas, insumos o envases para construir la estructura BOM de este producto terminado."
+              />
+            ) : (
+              <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>ID</TableHead>
+                          <TableHead>Componente</TableHead>
+                          <TableHead>Categoría</TableHead>
+                          <TableHead className="text-right">Stock Disponible</TableHead>
+                          <TableHead className="text-right">Cantidad Requerida</TableHead>
+                          <TableHead className="text-right">Costo Unitario</TableHead>
+                          <TableHead className="text-right">Costo Total</TableHead>
+                          <TableHead className="text-center">Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {activeStructure.map((item) => (
+                          <TableRow key={item.id}>
+                            <TableCell className="font-medium">{item.materiaPrima.id}</TableCell>
+                            <TableCell>{item.materiaPrima.nombre}</TableCell>
+                            <TableCell>{item.materiaPrima.categoria}</TableCell>
+                            <TableCell className="text-right">{item.materiaPrima.existencia}</TableCell>
+                            <TableCell className="text-right">{item.cantidadRequerida}</TableCell>
+                            <TableCell className="text-right">
+                              Q{item.materiaPrima.costoPromedio.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              Q{(item.materiaPrima.costoPromedio * item.cantidadRequerida).toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <div className="flex justify-center gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => openEditModal(item)}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => openDeleteModal(item)}
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-600" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="anulados" className="mt-4">
+            {anulatedStructure.length === 0 ? (
+              <InventoryEmptyState
+                title="No hay componentes anulados"
+                description="Cuando anules componentes de la estructura, apareceran aqui para restaurarlos."
+              />
+            ) : (
+              <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>ID</TableHead>
+                          <TableHead>Componente</TableHead>
+                          <TableHead>Categoría</TableHead>
+                          <TableHead className="text-right">Stock Disponible</TableHead>
+                          <TableHead className="text-right">Cantidad Requerida</TableHead>
+                          <TableHead className="text-right">Costo Unitario</TableHead>
+                          <TableHead className="text-right">Costo Total</TableHead>
+                          <TableHead className="text-center">Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {anulatedStructure.map((item) => (
+                          <TableRow key={item.id}>
+                            <TableCell className="font-medium">{item.materiaPrima.id}</TableCell>
+                            <TableCell>{item.materiaPrima.nombre}</TableCell>
+                            <TableCell>{item.materiaPrima.categoria}</TableCell>
+                            <TableCell className="text-right">{item.materiaPrima.existencia}</TableCell>
+                            <TableCell className="text-right">{item.cantidadRequerida}</TableCell>
+                            <TableCell className="text-right">
+                              Q{item.materiaPrima.costoPromedio.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              Q{(item.materiaPrima.costoPromedio * item.cantidadRequerida).toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => handleRestore(item)}
+                              >
+                                <RotateCcw className="h-4 w-4 mr-1" />
+                                Restaurar
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
       )}
 
-      {structure.length > 0 && (
+      {activeStructure.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Resumen de Costos</CardTitle>
@@ -287,7 +397,7 @@ export default function ProductStructurePage() {
               <span>Costo Total de Componentes:</span>
               <span>
                 Q
-                {structure
+                {activeStructure
                   .reduce(
                     (sum, item) =>
                       sum + item.materiaPrima.costoPromedio * item.cantidadRequerida,
@@ -335,8 +445,8 @@ export default function ProductStructurePage() {
           <DialogHeader>
             <DialogTitle>Confirmar Eliminación</DialogTitle>
             <DialogDescription>
-              ¿Está seguro que desea eliminar {selectedComponent?.materiaPrima.nombre} de la
-              estructura? Esta acción no se puede deshacer.
+              ¿Está seguro que desea anular {selectedComponent?.materiaPrima.nombre} de la
+              estructura? Podrá restaurarlo posteriormente desde la pestaña de anulados.
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-2 justify-end">
@@ -344,7 +454,7 @@ export default function ProductStructurePage() {
               Cancelar
             </Button>
             <Button variant="destructive" onClick={handleDelete}>
-              Eliminar
+              Anular
             </Button>
           </div>
         </DialogContent>
