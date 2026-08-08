@@ -27,6 +27,26 @@ function buildAccessToken(roleName: string) {
   );
 }
 
+function buildRefreshTokenForAuthHeader() {
+  return jwt.sign(
+    {
+      sub: 202,
+      correo: 'refresh-header@basan.com',
+      idRol: 5,
+      nombreRol: 'ADMINISTRADOR / GERENTE',
+      nombre: 'Refresh Header',
+      tokenType: 'refresh',
+    },
+    accessSecret,
+    {
+      algorithm: 'HS256',
+      expiresIn: 60,
+      issuer: 'flowmanager.api',
+      audience: 'flowmanager.web',
+    },
+  );
+}
+
 describe('Auth/RBAC critical flows', () => {
   beforeAll(() => {
     process.env.JWT_SECRET = accessSecret;
@@ -78,5 +98,30 @@ describe('Auth/RBAC critical flows', () => {
 
     expect(response.status).toBe(404);
     expect(response.body.ok).toBe(false);
+  });
+
+  it('returns 401 when using refresh token as bearer token', async () => {
+    const app = createApp();
+    const token = buildRefreshTokenForAuthHeader();
+
+    const response = await request(app)
+      .get('/api/users')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(401);
+    expect(response.body.ok).toBe(false);
+  });
+
+  it('returns 400 on malformed JSON body', async () => {
+    const app = createApp();
+
+    const response = await request(app)
+      .post('/api/auth/refresh')
+      .set('Content-Type', 'application/json')
+      .send('{"refreshToken":');
+
+    expect(response.status).toBe(400);
+    expect(response.body.ok).toBe(false);
+    expect(response.body.message).toBe('JSON inválido en el cuerpo de la solicitud');
   });
 });

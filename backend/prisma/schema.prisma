@@ -392,7 +392,7 @@ model Sesion {
   IdUsuario            Int
   IP                   String    @db.VarChar(100)
   NombreDispositivo    String    @db.VarChar(255)
-  TokenSesion          String    @db.VarChar(Max)
+  TokenSesion          String    @db.VarChar(64)
   Latitud              Decimal?  @db.Decimal(18, 6)
   Longitud             Decimal?  @db.Decimal(18, 6)
   Precision            Decimal?  @db.Decimal(8, 6)
@@ -404,6 +404,7 @@ model Sesion {
   Usuario              Usuario   @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Sesion_Usuario")
 
   @@index([IdUsuario, Anulado, FechaExpiracionToken], map: "IX_Sesion_Usuario_Activo_Expira")
+  @@index([TokenSesion, Anulado], map: "IX_Sesion_Token_Activo")
 }
 
 model Talonario {
