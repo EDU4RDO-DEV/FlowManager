@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { Eye, Loader2, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { toast } from "sonner";
 
+import { PurchaseDetailDialog } from "@/app/purchases/_components/purchase-detail-dialog";
 import { PurchaseFormDialog } from "@/app/purchases/_components/purchase-form-dialog";
 import { PurchasesEmptyState } from "@/app/purchases/_components/purchases-empty-state";
 import { PurchasesTableSkeleton } from "@/app/purchases/_components/purchases-skeletons";
@@ -51,6 +53,7 @@ function formatMoney(value: number): string {
 }
 
 export default function PurchasesPage() {
+  const pathname = usePathname();
   const { user } = useAuth();
   const [activePurchases, setActivePurchases] = useState<PurchaseDto[]>([]);
   const [anulatedPurchases, setAnulatedPurchases] = useState<PurchaseDto[]>([]);
@@ -61,11 +64,17 @@ export default function PurchasesPage() {
   const [idProveedor, setIdProveedor] = useState<number | "">("");
   const [soloGastos, setSoloGastos] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<PurchaseDto | null>(null);
+  const [detailCandidate, setDetailCandidate] = useState<PurchaseDto | null>(null);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [formDialogOpen, setFormDialogOpen] = useState(false);
 
   useEffect(() => {
     void loadData();
   }, []);
+
+  useEffect(() => {
+    setSoloGastos(pathname === "/purchases/gastos");
+  }, [pathname]);
 
   async function loadData() {
     setIsLoading(true);
@@ -135,6 +144,11 @@ export default function PurchasesPage() {
     setActivePurchases((prev) => [newPurchase, ...prev]);
     setFormDialogOpen(false);
     toast.success("Compra registrada correctamente");
+  }
+
+  function openDetailDialog(purchase: PurchaseDto) {
+    setDetailCandidate(purchase);
+    setDetailDialogOpen(true);
   }
 
   return (
@@ -269,14 +283,24 @@ export default function PurchasesPage() {
                                   </Button>
                                 </div>
                               ) : (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => setDeleteCandidate(purchase)}
-                                  title="Anular compra"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => openDetailDialog(purchase)}
+                                    title="Ver detalle"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => setDeleteCandidate(purchase)}
+                                    title="Anular compra"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
                               )}
                             </TableCell>
                           </TableRow>
@@ -312,6 +336,7 @@ export default function PurchasesPage() {
                           <TableHead>Fecha Factura</TableHead>
                           <TableHead>Anulación</TableHead>
                           <TableHead className="text-right">Total</TableHead>
+                          <TableHead className="text-right">Acciones</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -330,6 +355,16 @@ export default function PurchasesPage() {
                             <TableCell className="text-right font-medium">
                               {formatMoney(purchase.totalGeneral)}
                             </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => openDetailDialog(purchase)}
+                                title="Ver detalle"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -345,6 +380,12 @@ export default function PurchasesPage() {
           open={formDialogOpen}
           onOpenChange={setFormDialogOpen}
           onSuccess={handlePurchaseCreated}
+        />
+
+        <PurchaseDetailDialog
+          open={detailDialogOpen}
+          onOpenChange={setDetailDialogOpen}
+          purchase={detailCandidate}
         />
       </DashboardShell>
     </RequireAuth>

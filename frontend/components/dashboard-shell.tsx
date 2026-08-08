@@ -270,15 +270,16 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                   path: "/purchases",
                   icon: ReceiptText,
                   available: has.compras,
-                  isActive: (currentPath: string) => isPathActive(currentPath, "/purchases"),
+                  isActive: (currentPath: string) => currentPath === "/purchases",
                 },
                 {
                   id: "compras-gastos",
                   name: "Gastos de Compra",
-                  path: "/purchases",
+                  path: "/purchases/gastos",
                   icon: Wrench,
                   available: has.compras,
-                  isActive: (currentPath: string) => isPathActive(currentPath, "/purchases"),
+                  isActive: (currentPath: string) =>
+                    isPathActive(currentPath, "/purchases/gastos"),
                 },
                 {
                   id: "compras-proveedores",

@@ -355,16 +355,17 @@ export function PurchaseFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden p-0 sm:max-w-3xl lg:max-w-5xl xl:max-w-6xl">
+        <DialogHeader className="border-b px-4 py-3 sm:px-6 sm:py-4">
           <DialogTitle>Registrar Compra</DialogTitle>
           <DialogDescription>
             Registra compras de inventario o gastos operativos asociados a proveedor.
           </DialogDescription>
         </DialogHeader>
 
-        <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
-          <div className="grid gap-4 md:grid-cols-2">
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit(onSubmit)}>
+          <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
+            <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>Proveedor *</Label>
               <Popover open={providersOpen} onOpenChange={setProvidersOpen}>
@@ -453,266 +454,267 @@ export function PurchaseFormDialog({
               </Select>
               <input type="hidden" {...register("esGasto")} />
             </div>
-          </div>
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="observaciones">Observaciones</Label>
-            <Textarea id="observaciones" rows={2} {...register("observaciones")} />
-            {errors.observaciones ? (
-              <p className="text-xs text-destructive">{errors.observaciones.message}</p>
-            ) : null}
-          </div>
-
-          {!esGasto ? (
-            <div className="space-y-3 rounded-lg border p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h4 className="font-medium">Detalle de Compra (Inventario)</h4>
-                <Popover open={productsOpen} onOpenChange={setProductsOpen}>
-                  <PopoverTrigger asChild>
-                    <Button type="button" variant="outline" disabled={loadingSources}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Agregar producto
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-full max-w-lg p-0" align="end">
-                    <Command>
-                      <CommandInput
-                        placeholder="Buscar producto..."
-                        value={productSearch}
-                        onValueChange={setProductSearch}
-                      />
-                      <CommandList>
-                        <CommandEmpty>No hay productos disponibles</CommandEmpty>
-                        <CommandGroup>
-                          {availableProducts.map((product) => (
-                            <CommandItem
-                              key={product.id}
-                              value={`${product.nombre} ${product.categoria}`}
-                              onSelect={() => addProductRow(product)}
-                            >
-                              <div className="flex w-full items-center justify-between gap-2">
-                                <span>{product.nombre}</span>
-                                <span className="text-xs text-muted-foreground">
-                                  Stock: {product.existencia.toFixed(2)}
-                                </span>
-                              </div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <div className="overflow-x-auto rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Producto</TableHead>
-                      <TableHead className="w-36">Cantidad</TableHead>
-                      <TableHead className="w-44">Costo Unitario</TableHead>
-                      <TableHead className="w-40 text-right">Subtotal</TableHead>
-                      <TableHead className="w-24" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {detalleCompraFields.map((field, index) => {
-                      const row = detalleCompra[index];
-                      const subtotal =
-                        Number(row?.cantidad || 0) * Number(row?.costoUnitario || 0);
-
-                      return (
-                        <TableRow key={field.id}>
-                          <TableCell>
-                            <input
-                              type="hidden"
-                              {...register(`detalleCompra.${index}.idInventarioItem` as const, {
-                                valueAsNumber: true,
-                              })}
-                            />
-                            <input
-                              type="hidden"
-                              {...register(`detalleCompra.${index}.nombreProducto` as const)}
-                            />
-                            {row?.nombreProducto}
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="0.01"
-                              step="0.01"
-                              {...register(`detalleCompra.${index}.cantidad` as const, {
-                                valueAsNumber: true,
-                              })}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="0.01"
-                              step="0.01"
-                              {...register(`detalleCompra.${index}.costoUnitario` as const, {
-                                valueAsNumber: true,
-                              })}
-                            />
-                          </TableCell>
-                          <TableCell className="text-right font-medium">
-                            {subtotal.toLocaleString("es-GT", {
-                              style: "currency",
-                              currency: "GTQ",
-                            })}
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeDetalleCompra(index)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-
-                    {detalleCompraFields.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
-                          Agrega al menos un producto para registrar la compra.
-                        </TableCell>
-                      </TableRow>
-                    ) : null}
-                  </TableBody>
-                </Table>
-              </div>
-              {errors.detalleCompra ? (
-                <p className="text-xs text-destructive">{errors.detalleCompra.message as string}</p>
+            <div className="space-y-2">
+              <Label htmlFor="observaciones">Observaciones</Label>
+              <Textarea id="observaciones" rows={2} {...register("observaciones")} />
+              {errors.observaciones ? (
+                <p className="text-xs text-destructive">{errors.observaciones.message}</p>
               ) : null}
             </div>
-          ) : (
-            <div className="space-y-3 rounded-lg border p-4">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium">Detalle de Gastos</h4>
-                <Button type="button" variant="outline" onClick={addExpenseRow}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Agregar gasto
-                </Button>
-              </div>
 
-              <div className="overflow-x-auto rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Descripción</TableHead>
-                      <TableHead className="w-36">Cantidad</TableHead>
-                      <TableHead className="w-44">Precio Unitario</TableHead>
-                      <TableHead className="w-40 text-right">Subtotal</TableHead>
-                      <TableHead className="w-24" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {detalleGastoFields.map((field, index) => {
-                      const row = detalleGasto[index];
-                      const subtotal =
-                        Number(row?.cantidad || 0) * Number(row?.precioUnitario || 0);
+            {!esGasto ? (
+              <div className="space-y-3 rounded-lg border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="font-medium">Detalle de Compra (Inventario)</h4>
+                  <Popover open={productsOpen} onOpenChange={setProductsOpen}>
+                    <PopoverTrigger asChild>
+                      <Button type="button" variant="outline" disabled={loadingSources}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Agregar producto
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full max-w-lg p-0" align="end">
+                      <Command>
+                        <CommandInput
+                          placeholder="Buscar producto..."
+                          value={productSearch}
+                          onValueChange={setProductSearch}
+                        />
+                        <CommandList>
+                          <CommandEmpty>No hay productos disponibles</CommandEmpty>
+                          <CommandGroup>
+                            {availableProducts.map((product) => (
+                              <CommandItem
+                                key={product.id}
+                                value={`${product.nombre} ${product.categoria}`}
+                                onSelect={() => addProductRow(product)}
+                              >
+                                <div className="flex w-full items-center justify-between gap-2">
+                                  <span>{product.nombre}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    Stock: {product.existencia.toFixed(2)}
+                                  </span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
 
-                      return (
-                        <TableRow key={field.id}>
-                          <TableCell>
-                            <Input
-                              {...register(`detalleGasto.${index}.descripcion` as const)}
-                              placeholder="Ej. Flete, mantenimiento"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="0.01"
-                              step="0.01"
-                              {...register(`detalleGasto.${index}.cantidad` as const, {
-                                valueAsNumber: true,
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Producto</TableHead>
+                        <TableHead className="w-36">Cantidad</TableHead>
+                        <TableHead className="w-44">Costo Unitario</TableHead>
+                        <TableHead className="w-40 text-right">Subtotal</TableHead>
+                        <TableHead className="w-24" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {detalleCompraFields.map((field, index) => {
+                        const row = detalleCompra[index];
+                        const subtotal =
+                          Number(row?.cantidad || 0) * Number(row?.costoUnitario || 0);
+
+                        return (
+                          <TableRow key={field.id}>
+                            <TableCell>
+                              <input
+                                type="hidden"
+                                {...register(`detalleCompra.${index}.idInventarioItem` as const, {
+                                  valueAsNumber: true,
+                                })}
+                              />
+                              <input
+                                type="hidden"
+                                {...register(`detalleCompra.${index}.nombreProducto` as const)}
+                              />
+                              {row?.nombreProducto}
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                min="0.01"
+                                step="0.01"
+                                {...register(`detalleCompra.${index}.cantidad` as const, {
+                                  valueAsNumber: true,
+                                })}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                min="0.01"
+                                step="0.01"
+                                {...register(`detalleCompra.${index}.costoUnitario` as const, {
+                                  valueAsNumber: true,
+                                })}
+                              />
+                            </TableCell>
+                            <TableCell className="text-right font-medium">
+                              {subtotal.toLocaleString("es-GT", {
+                                style: "currency",
+                                currency: "GTQ",
                               })}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="0.01"
-                              step="0.01"
-                              {...register(`detalleGasto.${index}.precioUnitario` as const, {
-                                valueAsNumber: true,
-                              })}
-                            />
-                          </TableCell>
-                          <TableCell className="text-right font-medium">
-                            {subtotal.toLocaleString("es-GT", {
-                              style: "currency",
-                              currency: "GTQ",
-                            })}
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeDetalleGasto(index)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeDetalleCompra(index)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+
+                      {detalleCompraFields.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                            Agrega al menos un producto para registrar la compra.
                           </TableCell>
                         </TableRow>
-                      );
-                    })}
-
-                    {detalleGastoFields.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
-                          Agrega al menos un gasto para registrar esta operación.
-                        </TableCell>
-                      </TableRow>
-                    ) : null}
-                  </TableBody>
-                </Table>
+                      ) : null}
+                    </TableBody>
+                  </Table>
+                </div>
+                {errors.detalleCompra ? (
+                  <p className="text-xs text-destructive">{errors.detalleCompra.message as string}</p>
+                ) : null}
               </div>
-              {errors.detalleGasto ? (
-                <p className="text-xs text-destructive">{errors.detalleGasto.message as string}</p>
-              ) : null}
-            </div>
-          )}
+            ) : (
+              <div className="space-y-3 rounded-lg border p-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium">Detalle de Gastos</h4>
+                  <Button type="button" variant="outline" onClick={addExpenseRow}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Agregar gasto
+                  </Button>
+                </div>
 
-          <div className="rounded-md border bg-muted/40 p-4">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Subtotal compra:</span>
-              <span className="font-medium">
-                {totalCompra.toLocaleString("es-GT", {
-                  style: "currency",
-                  currency: "GTQ",
-                })}
-              </span>
-            </div>
-            <div className="mt-1 flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Subtotal gastos:</span>
-              <span className="font-medium">
-                {totalGasto.toLocaleString("es-GT", {
-                  style: "currency",
-                  currency: "GTQ",
-                })}
-              </span>
-            </div>
-            <div className="mt-2 flex items-center justify-between border-t pt-2">
-              <span className="font-semibold">Total general:</span>
-              <span className="text-lg font-bold">
-                {(totalCompra + totalGasto).toLocaleString("es-GT", {
-                  style: "currency",
-                  currency: "GTQ",
-                })}
-              </span>
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Descripción</TableHead>
+                        <TableHead className="w-36">Cantidad</TableHead>
+                        <TableHead className="w-44">Precio Unitario</TableHead>
+                        <TableHead className="w-40 text-right">Subtotal</TableHead>
+                        <TableHead className="w-24" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {detalleGastoFields.map((field, index) => {
+                        const row = detalleGasto[index];
+                        const subtotal =
+                          Number(row?.cantidad || 0) * Number(row?.precioUnitario || 0);
+
+                        return (
+                          <TableRow key={field.id}>
+                            <TableCell>
+                              <Input
+                                {...register(`detalleGasto.${index}.descripcion` as const)}
+                                placeholder="Ej. Flete, mantenimiento"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                min="0.01"
+                                step="0.01"
+                                {...register(`detalleGasto.${index}.cantidad` as const, {
+                                  valueAsNumber: true,
+                                })}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                min="0.01"
+                                step="0.01"
+                                {...register(`detalleGasto.${index}.precioUnitario` as const, {
+                                  valueAsNumber: true,
+                                })}
+                              />
+                            </TableCell>
+                            <TableCell className="text-right font-medium">
+                              {subtotal.toLocaleString("es-GT", {
+                                style: "currency",
+                                currency: "GTQ",
+                              })}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeDetalleGasto(index)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+
+                      {detalleGastoFields.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                            Agrega al menos un gasto para registrar esta operación.
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                    </TableBody>
+                  </Table>
+                </div>
+                {errors.detalleGasto ? (
+                  <p className="text-xs text-destructive">{errors.detalleGasto.message as string}</p>
+                ) : null}
+              </div>
+            )}
+
+            <div className="rounded-md border bg-muted/40 p-4">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal compra:</span>
+                <span className="font-medium">
+                  {totalCompra.toLocaleString("es-GT", {
+                    style: "currency",
+                    currency: "GTQ",
+                  })}
+                </span>
+              </div>
+              <div className="mt-1 flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal gastos:</span>
+                <span className="font-medium">
+                  {totalGasto.toLocaleString("es-GT", {
+                    style: "currency",
+                    currency: "GTQ",
+                  })}
+                </span>
+              </div>
+              <div className="mt-2 flex items-center justify-between border-t pt-2">
+                <span className="font-semibold">Total general:</span>
+                <span className="text-lg font-bold">
+                  {(totalCompra + totalGasto).toLocaleString("es-GT", {
+                    style: "currency",
+                    currency: "GTQ",
+                  })}
+                </span>
+              </div>
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="border-t px-4 py-3 sm:px-6 sm:py-4">
             <Button
               type="button"
               variant="outline"
