@@ -22,6 +22,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getApiErrorMessage } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { RolesEmptyState } from "@/app/roles/_components/roles-empty-state";
+import {
+  RolesCardsSkeleton,
+  RolesTableSkeleton,
+} from "@/app/roles/_components/roles-skeletons";
 import { deleteRole, listRoles } from "@/services/roles.service";
 import type { RoleDto } from "@/types/roles";
 
@@ -35,7 +41,8 @@ function formatDate(value: string | null): string {
 export default function RolesPage() {
   const { user } = useAuth();
   const [roles, setRoles] = useState<RoleDto[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
   const [deleteCandidate, setDeleteCandidate] = useState<RoleDto | null>(null);
 
@@ -48,6 +55,7 @@ export default function RolesPage() {
       toast.error(getApiErrorMessage(error, "No se pudo cargar el panel de permisos."));
     } finally {
       setLoading(false);
+      setHasLoadedOnce(true);
     }
   }
 
@@ -97,7 +105,15 @@ export default function RolesPage() {
         description="Configura acceso por perfil y politicas operativas por modulo."
       >
         <div className="space-y-6">
-          <section className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-4">
+          {loading && !hasLoadedOnce ? (
+            <RolesCardsSkeleton />
+          ) : (
+            <section
+              className={cn(
+                "grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-4 transition-opacity duration-300",
+                loading ? "opacity-75" : "opacity-100",
+              )}
+            >
             <Card className="rounded-xl border border-border bg-background">
               <CardContent className="flex items-center justify-between p-4">
                 <div>
@@ -127,7 +143,8 @@ export default function RolesPage() {
                 </div>
               </CardContent>
             </Card>
-          </section>
+            </section>
+          )}
 
           <Card className="rounded-xl border border-border bg-background">
             <CardHeader className="flex flex-row items-center justify-between gap-4">
@@ -161,6 +178,10 @@ export default function RolesPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              {loading && hasLoadedOnce ? (
+                <p className="text-xs text-muted-foreground">Actualizando roles...</p>
+              ) : null}
+
               <div className="rounded-xl border border-border bg-muted/50 p-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="search-roles">Busqueda</Label>
@@ -174,62 +195,62 @@ export default function RolesPage() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-border">
-                <Table className="min-w-full">
-                  <TableHeader className="bg-muted/50">
-                    <TableRow>
-                      <TableHead>ID</TableHead>
-                      <TableHead>Nombre</TableHead>
-                      <TableHead>Descripcion</TableHead>
-                      <TableHead>Registro</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredRoles.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                          No hay roles para mostrar.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredRoles.map((role) => (
-                        <TableRow key={role.id}>
-                          <TableCell className="font-mono text-xs text-muted-foreground">#{role.id}</TableCell>
-                          <TableCell className="font-medium">{role.nombre}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {role.descripcion?.trim() || "Sin descripcion"}
-                          </TableCell>
-                          <TableCell>{formatDate(role.fechaRegistro)}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                size="xs"
-                                variant="outline"
-                                asChild
-                                className="hover:bg-muted/50 transition-colors"
-                              >
-                                <Link href={`/roles/edit/${role.id}`}>
-                                  <Pencil className="size-3.5" />
-                                  Editar
-                                </Link>
-                              </Button>
-                              <Button
-                                size="xs"
-                                variant="destructive"
-                                onClick={() => setDeleteCandidate(role)}
-                              >
-                                <Trash2 className="size-3.5" />
-                                Eliminar
-                              </Button>
-                            </div>
-                          </TableCell>
+              {loading && !hasLoadedOnce ? (
+                <RolesTableSkeleton rows={8} />
+              ) : filteredRoles.length === 0 ? (
+                <RolesEmptyState onReload={loadData} />
+              ) : (
+                <div className={cn("transition-opacity duration-300", loading ? "opacity-75" : "opacity-100")}>
+                  <div className="overflow-x-auto rounded-xl border border-border">
+                    <Table className="min-w-full">
+                      <TableHeader className="bg-muted/50">
+                        <TableRow>
+                          <TableHead>ID</TableHead>
+                          <TableHead>Nombre</TableHead>
+                          <TableHead>Descripcion</TableHead>
+                          <TableHead>Registro</TableHead>
+                          <TableHead className="text-right">Acciones</TableHead>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredRoles.map((role) => (
+                          <TableRow key={role.id}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">#{role.id}</TableCell>
+                            <TableCell className="font-medium">{role.nombre}</TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {role.descripcion?.trim() || "Sin descripcion"}
+                            </TableCell>
+                            <TableCell>{formatDate(role.fechaRegistro)}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  asChild
+                                  className="hover:bg-muted/50 transition-colors"
+                                >
+                                  <Link href={`/roles/edit/${role.id}`}>
+                                    <Pencil className="size-3.5" />
+                                    Editar
+                                  </Link>
+                                </Button>
+                                <Button
+                                  size="xs"
+                                  variant="destructive"
+                                  onClick={() => setDeleteCandidate(role)}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                  Eliminar
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
