@@ -86,6 +86,7 @@ export async function createProductStructureController(req: Request, res: Respon
     if (
       message === 'Producto terminado no existe o no es un producto final' ||
       message === 'Materia prima no existe' ||
+      message === 'El componente debe ser una materia prima, insumo o envase activo' ||
       message === 'Un producto no puede ser componente de sí mismo' ||
       message === 'Este componente ya existe en la estructura del producto'
     ) {

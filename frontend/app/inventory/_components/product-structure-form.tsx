@@ -13,11 +13,15 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ProductDto } from "@/types/products";
-import type { CreateProductStructurePayload } from "@/types/product-structure";
+
+type ProductStructureFormSubmitInput = {
+  idMateriaPrima: number;
+  cantidadRequerida: number;
+};
 
 interface ProductStructureFormProps {
   availableProducts: ProductDto[];
-  onSubmit: (data: CreateProductStructurePayload) => Promise<void>;
+  onSubmit: (data: ProductStructureFormSubmitInput) => Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
 }
@@ -48,7 +52,6 @@ export function ProductStructureForm({
 
     try {
       await onSubmit({
-        idProductoTerminado: 0, // Se asigna en la página
         idMateriaPrima,
         cantidadRequerida: Number(cantidadRequerida),
       });
@@ -72,7 +75,7 @@ export function ProductStructureForm({
             <Select
               value={idMateriaPrima?.toString() ?? ""}
               onValueChange={(value) => setIdMateriaPrima(Number(value))}
-              disabled={isLoading}
+              disabled={isLoading || availableProducts.length === 0}
             >
               <SelectTrigger id="idMateriaPrima">
                 <SelectValue placeholder="Seleccione un componente" />
@@ -86,6 +89,13 @@ export function ProductStructureForm({
               </SelectContent>
             </Select>
           </div>
+
+          {availableProducts.length === 0 && (
+            <p className="text-sm text-amber-700">
+              No hay componentes disponibles para agregar. Verifique que existan productos activos
+              con categoría INSUMO, ENVASE o MATERIA_PRIMA y que no estén ya en esta estructura.
+            </p>
+          )}
 
           <div>
             <Label htmlFor="cantidadRequerida">Cantidad Requerida</Label>
@@ -107,7 +117,7 @@ export function ProductStructureForm({
             <Button type="button" variant="outline" onClick={onCancel} disabled={isLoading}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={isLoading}>
+            <Button type="submit" disabled={isLoading || availableProducts.length === 0}>
               {isLoading ? "Guardando..." : "Agregar"}
             </Button>
           </div>

@@ -65,7 +65,7 @@ export default function InventoryPage() {
     try {
       const response = await listProducts({
         page: 1,
-        limit: 200,
+        limit: 100,
         ...(query.trim() ? { busqueda: query.trim() } : {}),
         ...(category ? { categoria: category } : {}),
       });

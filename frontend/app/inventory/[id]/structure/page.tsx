@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -61,12 +61,23 @@ export default function ProductStructurePage() {
       const [productData, structureData, productsData] = await Promise.all([
         getProductById(productId),
         listStructureByProduct(productId),
-        listProducts({ limit: 1000, anulado: false }),
+        listProducts({ limit: 100, anulado: false }),
       ]);
+
+      const existingComponentIds = new Set(
+        structureData.filter((item) => !item.anulado).map((item) => item.idMateriaPrima),
+      );
 
       setProduct(productData);
       setStructure(structureData);
-      setAvailableProducts(productsData.items.filter((p) => p.id !== productId));
+      setAvailableProducts(
+        productsData.items.filter(
+          (p) =>
+            p.id !== productId &&
+            ["MATERIA_PRIMA", "INSUMO", "ENVASE"].includes(p.categoria) &&
+            !existingComponentIds.has(p.id),
+        ),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al cargar datos");
     } finally {
