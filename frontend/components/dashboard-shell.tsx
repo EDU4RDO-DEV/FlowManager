@@ -4,42 +4,48 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 import {
+  BarChart3,
+  BookOpenText,
+  Boxes,
+  ChevronDown,
   ChevronLeft,
-  ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   CircleUserRound,
   X,
   Building2,
   BriefcaseBusiness,
+  Car,
+  CreditCard,
   Droplet,
-  Factory,
+  FileSpreadsheet,
+  FileText,
+  Fuel,
   LayoutDashboard,
   Menu,
   LogOut,
   PackageSearch,
-  SlidersHorizontal,
+  Receipt,
   ReceiptText,
+  Route,
+  ShoppingBag,
+  ShoppingCart,
   ShieldCheck,
+  SlidersHorizontal,
   Truck,
   Users,
+  Wallet,
+  Wrench,
 } from "lucide-react";
 
 import {
   getAllowedModulesByRole,
   RBAC_PREVIEW_MODE,
-  type AppModuleKey,
 } from "@/lib/rbac";
 import { useAuth } from "@/components/auth-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 
 type DashboardShellProps = {
   title: string;
@@ -47,80 +53,32 @@ type DashboardShellProps = {
   children?: ReactNode;
 };
 
-type ModuleItem = {
-  key: AppModuleKey;
-  name: string;
-  path: string;
-  icon: typeof LayoutDashboard;
-};
-
-type SidebarChildItem = {
+type SidebarLinkItem = {
   id: string;
   name: string;
-  path: string;
+  path?: string;
   icon: typeof LayoutDashboard;
-  isActive: (currentPath: string) => boolean;
+  available: boolean;
+  isActive?: (currentPath: string) => boolean;
 };
 
-type SidebarItem = SidebarChildItem & {
-  children?: SidebarChildItem[];
-};
+type SidebarEntry =
+  | {
+      type: "link";
+      item: SidebarLinkItem;
+    }
+  | {
+      type: "group";
+      id: string;
+      name: string;
+      icon: typeof LayoutDashboard;
+      children: SidebarLinkItem[];
+    };
 
-const moduleCatalog: Record<AppModuleKey, ModuleItem> = {
-  resumen: {
-    key: "resumen",
-    name: "Resumen",
-    path: "/",
-    icon: LayoutDashboard,
-  },
-  usuarios: {
-    key: "usuarios",
-    name: "Usuarios",
-    path: "/users",
-    icon: Users,
-  },
-  roles: {
-    key: "roles",
-    name: "Roles y Permisos",
-    path: "/roles",
-    icon: ShieldCheck,
-  },
-  empleados: {
-    key: "empleados",
-    name: "Empleados",
-    path: "/employees",
-    icon: BriefcaseBusiness,
-  },
-  clientes: {
-    key: "clientes",
-    name: "Clientes",
-    path: "/clients",
-    icon: Building2,
-  },
-  proveedores: {
-    key: "proveedores",
-    name: "Proveedores",
-    path: "/providers",
-    icon: Truck,
-  },
-  sesiones: {
-    key: "sesiones",
-    name: "Sesiones de Ruta/Caja",
-    path: "/sessions",
-    icon: ReceiptText,
-  },
-  produccion: {
-    key: "produccion",
-    name: "Produccion",
-    path: "/production",
-    icon: Factory,
-  },
-  inventario: {
-    key: "inventario",
-    name: "Inventario",
-    path: "/inventory",
-    icon: PackageSearch,
-  },
+type SidebarSection = {
+  id: string;
+  title: string;
+  items: SidebarEntry[];
 };
 
 function isPathActive(currentPath: string, modulePath: string): boolean {
@@ -131,17 +89,9 @@ function isPathActive(currentPath: string, modulePath: string): boolean {
   return currentPath === modulePath || currentPath.startsWith(`${modulePath}/`);
 }
 
-const secondaryModuleCatalog: Partial<Record<AppModuleKey, SidebarChildItem[]>> = {
-  inventario: [
-    {
-      id: "inventario-ajustes",
-      name: "Ajustes de Inventario",
-      path: "/inventory/adjustments",
-      icon: SlidersHorizontal,
-      isActive: (currentPath: string) => isPathActive(currentPath, "/inventory/adjustments"),
-    },
-  ],
-};
+function isInventoryStructureActive(currentPath: string): boolean {
+  return /^\/inventory\/\d+\/structure(?:\/|$)/.test(currentPath);
+}
 
 export function DashboardShell({ title, description, children }: DashboardShellProps) {
   const pathname = usePathname();
@@ -149,31 +99,303 @@ export function DashboardShell({ title, description, children }: DashboardShellP
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [userPanelOpen, setUserPanelOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+    ventas: false,
+    logistica: false,
+    inventario: false,
+    compras: false,
+    rrhh: false,
+    configuracion: false,
+  });
   const allowedModules = getAllowedModulesByRole(user?.nombreRol);
-  const sidebarItems = useMemo<SidebarItem[]>(
+  const sections = useMemo<SidebarSection[]>(
     () => {
-      const baseItems: SidebarItem[] = allowedModules.map((key) => {
-        const module = moduleCatalog[key];
-        const secondaryItems = secondaryModuleCatalog[key] ?? [];
+      const has = {
+        resumen: allowedModules.includes("resumen"),
+        sesiones: allowedModules.includes("sesiones"),
+        clientes: allowedModules.includes("clientes"),
+        inventario: allowedModules.includes("inventario"),
+        proveedores: allowedModules.includes("proveedores"),
+        empleados: allowedModules.includes("empleados"),
+        usuarios: allowedModules.includes("usuarios"),
+        roles: allowedModules.includes("roles"),
+      };
 
-        return {
-          id: module.key,
-          name: module.name,
-          path: module.path,
-          icon: module.icon,
-          isActive: (currentPath: string) => {
-            const activeInMain = isPathActive(currentPath, module.path);
-            const activeInSecondary = secondaryItems.some((item) => item.isActive(currentPath));
-            return activeInMain || activeInSecondary;
-          },
-          children: secondaryItems,
-        };
-      });
-
-      return baseItems;
+      return [
+        {
+          id: "inicio",
+          title: "INICIO",
+          items: [
+            {
+              type: "link",
+              item: {
+                id: "dashboard",
+                name: "Inicio / Dashboard",
+                path: "/",
+                icon: BarChart3,
+                available: has.resumen,
+                isActive: (currentPath: string) => currentPath === "/",
+              },
+            },
+          ],
+        },
+        {
+          id: "operaciones-ventas",
+          title: "OPERACIONES Y VENTAS",
+          items: [
+            {
+              type: "group",
+              id: "ventas",
+              name: "Ventas",
+              icon: ShoppingCart,
+              children: [
+                {
+                  id: "ventas-pdv",
+                  name: "Punto de Venta / Ventas",
+                  path: "/sessions",
+                  icon: CreditCard,
+                  available: has.sesiones,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/sessions"),
+                },
+                {
+                  id: "ventas-pagos",
+                  name: "Pagos y Abonos",
+                  icon: Wallet,
+                  available: false,
+                },
+                {
+                  id: "ventas-facturacion",
+                  name: "Talonarios / Facturación",
+                  icon: Receipt,
+                  available: false,
+                },
+              ],
+            },
+            {
+              type: "group",
+              id: "logistica",
+              name: "Logística y Flota",
+              icon: Truck,
+              children: [
+                {
+                  id: "logistica-rutas",
+                  name: "Rutas y Distribución",
+                  icon: Route,
+                  available: false,
+                },
+                {
+                  id: "logistica-vehiculos",
+                  name: "Vehículos",
+                  icon: Car,
+                  available: false,
+                },
+                {
+                  id: "logistica-gastos",
+                  name: "Gastos de Vehículo",
+                  icon: Fuel,
+                  available: false,
+                },
+              ],
+            },
+            {
+              type: "link",
+              item: {
+                id: "clientes",
+                name: "Clientes",
+                path: "/clients",
+                icon: Building2,
+                available: has.clientes,
+                isActive: (currentPath: string) => isPathActive(currentPath, "/clients"),
+              },
+            },
+          ],
+        },
+        {
+          id: "inventario-compras",
+          title: "INVENTARIO Y COMPRAS",
+          items: [
+            {
+              type: "group",
+              id: "inventario",
+              name: "Inventario",
+              icon: PackageSearch,
+              children: [
+                {
+                  id: "inventario-catalogo",
+                  name: "Catálogo de Productos",
+                  path: "/inventory",
+                  icon: Boxes,
+                  available: has.inventario,
+                  isActive: (currentPath: string) =>
+                    currentPath === "/inventory" ||
+                    currentPath.startsWith("/inventory/create") ||
+                    currentPath.startsWith("/inventory/edit"),
+                },
+                {
+                  id: "inventario-bom",
+                  name: "Estructura / Recetas (BOM)",
+                  path: "/inventory",
+                  icon: BookOpenText,
+                  available: has.inventario,
+                  isActive: (currentPath: string) => isInventoryStructureActive(currentPath),
+                },
+                {
+                  id: "inventario-ajustes",
+                  name: "Ajustes y Mermas",
+                  path: "/inventory/adjustments",
+                  icon: SlidersHorizontal,
+                  available: has.inventario,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/inventory/adjustments"),
+                },
+                {
+                  id: "inventario-kardex",
+                  name: "Bitácora / Kardex",
+                  icon: FileText,
+                  available: false,
+                },
+              ],
+            },
+            {
+              type: "group",
+              id: "compras",
+              name: "Compras",
+              icon: ShoppingBag,
+              children: [
+                {
+                  id: "compras-registro",
+                  name: "Registro de Compras",
+                  icon: ReceiptText,
+                  available: false,
+                },
+                {
+                  id: "compras-gastos",
+                  name: "Gastos de Compra",
+                  icon: Wrench,
+                  available: false,
+                },
+                {
+                  id: "compras-proveedores",
+                  name: "Proveedores (Catálogo)",
+                  path: "/providers",
+                  icon: Truck,
+                  available: has.proveedores,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/providers"),
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: "administracion-rrhh",
+          title: "ADMINISTRACIÓN Y RRHH",
+          items: [
+            {
+              type: "group",
+              id: "rrhh",
+              name: "Empleados y Planilla",
+              icon: BriefcaseBusiness,
+              children: [
+                {
+                  id: "rrhh-empleados",
+                  name: "Gestión de Empleados",
+                  path: "/employees",
+                  icon: Users,
+                  available: has.empleados,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/employees"),
+                },
+                {
+                  id: "rrhh-planilla",
+                  name: "Planilla Mensual",
+                  icon: FileSpreadsheet,
+                  available: false,
+                },
+                {
+                  id: "rrhh-comisiones",
+                  name: "Configuración de Comisiones",
+                  icon: SlidersHorizontal,
+                  available: false,
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: "analisis-sistema",
+          title: "ANÁLISIS Y SISTEMA",
+          items: [
+            {
+              type: "link",
+              item: {
+                id: "reportes",
+                name: "Reportes y Analítica",
+                icon: BarChart3,
+                available: false,
+              },
+            },
+            {
+              type: "group",
+              id: "configuracion",
+              name: "Configuración / Seguridad",
+              icon: ShieldCheck,
+              children: [
+                {
+                  id: "config-usuarios",
+                  name: "Usuarios",
+                  path: "/users",
+                  icon: Users,
+                  available: has.usuarios,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/users"),
+                },
+                {
+                  id: "config-roles",
+                  name: "Roles y Permisos",
+                  path: "/roles",
+                  icon: ShieldCheck,
+                  available: has.roles,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/roles"),
+                },
+              ],
+            },
+          ],
+        },
+      ];
     },
     [allowedModules],
   );
+
+  const collapsedQuickLinks = useMemo(() => {
+    return sections
+      .flatMap((section) =>
+        section.items.flatMap((entry) => {
+          if (entry.type === "link") {
+            return [entry.item];
+          }
+
+          return entry.children;
+        }),
+      )
+      .filter((item) => item.available && item.path)
+      .slice(0, 8);
+  }, [sections]);
+
+  function isLinkActive(item: SidebarLinkItem): boolean {
+    if (item.isActive) {
+      return item.isActive(pathname);
+    }
+
+    if (!item.path) {
+      return false;
+    }
+
+    return isPathActive(pathname, item.path);
+  }
+
+  function toggleGroup(groupId: string): void {
+    setExpandedGroups((prev) => ({
+      ...prev,
+      [groupId]: !(prev[groupId] ?? true),
+    }));
+  }
 
   function closeMobileMenu() {
     setMobileMenuOpen(false);
@@ -200,7 +422,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
       ) : null}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 hidden border-r border-border bg-background/95 backdrop-blur-sm transition-all duration-300 lg:flex lg:flex-col ${
+        className={`fixed inset-y-0 left-0 z-50 hidden border-r border-stone-200/80 bg-linear-to-b from-stone-100 via-slate-100 to-stone-50 backdrop-blur-sm transition-all duration-300 dark:border-slate-800 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 lg:flex lg:flex-col ${
           sidebarCollapsed ? "lg:w-20" : "lg:w-76 xl:w-80"
         }`}
       >
@@ -210,8 +432,8 @@ export function DashboardShell({ title, description, children }: DashboardShellP
               <Droplet className="size-5" />
             </span>
             <div className={`leading-tight ${sidebarCollapsed ? "hidden" : "block"}`}>
-              <p className="text-sm font-semibold tracking-tight">FlowManager</p>
-              <p className="text-xs text-muted-foreground">Industrias Basan</p>
+              <p className="text-sm font-semibold tracking-tight text-slate-900 dark:text-foreground">INDUSTRIA BASÁN</p>
+              <p className="text-xs text-slate-600 dark:text-muted-foreground">FLOWMANAGER</p>
             </div>
           </div>
           <Button
@@ -225,61 +447,141 @@ export function DashboardShell({ title, description, children }: DashboardShellP
         </div>
 
         <div className="flex-1 overflow-y-auto p-3">
-          <div className="rounded-xl border border-border bg-background p-2">
-            <p className={`mb-2 px-2 text-xs font-medium tracking-wide text-muted-foreground ${sidebarCollapsed ? "text-center" : ""}`}>
-              {sidebarCollapsed ? "MOD" : "MODULOS"}
-            </p>
-            <nav className="space-y-1">
-              {sidebarItems.map((item) => {
-                const Icon = item.icon;
-                const active = item.isActive(pathname);
+          <div className="rounded-xl border border-stone-200/70 bg-white/75 p-2 dark:border-slate-800 dark:bg-slate-950/60">
+            {sidebarCollapsed ? (
+              <nav className="space-y-1">
+                {collapsedQuickLinks.map((item) => {
+                  const Icon = item.icon;
+                  const active = isLinkActive(item);
 
-                return (
-                  <div key={item.id} className="space-y-1">
+                  return (
                     <Link
-                      href={item.path}
-                      className={`group flex items-center rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-muted/50 ${
+                      key={item.id}
+                      href={item.path!}
+                      className={`group flex justify-center rounded-lg border px-2 py-2 text-sm transition-colors hover:bg-stone-100/70 dark:hover:bg-slate-800/60 ${
                         active
-                          ? "border-sky-300/60 bg-sky-100/70 text-sky-700"
+                          ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
                           : "border-transparent text-foreground"
-                      } ${sidebarCollapsed ? "justify-center" : "gap-3"}`}
+                      }`}
                     >
                       <Icon className="size-4 shrink-0" />
-                      <span className={`truncate ${sidebarCollapsed ? "hidden" : "block"}`}>
-                        {item.name}
-                      </span>
-                      {!sidebarCollapsed ? (
-                        <ChevronRight className="ml-auto size-3 text-muted-foreground group-hover:text-foreground" />
-                      ) : null}
                     </Link>
+                  );
+                })}
+              </nav>
+            ) : (
+              <nav className="space-y-3">
+                {sections.map((section) => (
+                  <div key={section.id} className="space-y-1.5">
+                    {section.items.map((entry) => {
+                      if (entry.type === "link") {
+                        const item = entry.item;
+                        const Icon = item.icon;
+                        const active = isLinkActive(item);
 
-                    {!sidebarCollapsed && item.children && item.children.length > 0 ? (
-                      <div className="ml-4 space-y-1 border-l border-border/70 pl-2">
-                        {item.children.map((child) => {
-                          const ChildIcon = child.icon;
-                          const childActive = child.isActive(pathname);
-
+                        if (!item.available || !item.path) {
                           return (
-                            <Link
-                              key={child.id}
-                              href={child.path}
-                              className={`group flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition-colors hover:bg-muted/50 ${
-                                childActive
-                                  ? "border-sky-300/60 bg-sky-100/70 text-sky-700"
-                                  : "border-transparent text-muted-foreground"
-                              }`}
+                            <div
+                              key={item.id}
+                              className="flex items-center gap-3 rounded-lg border border-transparent px-2.5 py-2 text-sm text-slate-400 dark:text-muted-foreground/70"
                             >
-                              <ChildIcon className="size-3.5 shrink-0" />
-                              <span className="truncate">{child.name}</span>
-                            </Link>
+                              <Icon className="size-4 shrink-0" />
+                              <span className="truncate">{item.name}</span>
+                              <span className="ml-auto rounded border border-amber-300/60 bg-amber-100/70 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300">
+                                Próx.
+                              </span>
+                            </div>
                           );
-                        })}
-                      </div>
-                    ) : null}
+                        }
+
+                        return (
+                          <Link
+                            key={item.id}
+                            href={item.path}
+                            className={`group flex items-center gap-3 rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-stone-100/70 dark:hover:bg-slate-800/60 ${
+                              active
+                                ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                                : "border-transparent text-foreground"
+                            }`}
+                          >
+                            <Icon className="size-4 shrink-0" />
+                            <span className="truncate">{item.name}</span>
+                          </Link>
+                        );
+                      }
+
+                      const isOpen = expandedGroups[entry.id] ?? true;
+                      const hasActiveChild = entry.children.some((child) => isLinkActive(child));
+                      const GroupIcon = entry.icon;
+
+                      return (
+                        <div key={entry.id} className="space-y-1">
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup(entry.id)}
+                            className={`flex w-full items-center gap-3 rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-stone-100/70 dark:hover:bg-slate-800/60 ${
+                              hasActiveChild
+                                ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                                : "border-transparent text-foreground"
+                            }`}
+                          >
+                            <GroupIcon className="size-4 shrink-0" />
+                            <span className="truncate text-left">{entry.name}</span>
+                            <ChevronDown
+                              className={`ml-auto size-4 text-slate-500 transition-transform duration-300 ease-out dark:text-muted-foreground ${
+                                isOpen ? "rotate-180" : "rotate-0"
+                              }`}
+                            />
+                          </button>
+
+                          <div
+                            className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                              isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                            }`}
+                          >
+                            <div className="min-h-0 overflow-hidden">
+                              <div className="ml-4 mt-1 space-y-1 border-l border-stone-200 pl-2 dark:border-slate-800">
+                              {entry.children.map((child) => {
+                                const ChildIcon = child.icon;
+                                const childActive = isLinkActive(child);
+
+                                if (!child.available || !child.path) {
+                                  return (
+                                    <div
+                                      key={child.id}
+                                      className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-xs text-slate-400 dark:text-muted-foreground/70"
+                                    >
+                                      <ChildIcon className="size-3.5 shrink-0" />
+                                      <span className="truncate">{child.name}</span>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <Link
+                                    key={child.id}
+                                    href={child.path}
+                                    className={`group flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition-colors hover:bg-stone-100/70 dark:hover:bg-slate-800/60 ${
+                                      childActive
+                                        ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                                        : "border-transparent text-muted-foreground"
+                                    }`}
+                                  >
+                                    <ChildIcon className="size-3.5 shrink-0" />
+                                    <span className="truncate">{child.name}</span>
+                                  </Link>
+                                );
+                              })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </nav>
+                ))}
+              </nav>
+            )}
           </div>
         </div>
 
@@ -291,7 +593,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
       </aside>
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-[min(22rem,92vw)] border-r border-border bg-background/95 backdrop-blur-sm transition-transform duration-300 lg:hidden ${
+        className={`fixed inset-y-0 left-0 z-50 w-[min(22rem,92vw)] border-r border-stone-200/80 bg-linear-to-b from-stone-100 via-slate-100 to-stone-50 backdrop-blur-sm transition-transform duration-300 dark:border-slate-800 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 lg:hidden ${
           mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -301,8 +603,8 @@ export function DashboardShell({ title, description, children }: DashboardShellP
               <Droplet className="size-5" />
             </span>
             <div className="leading-tight">
-              <p className="text-sm font-semibold tracking-tight">FlowManager</p>
-              <p className="text-xs text-muted-foreground">Industrias Basan</p>
+              <p className="text-sm font-semibold tracking-tight text-slate-900 dark:text-foreground">INDUSTRIA BASÁN</p>
+              <p className="text-xs text-slate-600 dark:text-muted-foreground">FLOWMANAGER</p>
             </div>
           </div>
           <Button
@@ -316,53 +618,115 @@ export function DashboardShell({ title, description, children }: DashboardShellP
         </div>
 
         <div className="h-[calc(100%-4rem)] overflow-y-auto p-4">
-          <nav className="space-y-1">
-            {sidebarItems.map((item) => {
-              const Icon = item.icon;
-              const active = item.isActive(pathname);
+          <nav className="space-y-3">
+            {sections.map((section) => (
+              <div key={`mobile-section-${section.id}`} className="space-y-1.5">
+                {section.items.map((entry) => {
+                  if (entry.type === "link") {
+                    const item = entry.item;
+                    const Icon = item.icon;
+                    const active = isLinkActive(item);
 
-              return (
-                <div key={`mobile-${item.id}`} className="space-y-1">
-                  <Link
-                    href={item.path}
-                    onClick={closeMobileMenu}
-                    className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors hover:bg-muted/50 ${
-                      active
-                        ? "border-sky-300/60 bg-sky-100/70 text-sky-700"
-                        : "border-transparent text-foreground"
-                    }`}
-                  >
-                    <Icon className="size-4 shrink-0" />
-                    <span className="truncate">{item.name}</span>
-                  </Link>
+                    if (!item.available || !item.path) {
+                      return (
+                        <div
+                          key={`mobile-${item.id}`}
+                          className="flex items-center gap-3 rounded-lg border border-transparent px-2.5 py-2 text-sm text-slate-400 dark:text-muted-foreground/70"
+                        >
+                          <Icon className="size-4 shrink-0" />
+                          <span className="truncate">{item.name}</span>
+                        </div>
+                      );
+                    }
 
-                  {item.children && item.children.length > 0 ? (
-                    <div className="ml-5 space-y-1 border-l border-border/70 pl-2">
-                      {item.children.map((child) => {
-                        const ChildIcon = child.icon;
-                        const childActive = child.isActive(pathname);
+                    return (
+                      <Link
+                        key={`mobile-${item.id}`}
+                        href={item.path}
+                        onClick={closeMobileMenu}
+                        className={`flex items-center gap-3 rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-stone-100/70 dark:hover:bg-slate-800/60 ${
+                          active
+                            ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                            : "border-transparent text-foreground"
+                        }`}
+                      >
+                        <Icon className="size-4 shrink-0" />
+                        <span className="truncate">{item.name}</span>
+                      </Link>
+                    );
+                  }
 
-                        return (
-                          <Link
-                            key={`mobile-${child.id}`}
-                            href={child.path}
-                            onClick={closeMobileMenu}
-                            className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors hover:bg-muted/50 ${
-                              childActive
-                                ? "border-sky-300/60 bg-sky-100/70 text-sky-700"
-                                : "border-transparent text-muted-foreground"
-                            }`}
-                          >
-                            <ChildIcon className="size-3.5 shrink-0" />
-                            <span className="truncate">{child.name}</span>
-                          </Link>
-                        );
-                      })}
+                  const GroupIcon = entry.icon;
+                  const isOpen = expandedGroups[entry.id] ?? true;
+                  const hasActiveChild = entry.children.some((child) => isLinkActive(child));
+
+                  return (
+                    <div key={`mobile-${entry.id}`} className="space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(entry.id)}
+                        className={`flex w-full items-center gap-3 rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-stone-100/70 dark:hover:bg-slate-800/60 ${
+                          hasActiveChild
+                            ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                            : "border-transparent text-foreground"
+                        }`}
+                      >
+                        <GroupIcon className="size-4 shrink-0" />
+                        <span className="truncate text-left">{entry.name}</span>
+                        <ChevronDown
+                          className={`ml-auto size-4 text-slate-500 transition-transform duration-300 ease-out dark:text-muted-foreground ${
+                            isOpen ? "rotate-180" : "rotate-0"
+                          }`}
+                        />
+                      </button>
+
+                      <div
+                        className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                          isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                        }`}
+                      >
+                        <div className="min-h-0 overflow-hidden">
+                          <div className="ml-5 mt-1 space-y-1 border-l border-stone-200 pl-2 dark:border-slate-800">
+                          {entry.children.map((child) => {
+                            const ChildIcon = child.icon;
+                            const childActive = isLinkActive(child);
+
+                            if (!child.available || !child.path) {
+                              return (
+                                <div
+                                  key={`mobile-${child.id}`}
+                                  className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-xs text-slate-400 dark:text-muted-foreground/70"
+                                >
+                                  <ChildIcon className="size-3.5 shrink-0" />
+                                  <span className="truncate">{child.name}</span>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <Link
+                                key={`mobile-${child.id}`}
+                                href={child.path}
+                                onClick={closeMobileMenu}
+                                className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition-colors hover:bg-stone-100/70 dark:hover:bg-slate-800/60 ${
+                                  childActive
+                                    ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                                    : "border-transparent text-muted-foreground"
+                                }`}
+                              >
+                                <ChildIcon className="size-3.5 shrink-0" />
+                                <span className="truncate">{child.name}</span>
+                              </Link>
+                            );
+                          })}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  ) : null}
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            ))}
           </nav>
         </div>
       </aside>
@@ -372,7 +736,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
           sidebarCollapsed ? "lg:pl-20" : "lg:pl-76 xl:pl-80"
         }`}
       >
-        <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur-sm">
+        <header className="sticky top-0 z-30 border-b border-stone-200/80 bg-stone-100/85 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/75">
           <div className="flex h-16 w-full items-center gap-3 px-3 sm:px-4 md:px-6 xl:px-8">
             <Button
               variant="outline"
