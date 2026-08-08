@@ -4,12 +4,18 @@ import type {
   CreateRolePayload,
   DeleteRolePayload,
   RoleDto,
+  RestoreRolePayload,
   RolesListResponse,
   UpdateRolePayload,
 } from "@/types/roles";
 
 export async function listRoles(): Promise<RoleDto[]> {
   const { data } = await api.get<RolesListResponse>("/api/roles");
+  return data.data ?? [];
+}
+
+export async function listAnulatedRoles(): Promise<RoleDto[]> {
+  const { data } = await api.get<RolesListResponse>("/api/roles/anulados");
   return data.data ?? [];
 }
 
@@ -39,4 +45,12 @@ export async function updateRole(id: number, payload: UpdateRolePayload): Promis
 
 export async function deleteRole(id: number, payload?: DeleteRolePayload): Promise<void> {
   await api.delete(`/api/roles/${id}`, { data: payload });
+}
+
+export async function restoreRole(id: number, payload?: RestoreRolePayload): Promise<RoleDto> {
+  const { data } = await api.patch<ApiResponse<RoleDto>>(`/api/roles/${id}/restaurar`, payload);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al restaurar rol");
+  }
+  return data.data;
 }

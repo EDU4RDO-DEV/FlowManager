@@ -30,3 +30,7 @@ export interface UpdateRolePayload {
 export interface DeleteRolePayload {
   idUsuarioAnulador?: number;
 }
+
+export interface RestoreRolePayload {
+  idUsuarioModificador?: number;
+}

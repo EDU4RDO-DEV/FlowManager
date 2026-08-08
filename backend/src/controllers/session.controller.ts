@@ -5,11 +5,15 @@ import {
   createSession,
   deleteSession,
   getSessionById,
+  listAnulatedSessions,
   listSessions,
+  restoreSession,
   updateSession,
 } from '../services/session.service';
 import {
   createSessionSchema,
+  deleteSessionBodySchema,
+  restoreSessionBodySchema,
   sessionIdParamsSchema,
   updateSessionSchema,
 } from '../validators/session.validators';
@@ -18,6 +22,16 @@ import { getZodErrorMessage } from '../validators/validation';
 export async function listSessionsController(_req: Request, res: Response) {
   try {
     const data = await listSessions();
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function listAnulatedSessionsController(_req: Request, res: Response) {
+  try {
+    const data = await listAnulatedSessions();
     return res.status(200).json({ ok: true, data });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno';
@@ -104,8 +118,9 @@ export async function updateSessionController(req: Request, res: Response) {
 export async function deleteSessionController(req: Request, res: Response) {
   try {
     const { id } = sessionIdParamsSchema.parse(req.params);
+    const { idUsuarioAnulador } = deleteSessionBodySchema.parse(req.body ?? {});
 
-    await deleteSession(id);
+    await deleteSession(id, idUsuarioAnulador ?? req.auth?.userId);
     return res.status(200).json({ ok: true, message: 'Sesion anulada correctamente' });
   } catch (error) {
     if (error instanceof ZodError) {
@@ -115,6 +130,32 @@ export async function deleteSessionController(req: Request, res: Response) {
     const message = error instanceof Error ? error.message : 'Error interno';
 
     if (message === 'Sesion no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+
+    if (message === 'Usuario no existe') {
+      return res.status(409).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function restoreSessionController(req: Request, res: Response) {
+  try {
+    const { id } = sessionIdParamsSchema.parse(req.params);
+    restoreSessionBodySchema.parse(req.body ?? {});
+
+    const data = await restoreSession(id);
+    return res.status(200).json({ ok: true, data, message: 'Sesion restaurada correctamente' });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message === 'Sesion anulada no existe') {
       return res.status(404).json({ ok: false, message });
     }
 

@@ -157,3 +157,44 @@ export async function deleteRole(id: number, idUsuarioAnulador?: number) {
     },
   });
 }
+
+export async function listAnulatedRoles() {
+  const roles = await prisma.rol.findMany({
+    where: { Anulado: true },
+    orderBy: { FechaAnulacion: 'desc' },
+  });
+
+  return roles.map(toRoleDto);
+}
+
+export async function restoreRole(id: number, idUsuarioModificador?: number) {
+  const existing = await prisma.rol.findFirst({
+    where: { Id: id, Anulado: true },
+    select: { Id: true, Nombre: true },
+  });
+
+  if (!existing) {
+    throw new Error('Rol anulado no existe');
+  }
+
+  if (idUsuarioModificador !== undefined) {
+    await validateUsuarioExists(idUsuarioModificador);
+  }
+
+  await validateRoleNameAvailable(existing.Nombre, id);
+
+  const restored = await prisma.rol.update({
+    where: { Id: id },
+    data: {
+      Anulado: false,
+      ...(idUsuarioModificador !== undefined
+        ? { IdUsuarioModificador: idUsuarioModificador }
+        : {}),
+      FechaModificacion: new Date(),
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
+    },
+  });
+
+  return toRoleDto(restored);
+}

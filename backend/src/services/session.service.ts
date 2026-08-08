@@ -69,6 +69,15 @@ export async function listSessions() {
   return sessions.map(toSessionDto);
 }
 
+export async function listAnulatedSessions() {
+  const sessions = await prisma.sesion.findMany({
+    where: { Anulado: true },
+    orderBy: { FechaAnulacion: 'desc' },
+  });
+
+  return sessions.map(toSessionDto);
+}
+
 export async function getSessionById(id: number) {
   const session = await prisma.sesion.findFirst({
     where: { Id: id, Anulado: false },
@@ -151,7 +160,7 @@ export async function updateSession(id: number, input: UpdateSessionInput) {
   return toSessionDto(updated);
 }
 
-export async function deleteSession(id: number) {
+export async function deleteSession(id: number, idUsuarioAnulador?: number) {
   const existing = await prisma.sesion.findFirst({
     where: { Id: id, Anulado: false },
     select: { Id: true },
@@ -161,11 +170,38 @@ export async function deleteSession(id: number) {
     throw new Error('Sesion no existe');
   }
 
+  if (idUsuarioAnulador !== undefined) {
+    await validateUsuarioExists(idUsuarioAnulador);
+  }
+
   await prisma.sesion.update({
     where: { Id: id },
     data: {
       Anulado: true,
+      ...(idUsuarioAnulador !== undefined ? { IdUsuarioAnulador: idUsuarioAnulador } : {}),
       FechaAnulacion: new Date(),
     },
   });
+}
+
+export async function restoreSession(id: number) {
+  const existing = await prisma.sesion.findFirst({
+    where: { Id: id, Anulado: true },
+    select: { Id: true },
+  });
+
+  if (!existing) {
+    throw new Error('Sesion anulada no existe');
+  }
+
+  const restored = await prisma.sesion.update({
+    where: { Id: id },
+    data: {
+      Anulado: false,
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
+    },
+  });
+
+  return toSessionDto(restored);
 }

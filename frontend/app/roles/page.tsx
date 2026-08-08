@@ -2,7 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { KeyRound, Loader2, Pencil, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
+import {
+  KeyRound,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
@@ -13,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -28,7 +38,12 @@ import {
   RolesCardsSkeleton,
   RolesTableSkeleton,
 } from "@/app/roles/_components/roles-skeletons";
-import { deleteRole, listRoles } from "@/services/roles.service";
+import {
+  deleteRole,
+  listAnulatedRoles,
+  listRoles,
+  restoreRole,
+} from "@/services/roles.service";
 import type { RoleDto } from "@/types/roles";
 
 function formatDate(value: string | null): string {
@@ -40,7 +55,8 @@ function formatDate(value: string | null): string {
 
 export default function RolesPage() {
   const { user } = useAuth();
-  const [roles, setRoles] = useState<RoleDto[]>([]);
+  const [rolesActivos, setRolesActivos] = useState<RoleDto[]>([]);
+  const [rolesAnulados, setRolesAnulados] = useState<RoleDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
@@ -49,8 +65,9 @@ export default function RolesPage() {
   async function loadData() {
     setLoading(true);
     try {
-      const data = await listRoles();
-      setRoles(data);
+      const [activos, anulados] = await Promise.all([listRoles(), listAnulatedRoles()]);
+      setRolesActivos(activos);
+      setRolesAnulados(anulados);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cargar el panel de permisos."));
     } finally {
@@ -63,24 +80,38 @@ export default function RolesPage() {
     void loadData();
   }, []);
 
-  const filteredRoles = useMemo(() => {
+  const filteredRolesActivos = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return roles.filter((role) => {
+    return rolesActivos.filter((role) => {
       if (normalizedQuery.length === 0) return true;
       return (
         role.nombre.toLowerCase().includes(normalizedQuery) ||
         (role.descripcion ?? "").toLowerCase().includes(normalizedQuery)
       );
     });
-  }, [roles, query]);
+  }, [rolesActivos, query]);
+
+  const filteredRolesAnulados = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return rolesAnulados.filter((role) => {
+      if (normalizedQuery.length === 0) return true;
+      return (
+        role.nombre.toLowerCase().includes(normalizedQuery) ||
+        (role.descripcion ?? "").toLowerCase().includes(normalizedQuery)
+      );
+    });
+  }, [rolesAnulados, query]);
 
   const metrics = useMemo(() => {
-    const total = roles.length;
-    const activos = roles.filter((item) => !item.anulado).length;
-    const conDescripcion = roles.filter((item) => (item.descripcion ?? "").trim().length > 0).length;
+    const total = rolesActivos.length + rolesAnulados.length;
+    const activos = rolesActivos.length;
+    const conDescripcion = rolesActivos.filter(
+      (item) => (item.descripcion ?? "").trim().length > 0,
+    ).length;
     return { total, activos, conDescripcion };
-  }, [roles]);
+  }, [rolesActivos, rolesAnulados]);
 
   async function confirmDeleteRole() {
     if (!deleteCandidate) return;
@@ -90,11 +121,33 @@ export default function RolesPage() {
         deleteCandidate.id,
         user?.id ? { idUsuarioAnulador: user.id } : undefined,
       );
-      toast.success("Rol eliminado correctamente.");
+      const movedToTrash: RoleDto = {
+        ...deleteCandidate,
+        anulado: true,
+        idUsuarioAnulador: user?.id ?? deleteCandidate.idUsuarioAnulador,
+        fechaAnulacion: new Date().toISOString(),
+      };
+
+      setRolesActivos((prev) => prev.filter((item) => item.id !== deleteCandidate.id));
+      setRolesAnulados((prev) => [movedToTrash, ...prev]);
+      toast.success("Rol anulado correctamente.");
       setDeleteCandidate(null);
-      await loadData();
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo eliminar el rol."));
+    }
+  }
+
+  async function restoreRoleFromTrash(role: RoleDto) {
+    try {
+      const restored = await restoreRole(
+        role.id,
+        user?.id ? { idUsuarioModificador: user.id } : undefined,
+      );
+      setRolesAnulados((prev) => prev.filter((item) => item.id !== role.id));
+      setRolesActivos((prev) => [restored, ...prev]);
+      toast.success("Rol restaurado correctamente.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo restaurar el rol."));
     }
   }
 
@@ -195,62 +248,121 @@ export default function RolesPage() {
                 </div>
               </div>
 
-              {loading && !hasLoadedOnce ? (
-                <RolesTableSkeleton rows={8} />
-              ) : filteredRoles.length === 0 ? (
-                <RolesEmptyState onReload={loadData} />
-              ) : (
-                <div className={cn("transition-opacity duration-300", loading ? "opacity-75" : "opacity-100")}>
-                  <div className="overflow-x-auto rounded-xl border border-border">
-                    <Table className="min-w-full">
-                      <TableHeader className="bg-muted/50">
-                        <TableRow>
-                          <TableHead>ID</TableHead>
-                          <TableHead>Nombre</TableHead>
-                          <TableHead>Descripcion</TableHead>
-                          <TableHead>Registro</TableHead>
-                          <TableHead className="text-right">Acciones</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredRoles.map((role) => (
-                          <TableRow key={role.id}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">#{role.id}</TableCell>
-                            <TableCell className="font-medium">{role.nombre}</TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {role.descripcion?.trim() || "Sin descripcion"}
-                            </TableCell>
-                            <TableCell>{formatDate(role.fechaRegistro)}</TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button
-                                  size="xs"
-                                  variant="outline"
-                                  asChild
-                                  className="hover:bg-muted/50 transition-colors"
-                                >
-                                  <Link href={`/roles/edit/${role.id}`}>
-                                    <Pencil className="size-3.5" />
-                                    Editar
-                                  </Link>
-                                </Button>
-                                <Button
-                                  size="xs"
-                                  variant="destructive"
-                                  onClick={() => setDeleteCandidate(role)}
-                                >
-                                  <Trash2 className="size-3.5" />
-                                  Eliminar
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
+              <Tabs defaultValue="activos">
+                <TabsList>
+                  <TabsTrigger value="activos">
+                    Activos ({filteredRolesActivos.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="anulados">
+                    Anulados ({filteredRolesAnulados.length})
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="activos" className="mt-4">
+                  {loading && !hasLoadedOnce ? (
+                    <RolesTableSkeleton rows={8} />
+                  ) : filteredRolesActivos.length === 0 ? (
+                    <RolesEmptyState mode="activos" onReload={loadData} />
+                  ) : (
+                    <div className={cn("transition-opacity duration-300", loading ? "opacity-75" : "opacity-100")}>
+                      <div className="overflow-x-auto rounded-xl border border-border">
+                        <Table className="min-w-full">
+                          <TableHeader className="bg-muted/50">
+                            <TableRow>
+                              <TableHead>ID</TableHead>
+                              <TableHead>Nombre</TableHead>
+                              <TableHead>Descripcion</TableHead>
+                              <TableHead>Registro</TableHead>
+                              <TableHead className="text-right">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filteredRolesActivos.map((role) => (
+                              <TableRow key={role.id}>
+                                <TableCell className="font-mono text-xs text-muted-foreground">#{role.id}</TableCell>
+                                <TableCell className="font-medium">{role.nombre}</TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {role.descripcion?.trim() || "Sin descripcion"}
+                                </TableCell>
+                                <TableCell>{formatDate(role.fechaRegistro)}</TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      size="xs"
+                                      variant="outline"
+                                      asChild
+                                      className="hover:bg-muted/50 transition-colors"
+                                    >
+                                      <Link href={`/roles/edit/${role.id}`}>
+                                        <Pencil className="size-3.5" />
+                                        Editar
+                                      </Link>
+                                    </Button>
+                                    <Button
+                                      size="xs"
+                                      variant="destructive"
+                                      onClick={() => setDeleteCandidate(role)}
+                                    >
+                                      <Trash2 className="size-3.5" />
+                                      Anular
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="anulados" className="mt-4">
+                  {loading && !hasLoadedOnce ? (
+                    <RolesTableSkeleton rows={8} />
+                  ) : filteredRolesAnulados.length === 0 ? (
+                    <RolesEmptyState mode="anulados" onReload={loadData} />
+                  ) : (
+                    <div className={cn("transition-opacity duration-300", loading ? "opacity-75" : "opacity-100")}>
+                      <div className="overflow-x-auto rounded-xl border border-border">
+                        <Table className="min-w-full">
+                          <TableHeader className="bg-muted/50">
+                            <TableRow>
+                              <TableHead>ID</TableHead>
+                              <TableHead>Nombre</TableHead>
+                              <TableHead>Descripcion</TableHead>
+                              <TableHead>Fecha anulacion</TableHead>
+                              <TableHead className="text-right">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filteredRolesAnulados.map((role) => (
+                              <TableRow key={role.id}>
+                                <TableCell className="font-mono text-xs text-muted-foreground">#{role.id}</TableCell>
+                                <TableCell className="font-medium">{role.nombre}</TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {role.descripcion?.trim() || "Sin descripcion"}
+                                </TableCell>
+                                <TableCell>{formatDate(role.fechaAnulacion)}</TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    size="xs"
+                                    variant="secondary"
+                                    onClick={() => restoreRoleFromTrash(role)}
+                                  >
+                                    <RotateCcw className="size-3.5" />
+                                    Restaurar
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </div>

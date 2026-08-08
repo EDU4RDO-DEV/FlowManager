@@ -43,3 +43,11 @@ export const updateSessionSchema = z
   .refine((data) => Object.keys(data).length > 0, {
     message: 'Debe enviar al menos un campo para actualizar',
   });
+
+export const deleteSessionBodySchema = z.object({
+  idUsuarioAnulador: positiveInt.optional(),
+});
+
+export const restoreSessionBodySchema = z.object({
+  idUsuarioModificador: positiveInt.optional(),
+});
