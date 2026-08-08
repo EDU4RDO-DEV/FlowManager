@@ -25,7 +25,7 @@ export function ClientsTableSkeleton({ rows = 8 }: ClientsTableSkeletonProps) {
     <Card className="rounded-xl border border-border bg-background">
       <CardContent className="p-0">
         <div className="overflow-x-auto rounded-xl border border-border">
-          <div className="min-w-[760px]">
+          <div className="min-w-190">
             <div className="grid grid-cols-6 gap-4 border-b border-border bg-muted/40 px-4 py-3">
               {Array.from({ length: 6 }).map((_, idx) => (
                 <Skeleton key={`clients-head-${idx}`} className="h-4 w-20" />

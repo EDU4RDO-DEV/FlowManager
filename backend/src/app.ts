@@ -4,6 +4,7 @@ import type { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
 
 import { requireAuth } from './middlewares/auth.middleware';
+import adjustmentRouter from './routes/adjustment.routes';
 import authRouter from './routes/auth.routes';
 import clientRouter from './routes/client.routes';
 import employeeRouter from './routes/employee.routes';
@@ -24,6 +25,7 @@ export function createApp() {
   app.use('/uploads', express.static(uploadsRootPath));
 
   app.use('/api/auth', authRouter);
+  app.use('/api/adjustments', requireAuth, adjustmentRouter);
   app.use('/api/clients', requireAuth, clientRouter);
   app.use('/api/employees', requireAuth, employeeRouter);
   app.use('/api/products', requireAuth, productRouter);
