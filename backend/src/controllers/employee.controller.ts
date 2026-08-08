@@ -388,7 +388,8 @@ export async function deleteEmployeeController(req: Request, res: Response) {
 
     await deleteEmployee(
       id,
-      idUsuarioAnulador !== undefined ? Number(idUsuarioAnulador) : undefined,
+      req.auth?.userId ??
+        (idUsuarioAnulador !== undefined ? Number(idUsuarioAnulador) : undefined),
     );
 
     return res.status(200).json({ ok: true, message: 'Empleado anulado correctamente' });

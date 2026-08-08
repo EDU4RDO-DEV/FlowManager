@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { BadgeCheck, Building2, Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { BadgeCheck, Building2, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -28,7 +29,12 @@ import {
   ClientsTableSkeleton,
 } from "@/app/clients/_components/clients-skeletons";
 import { getApiErrorMessage } from "@/lib/api";
-import { deleteClient, listClients } from "@/services/clients.service";
+import {
+  deleteClient,
+  listAnulatedClients,
+  listClients,
+  restoreClient,
+} from "@/services/clients.service";
 import type { ClientDto } from "@/types/clients";
 
 function formatDate(value: string | null): string {
@@ -40,7 +46,8 @@ function formatDate(value: string | null): string {
 
 export default function ClientsPage() {
   const { user } = useAuth();
-  const [clients, setClients] = useState<ClientDto[]>([]);
+  const [activeClients, setActiveClients] = useState<ClientDto[]>([]);
+  const [anulatedClients, setAnulatedClients] = useState<ClientDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
@@ -49,8 +56,9 @@ export default function ClientsPage() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const data = await listClients();
-      setClients(data);
+      const [activos, anulados] = await Promise.all([listClients(), listAnulatedClients()]);
+      setActiveClients(activos);
+      setAnulatedClients(anulados);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cargar el modulo de clientes."));
     } finally {
@@ -66,7 +74,7 @@ export default function ClientsPage() {
   const filteredClients = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return clients.filter((client) => {
+    return activeClients.filter((client) => {
       if (normalizedQuery.length === 0) return true;
       return (
         client.entidad.nombreCompleto.toLowerCase().includes(normalizedQuery) ||
@@ -74,14 +82,27 @@ export default function ClientsPage() {
         (client.entidad.telefono1 ?? "").toLowerCase().includes(normalizedQuery)
       );
     });
-  }, [clients, query]);
+  }, [activeClients, query]);
+
+  const filteredAnulatedClients = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return anulatedClients.filter((client) => {
+      if (normalizedQuery.length === 0) return true;
+      return (
+        client.entidad.nombreCompleto.toLowerCase().includes(normalizedQuery) ||
+        (client.entidad.correoElectronico ?? "").toLowerCase().includes(normalizedQuery) ||
+        (client.entidad.telefono1 ?? "").toLowerCase().includes(normalizedQuery)
+      );
+    });
+  }, [anulatedClients, query]);
 
   const metrics = useMemo(() => {
-    const total = clients.length;
-    const activos = clients.filter((item) => !item.anulado).length;
-    const conCorreo = clients.filter((item) => (item.entidad.correoElectronico ?? "").trim().length > 0).length;
+    const total = activeClients.length + anulatedClients.length;
+    const activos = activeClients.length;
+    const conCorreo = activeClients.filter((item) => (item.entidad.correoElectronico ?? "").trim().length > 0).length;
     return { total, activos, conCorreo };
-  }, [clients]);
+  }, [activeClients, anulatedClients]);
 
   async function confirmDeleteClient() {
     if (!deleteCandidate) return;
@@ -91,11 +112,34 @@ export default function ClientsPage() {
         deleteCandidate.id,
         user?.id ? { idUsuarioAnulador: user.id } : undefined,
       );
-      toast.success("Cliente eliminado correctamente.");
+
+      const movedToTrash: ClientDto = {
+        ...deleteCandidate,
+        anulado: true,
+        idUsuarioAnulador: user?.id ?? deleteCandidate.idUsuarioAnulador,
+        fechaAnulacion: new Date().toISOString(),
+      };
+
+      setActiveClients((prev) => prev.filter((item) => item.id !== deleteCandidate.id));
+      setAnulatedClients((prev) => [movedToTrash, ...prev]);
+      toast.success("Cliente anulado correctamente.");
       setDeleteCandidate(null);
-      await loadData();
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo eliminar el cliente."));
+    }
+  }
+
+  async function restoreClientFromTrash(candidate: ClientDto) {
+    try {
+      const restored = await restoreClient(
+        candidate.id,
+        user?.id ? { idUsuarioModificador: user.id } : undefined,
+      );
+      setAnulatedClients((prev) => prev.filter((item) => item.id !== candidate.id));
+      setActiveClients((prev) => [restored, ...prev]);
+      toast.success("Cliente restaurado correctamente.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo restaurar el cliente."));
     }
   }
 
@@ -191,62 +235,117 @@ export default function ClientsPage() {
                 </div>
               </div>
 
-              {isLoading && !hasLoadedOnce ? (
-                <ClientsTableSkeleton rows={8} />
-              ) : filteredClients.length === 0 ? (
-                <ClientsEmptyState onReload={loadData} />
-              ) : (
-                <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
-                  <div className="overflow-x-auto rounded-xl border border-border">
-                    <Table className="min-w-full">
-                      <TableHeader className="bg-muted/50">
-                        <TableRow>
-                          <TableHead>ID</TableHead>
-                          <TableHead>Nombre</TableHead>
-                          <TableHead>Correo</TableHead>
-                          <TableHead>Telefono</TableHead>
-                          <TableHead>Registro</TableHead>
-                          <TableHead className="text-right">Acciones</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredClients.map((client) => (
-                          <TableRow key={client.id}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">#{client.id}</TableCell>
-                            <TableCell className="font-medium">{client.entidad.nombreCompleto}</TableCell>
-                            <TableCell>{client.entidad.correoElectronico?.trim() || "-"}</TableCell>
-                            <TableCell>{client.entidad.telefono1?.trim() || "-"}</TableCell>
-                            <TableCell>{formatDate(client.fechaRegistro)}</TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button
-                                  size="xs"
-                                  variant="outline"
-                                  asChild
-                                  className="hover:bg-muted/50 transition-colors"
-                                >
-                                  <Link href={`/clients/edit/${client.id}`}>
-                                    <Pencil className="size-3.5" />
-                                    Editar
-                                  </Link>
-                                </Button>
-                                <Button
-                                  size="xs"
-                                  variant="destructive"
-                                  onClick={() => setDeleteCandidate(client)}
-                                >
-                                  <Trash2 className="size-3.5" />
-                                  Eliminar
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
+              <Tabs defaultValue="activos">
+                <TabsList>
+                  <TabsTrigger value="activos">Activos ({filteredClients.length})</TabsTrigger>
+                  <TabsTrigger value="anulados">Anulados ({filteredAnulatedClients.length})</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="activos" className="mt-4">
+                  {isLoading && !hasLoadedOnce ? (
+                    <ClientsTableSkeleton rows={8} />
+                  ) : filteredClients.length === 0 ? (
+                    <ClientsEmptyState mode="activos" onReload={loadData} />
+                  ) : (
+                    <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
+                      <div className="overflow-x-auto rounded-xl border border-border">
+                        <Table className="min-w-full">
+                          <TableHeader className="bg-muted/50">
+                            <TableRow>
+                              <TableHead>ID</TableHead>
+                              <TableHead>Nombre</TableHead>
+                              <TableHead>Correo</TableHead>
+                              <TableHead>Telefono</TableHead>
+                              <TableHead>Registro</TableHead>
+                              <TableHead className="text-right">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filteredClients.map((client) => (
+                              <TableRow key={client.id}>
+                                <TableCell className="font-mono text-xs text-muted-foreground">#{client.id}</TableCell>
+                                <TableCell className="font-medium">{client.entidad.nombreCompleto}</TableCell>
+                                <TableCell>{client.entidad.correoElectronico?.trim() || "-"}</TableCell>
+                                <TableCell>{client.entidad.telefono1?.trim() || "-"}</TableCell>
+                                <TableCell>{formatDate(client.fechaRegistro)}</TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      size="xs"
+                                      variant="outline"
+                                      asChild
+                                      className="hover:bg-muted/50 transition-colors"
+                                    >
+                                      <Link href={`/clients/edit/${client.id}`}>
+                                        <Pencil className="size-3.5" />
+                                        Editar
+                                      </Link>
+                                    </Button>
+                                    <Button
+                                      size="xs"
+                                      variant="destructive"
+                                      onClick={() => setDeleteCandidate(client)}
+                                    >
+                                      <Trash2 className="size-3.5" />
+                                      Anular
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="anulados" className="mt-4">
+                  {isLoading && !hasLoadedOnce ? (
+                    <ClientsTableSkeleton rows={8} />
+                  ) : filteredAnulatedClients.length === 0 ? (
+                    <ClientsEmptyState mode="anulados" onReload={loadData} />
+                  ) : (
+                    <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
+                      <div className="overflow-x-auto rounded-xl border border-border">
+                        <Table className="min-w-full">
+                          <TableHeader className="bg-muted/50">
+                            <TableRow>
+                              <TableHead>ID</TableHead>
+                              <TableHead>Nombre</TableHead>
+                              <TableHead>Correo</TableHead>
+                              <TableHead>Telefono</TableHead>
+                              <TableHead>Anulacion</TableHead>
+                              <TableHead className="text-right">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filteredAnulatedClients.map((client) => (
+                              <TableRow key={client.id}>
+                                <TableCell className="font-mono text-xs text-muted-foreground">#{client.id}</TableCell>
+                                <TableCell className="font-medium">{client.entidad.nombreCompleto}</TableCell>
+                                <TableCell>{client.entidad.correoElectronico?.trim() || "-"}</TableCell>
+                                <TableCell>{client.entidad.telefono1?.trim() || "-"}</TableCell>
+                                <TableCell>{formatDate(client.fechaAnulacion)}</TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    size="xs"
+                                    variant="secondary"
+                                    onClick={() => restoreClientFromTrash(client)}
+                                  >
+                                    <RotateCcw className="size-3.5" />
+                                    Restaurar
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </div>

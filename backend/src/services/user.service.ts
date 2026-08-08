@@ -156,6 +156,29 @@ export async function listUsers() {
   return users.map(toUserDto);
 }
 
+export async function listAnulatedUsers() {
+  const users = await prisma.usuario.findMany({
+    where: { Anulado: true },
+    orderBy: { FechaAnulacion: 'desc' },
+    select: {
+      Id: true,
+      IdUsuario: true,
+      IdEntidad: true,
+      IdRol: true,
+      Nombre: true,
+      Correo: true,
+      FechaRegistro: true,
+      IdUsuarioModificador: true,
+      FechaModificacion: true,
+      Anulado: true,
+      IdUsuarioAnulador: true,
+      FechaAnulacion: true,
+    },
+  });
+
+  return users.map(toUserDto);
+}
+
 export async function getUserById(id: number) {
   const user = await prisma.usuario.findFirst({
     where: { Id: id, Anulado: false },
@@ -364,6 +387,52 @@ export async function deleteUser(id: number, idUsuarioAnulador?: number) {
       FechaAnulacion: new Date(),
     },
   });
+}
+
+export async function restoreUser(id: number, idUsuarioModificador?: number) {
+  const existing = await prisma.usuario.findFirst({
+    where: { Id: id, Anulado: true },
+    select: { Id: true, Correo: true },
+  });
+
+  if (!existing) {
+    throw new Error('Usuario anulado no existe');
+  }
+
+  if (idUsuarioModificador !== undefined) {
+    await validateUsuarioExists(idUsuarioModificador);
+  }
+
+  await validateCorreoDisponible(existing.Correo, id);
+
+  const restored = await prisma.usuario.update({
+    where: { Id: id },
+    data: {
+      Anulado: false,
+      ...(idUsuarioModificador !== undefined
+        ? { IdUsuarioModificador: idUsuarioModificador }
+        : {}),
+      FechaModificacion: new Date(),
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
+    },
+    select: {
+      Id: true,
+      IdUsuario: true,
+      IdEntidad: true,
+      IdRol: true,
+      Nombre: true,
+      Correo: true,
+      FechaRegistro: true,
+      IdUsuarioModificador: true,
+      FechaModificacion: true,
+      Anulado: true,
+      IdUsuarioAnulador: true,
+      FechaAnulacion: true,
+    },
+  });
+
+  return toUserDto(restored);
 }
 
 export async function changeUserPassword(id: number, input: ChangeUserPasswordInput) {

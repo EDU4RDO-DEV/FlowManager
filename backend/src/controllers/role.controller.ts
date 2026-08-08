@@ -168,7 +168,8 @@ export async function deleteRoleController(req: Request, res: Response) {
 
     await deleteRole(
       id,
-      idUsuarioAnulador !== undefined ? Number(idUsuarioAnulador) : undefined,
+      req.auth?.userId ??
+        (idUsuarioAnulador !== undefined ? Number(idUsuarioAnulador) : undefined),
     );
 
     return res.status(200).json({ ok: true, message: 'Rol anulado correctamente' });
@@ -214,7 +215,8 @@ export async function restoreRoleController(req: Request, res: Response) {
 
     const data = await restoreRole(
       id,
-      idUsuarioModificador !== undefined ? Number(idUsuarioModificador) : undefined,
+      req.auth?.userId ??
+        (idUsuarioModificador !== undefined ? Number(idUsuarioModificador) : undefined),
     );
 
     return res.status(200).json({ ok: true, data, message: 'Rol restaurado correctamente' });

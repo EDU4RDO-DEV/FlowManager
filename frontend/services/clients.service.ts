@@ -5,11 +5,17 @@ import type {
   ClientsListResponse,
   CreateClientPayload,
   DeleteClientPayload,
+  RestoreClientPayload,
   UpdateClientPayload,
 } from "@/types/clients";
 
 export async function listClients(): Promise<ClientDto[]> {
   const { data } = await api.get<ClientsListResponse>("/api/clients");
+  return data.data ?? [];
+}
+
+export async function listAnulatedClients(): Promise<ClientDto[]> {
+  const { data } = await api.get<ClientsListResponse>("/api/clients/anulados");
   return data.data ?? [];
 }
 
@@ -39,4 +45,15 @@ export async function updateClient(id: number, payload: UpdateClientPayload): Pr
 
 export async function deleteClient(id: number, payload?: DeleteClientPayload): Promise<void> {
   await api.delete(`/api/clients/${id}`, { data: payload });
+}
+
+export async function restoreClient(
+  id: number,
+  payload?: RestoreClientPayload,
+): Promise<ClientDto> {
+  const { data } = await api.patch<ApiResponse<ClientDto>>(`/api/clients/${id}/restaurar`, payload);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al restaurar cliente");
+  }
+  return data.data;
 }

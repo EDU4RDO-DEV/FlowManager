@@ -60,6 +60,10 @@ export interface DeleteUserPayload {
   idUsuarioAnulador?: number;
 }
 
+export interface RestoreUserPayload {
+  idUsuarioModificador?: number;
+}
+
 export interface ChangePasswordPayload {
   claveActual: string;
   nuevaClave: string;

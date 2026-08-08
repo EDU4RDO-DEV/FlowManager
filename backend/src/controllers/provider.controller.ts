@@ -265,7 +265,8 @@ export async function deleteProviderController(req: Request, res: Response) {
 
     await deleteProvider(
       id,
-      idUsuarioAnulador !== undefined ? Number(idUsuarioAnulador) : undefined,
+      req.auth?.userId ??
+        (idUsuarioAnulador !== undefined ? Number(idUsuarioAnulador) : undefined),
     );
 
     return res.status(200).json({ ok: true, message: 'Proveedor anulado correctamente' });

@@ -6,6 +6,7 @@ import type {
   DeleteUserPayload,
   ResetPasswordPayload,
   RoleDto,
+  RestoreUserPayload,
   RolesListResponse,
   UpdateUserPayload,
   UserDto,
@@ -14,6 +15,11 @@ import type {
 
 export async function listUsers(): Promise<UserDto[]> {
   const { data } = await api.get<UsersListResponse>("/api/users");
+  return data.data ?? [];
+}
+
+export async function listAnulatedUsers(): Promise<UserDto[]> {
+  const { data } = await api.get<UsersListResponse>("/api/users/anulados");
   return data.data ?? [];
 }
 
@@ -48,6 +54,17 @@ export async function updateUser(id: number, payload: UpdateUserPayload): Promis
 
 export async function deleteUser(id: number, payload?: DeleteUserPayload): Promise<void> {
   await api.delete(`/api/users/${id}`, { data: payload });
+}
+
+export async function restoreUser(
+  id: number,
+  payload?: RestoreUserPayload,
+): Promise<UserDto> {
+  const { data } = await api.patch<ApiResponse<UserDto>>(`/api/users/${id}/restaurar`, payload);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al restaurar usuario");
+  }
+  return data.data;
 }
 
 export async function changeUserPassword(

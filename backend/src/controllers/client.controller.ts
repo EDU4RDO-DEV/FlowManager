@@ -5,6 +5,8 @@ import {
   deleteClient,
   getClientById,
   listClients,
+  listAnulatedClients,
+  restoreClient,
   updateClient,
 } from '../services/client.service';
 
@@ -27,6 +29,16 @@ function isValidPositiveInteger(value: unknown): boolean {
 export async function listClientsController(_req: Request, res: Response) {
   try {
     const data = await listClients();
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function listAnulatedClientsController(_req: Request, res: Response) {
+  try {
+    const data = await listAnulatedClients();
     return res.status(200).json({ ok: true, data });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno';
@@ -250,7 +262,8 @@ export async function deleteClientController(req: Request, res: Response) {
 
     await deleteClient(
       id,
-      idUsuarioAnulador !== undefined ? Number(idUsuarioAnulador) : undefined,
+      req.auth?.userId ??
+        (idUsuarioAnulador !== undefined ? Number(idUsuarioAnulador) : undefined),
     );
 
     return res.status(200).json({ ok: true, message: 'Cliente anulado correctamente' });
@@ -258,6 +271,45 @@ export async function deleteClientController(req: Request, res: Response) {
     const message = error instanceof Error ? error.message : 'Error interno';
 
     if (message === 'Cliente no existe' || message === 'Usuario no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function restoreClientController(req: Request, res: Response) {
+  try {
+    const id = parseId(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, message: 'id debe ser un entero positivo' });
+    }
+
+    const { idUsuarioModificador } = req.body as { idUsuarioModificador?: number };
+
+    if (
+      idUsuarioModificador !== undefined &&
+      !isValidPositiveInteger(idUsuarioModificador)
+    ) {
+      return res.status(400).json({
+        ok: false,
+        message: 'idUsuarioModificador debe ser entero positivo cuando se envía',
+      });
+    }
+
+    const data = await restoreClient(
+      id,
+      req.auth?.userId ??
+        (idUsuarioModificador !== undefined
+          ? Number(idUsuarioModificador)
+          : undefined),
+    );
+
+    return res.status(200).json({ ok: true, data, message: 'Cliente restaurado correctamente' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message === 'Cliente anulado no existe' || message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
     }
 

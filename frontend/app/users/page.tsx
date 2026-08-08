@@ -18,9 +18,11 @@ import { getApiErrorMessage } from "@/lib/api";
 import {
   changeUserPassword,
   deleteUser,
+  listAnulatedUsers,
   listRoles,
   listUsers,
   resetUserPassword,
+  restoreUser,
 } from "@/services/users.service";
 import type { RoleDto, UserDto } from "@/types/users";
 
@@ -33,7 +35,8 @@ function formatDate(value: string | null): string {
 
 export default function UsersPage() {
   const { user } = useAuth();
-  const [users, setUsers] = useState<UserDto[]>([]);
+  const [activeUsers, setActiveUsers] = useState<UserDto[]>([]);
+  const [anulatedUsers, setAnulatedUsers] = useState<UserDto[]>([]);
   const [roles, setRoles] = useState<RoleDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
@@ -50,8 +53,13 @@ export default function UsersPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [usersData, rolesData] = await Promise.all([listUsers(), listRoles()]);
-      setUsers(usersData);
+      const [usersData, anulatedUsersData, rolesData] = await Promise.all([
+        listUsers(),
+        listAnulatedUsers(),
+        listRoles(),
+      ]);
+      setActiveUsers(usersData);
+      setAnulatedUsers(anulatedUsersData);
       setRoles(rolesData);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cargar el modulo de usuarios."));
@@ -72,7 +80,7 @@ export default function UsersPage() {
   const filteredUsers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return users.filter((item) => {
+    return activeUsers.filter((item) => {
       const roleName = item.idRol ? roleById.get(item.idRol)?.nombre ?? "" : "";
       const matchesQuery =
         normalizedQuery.length === 0 ||
@@ -86,15 +94,34 @@ export default function UsersPage() {
       if (roleFilter === "none") return item.idRol === null;
       return String(item.idRol) === roleFilter;
     });
-  }, [users, query, roleFilter, roleById]);
+  }, [activeUsers, query, roleFilter, roleById]);
+
+  const filteredAnulatedUsers = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return anulatedUsers.filter((item) => {
+      const roleName = item.idRol ? roleById.get(item.idRol)?.nombre ?? "" : "";
+      const matchesQuery =
+        normalizedQuery.length === 0 ||
+        item.nombre.toLowerCase().includes(normalizedQuery) ||
+        item.correo.toLowerCase().includes(normalizedQuery) ||
+        roleName.toLowerCase().includes(normalizedQuery);
+
+      if (!matchesQuery) return false;
+
+      if (roleFilter === "all") return true;
+      if (roleFilter === "none") return item.idRol === null;
+      return String(item.idRol) === roleFilter;
+    });
+  }, [anulatedUsers, query, roleFilter, roleById]);
 
   const metrics = useMemo(() => {
-    const total = users.length;
-    const activos = users.filter((item) => !item.anulado).length;
-    const inactivos = users.filter((item) => item.anulado).length;
-    const conRol = users.filter((item) => item.idRol !== null).length;
+    const total = activeUsers.length + anulatedUsers.length;
+    const activos = activeUsers.length;
+    const inactivos = anulatedUsers.length;
+    const conRol = activeUsers.filter((item) => item.idRol !== null).length;
     return { total, activos, inactivos, conRol };
-  }, [users]);
+  }, [activeUsers, anulatedUsers]);
 
   async function confirmDelete() {
     if (!deleteCandidate) return;
@@ -105,11 +132,37 @@ export default function UsersPage() {
         deleteCandidate.id,
         user?.id ? { idUsuarioAnulador: user.id } : undefined,
       );
-      toast.success("Usuario eliminado correctamente.");
+
+      const movedToTrash: UserDto = {
+        ...deleteCandidate,
+        anulado: true,
+        idUsuarioAnulador: user?.id ?? deleteCandidate.idUsuarioAnulador,
+        fechaAnulacion: new Date().toISOString(),
+      };
+
+      setActiveUsers((prev) => prev.filter((item) => item.id !== deleteCandidate.id));
+      setAnulatedUsers((prev) => [movedToTrash, ...prev]);
+      toast.success("Usuario anulado correctamente.");
       setDeleteCandidate(null);
-      await loadData();
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo anular el usuario."));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function restoreUserFromTrash(candidate: UserDto) {
+    setActionLoading(true);
+    try {
+      const restored = await restoreUser(
+        candidate.id,
+        user?.id ? { idUsuarioModificador: user.id } : undefined,
+      );
+      setAnulatedUsers((prev) => prev.filter((item) => item.id !== candidate.id));
+      setActiveUsers((prev) => [restored, ...prev]);
+      toast.success("Usuario restaurado correctamente.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo restaurar el usuario."));
     } finally {
       setActionLoading(false);
     }
@@ -229,23 +282,55 @@ export default function UsersPage() {
             </TabsList>
 
             <TabsContent value="listado" className="mt-4">
-              <UsersTable
-                users={filteredUsers}
-                roles={roles}
-                query={query}
-                roleFilter={roleFilter}
-                loading={loading}
-                hasLoadedOnce={hasLoadedOnce}
-                onQueryChange={setQuery}
-                onRoleFilterChange={setRoleFilter}
-                onReload={loadData}
-                onDelete={setDeleteCandidate}
-                onResetPassword={setResetCandidate}
-                roleNameByUser={(item) =>
-                  item.idRol ? roleById.get(item.idRol)?.nombre ?? `Rol ${item.idRol}` : "Sin rol"
-                }
-                formatDate={formatDate}
-              />
+              <Tabs defaultValue="activos">
+                <TabsList>
+                  <TabsTrigger value="activos">Activos ({filteredUsers.length})</TabsTrigger>
+                  <TabsTrigger value="anulados">Anulados ({filteredAnulatedUsers.length})</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="activos" className="mt-4">
+                  <UsersTable
+                    users={filteredUsers}
+                    roles={roles}
+                    mode="activos"
+                    query={query}
+                    roleFilter={roleFilter}
+                    loading={loading}
+                    hasLoadedOnce={hasLoadedOnce}
+                    onQueryChange={setQuery}
+                    onRoleFilterChange={setRoleFilter}
+                    onReload={loadData}
+                    onDelete={setDeleteCandidate}
+                    onResetPassword={setResetCandidate}
+                    roleNameByUser={(item) =>
+                      item.idRol ? roleById.get(item.idRol)?.nombre ?? `Rol ${item.idRol}` : "Sin rol"
+                    }
+                    formatDate={formatDate}
+                  />
+                </TabsContent>
+
+                <TabsContent value="anulados" className="mt-4">
+                  <UsersTable
+                    users={filteredAnulatedUsers}
+                    roles={roles}
+                    mode="anulados"
+                    query={query}
+                    roleFilter={roleFilter}
+                    loading={loading}
+                    hasLoadedOnce={hasLoadedOnce}
+                    onQueryChange={setQuery}
+                    onRoleFilterChange={setRoleFilter}
+                    onReload={loadData}
+                    onDelete={() => undefined}
+                    onRestore={restoreUserFromTrash}
+                    onResetPassword={() => undefined}
+                    roleNameByUser={(item) =>
+                      item.idRol ? roleById.get(item.idRol)?.nombre ?? `Rol ${item.idRol}` : "Sin rol"
+                    }
+                    formatDate={formatDate}
+                  />
+                </TabsContent>
+              </Tabs>
             </TabsContent>
 
             <TabsContent value="seguridad" className="mt-4">

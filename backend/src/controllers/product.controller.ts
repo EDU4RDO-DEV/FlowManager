@@ -166,7 +166,7 @@ export async function deleteProductController(req: Request, res: Response) {
     const { id } = productIdParamsSchema.parse(req.params);
     const { idUsuarioAnulador } = deleteProductBodySchema.parse(req.body ?? {});
 
-    await deleteProduct(id, idUsuarioAnulador);
+    await deleteProduct(id, req.auth?.userId ?? idUsuarioAnulador);
 
     return res.status(200).json({ ok: true, message: 'Producto anulado correctamente' });
   } catch (error) {

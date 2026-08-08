@@ -63,3 +63,7 @@ export interface UpdateClientPayload {
 export interface DeleteClientPayload {
   idUsuarioAnulador?: number;
 }
+
+export interface RestoreClientPayload {
+  idUsuarioModificador?: number;
+}

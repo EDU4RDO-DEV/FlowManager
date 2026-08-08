@@ -128,6 +128,37 @@ export async function listClients() {
   return clients.map(toClientDto);
 }
 
+export async function listAnulatedClients() {
+  const clients = await prisma.cliente.findMany({
+    where: {
+      Anulado: true,
+      Entidad: {
+        Anulado: false,
+      },
+    },
+    orderBy: { FechaAnulacion: 'desc' },
+    include: {
+      Entidad: {
+        select: {
+          Id: true,
+          NombreCompleto: true,
+          Sexo: true,
+          FechaNacimiento: true,
+          Telefono1: true,
+          Telefono2: true,
+          CorreoElectronico: true,
+          RutaImagen: true,
+          Nit: true,
+          Dpi: true,
+          Anulado: true,
+        },
+      },
+    },
+  });
+
+  return clients.map(toClientDto);
+}
+
 export async function getClientById(id: number) {
   const client = await prisma.cliente.findFirst({
     where: {
@@ -322,4 +353,51 @@ export async function deleteClient(id: number, idUsuarioAnulador?: number) {
       FechaAnulacion: new Date(),
     },
   });
+}
+
+export async function restoreClient(id: number, idUsuarioModificador?: number) {
+  const existing = await prisma.cliente.findFirst({
+    where: { Id: id, Anulado: true },
+    select: { Id: true },
+  });
+
+  if (!existing) {
+    throw new Error('Cliente anulado no existe');
+  }
+
+  if (idUsuarioModificador !== undefined) {
+    await validateUsuarioExists(idUsuarioModificador);
+  }
+
+  const restored = await prisma.cliente.update({
+    where: { Id: id },
+    data: {
+      Anulado: false,
+      ...(idUsuarioModificador !== undefined
+        ? { IdUsuarioModificador: idUsuarioModificador }
+        : {}),
+      FechaModificacion: new Date(),
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
+    },
+    include: {
+      Entidad: {
+        select: {
+          Id: true,
+          NombreCompleto: true,
+          Sexo: true,
+          FechaNacimiento: true,
+          Telefono1: true,
+          Telefono2: true,
+          CorreoElectronico: true,
+          RutaImagen: true,
+          Nit: true,
+          Dpi: true,
+          Anulado: true,
+        },
+      },
+    },
+  });
+
+  return toClientDto(restored);
 }
