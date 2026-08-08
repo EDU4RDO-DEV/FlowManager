@@ -1,0 +1,78 @@
+import type { ApiResponse } from "@/types/auth";
+
+export interface ProductProviderDto {
+  id: number;
+  nombre: string;
+  anulado: boolean;
+}
+
+export interface ProductDto {
+  id: number;
+  idUsuario: number;
+  idProveedor: number;
+  nombre: string;
+  categoria: "ENVASE" | "INSUMO" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA";
+  existencia: number;
+  costoPromedio: number;
+  precioVenta: number;
+  esProductoFinal: boolean;
+  rutaImagen: string | null;
+  fechaRegistro: string | null;
+  idUsuarioModificador: number | null;
+  fechaModificacion: string | null;
+  anulado: boolean;
+  idUsuarioAnulador: number | null;
+  fechaAnulacion: string | null;
+  proveedor: ProductProviderDto;
+}
+
+export interface ProductListPagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface ProductListResult {
+  items: ProductDto[];
+  pagination: ProductListPagination;
+}
+
+export type ProductsListResponse = ApiResponse<ProductListResult>;
+
+export interface ProductFilters {
+  page?: number;
+  limit?: number;
+  busqueda?: string;
+  categoria?: ProductDto["categoria"];
+  esProductoFinal?: boolean;
+  anulado?: boolean;
+  idProveedor?: number;
+}
+
+export interface CreateProductPayload {
+  idUsuario: number;
+  idProveedor: number;
+  nombre: string;
+  categoria: ProductDto["categoria"];
+  costoPromedio: number;
+  precioVenta: number;
+  esProductoFinal?: boolean;
+  rutaImagen?: string;
+}
+
+export interface UpdateProductPayload {
+  idUsuario?: number;
+  idUsuarioModificador?: number;
+  idProveedor?: number;
+  nombre?: string;
+  categoria?: ProductDto["categoria"];
+  costoPromedio?: number;
+  precioVenta?: number;
+  esProductoFinal?: boolean;
+  rutaImagen?: string;
+}
+
+export interface DeleteProductPayload {
+  idUsuarioAnulador?: number;
+}
