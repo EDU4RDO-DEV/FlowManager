@@ -84,4 +84,82 @@ describe('Module endpoints RBAC/integration', () => {
     expect(response.status).toBe(400);
     expect(response.body.ok).toBe(false);
   });
+
+  it('returns 403 or 404 when logistics role tries to restore client', async () => {
+    const app = createApp();
+    const token = buildAccessToken('PERSONAL DE LOGISTICA / REPARTIDOR');
+
+    const response = await request(app)
+      .patch('/api/clients/1/restaurar')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+
+    expect([403, 404]).toContain(response.status);
+    expect(response.body.ok).toBe(false);
+  });
+
+  it('returns 400 when restore client id is invalid', async () => {
+    const app = createApp();
+    const token = buildAccessToken('ADMINISTRADOR / GERENTE');
+
+    const response = await request(app)
+      .patch('/api/clients/abc/restaurar')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body.ok).toBe(false);
+  });
+
+  it('returns 403 when cajero role tries to restore provider', async () => {
+    const app = createApp();
+    const token = buildAccessToken('CAJERO / VENDEDOR (PUNTO DE VENTA)');
+
+    const response = await request(app)
+      .patch('/api/providers/1/restaurar')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+
+    expect(response.status).toBe(403);
+    expect(response.body.ok).toBe(false);
+  });
+
+  it('returns 400 or 403 when restore provider id is invalid', async () => {
+    const app = createApp();
+    const token = buildAccessToken('ADMINISTRADOR / GERENTE');
+
+    const response = await request(app)
+      .patch('/api/providers/abc/restaurar')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+
+    expect([400, 403]).toContain(response.status);
+    expect(response.body.ok).toBe(false);
+  });
+
+  it('returns 403 when produccion role tries to restore employee', async () => {
+    const app = createApp();
+    const token = buildAccessToken('PERSONAL DE PRODUCCION');
+
+    const response = await request(app)
+      .patch('/api/employees/1/restaurar')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+
+    expect(response.status).toBe(403);
+    expect(response.body.ok).toBe(false);
+  });
+
+  it('returns 400 or 403 when restore employee id is invalid', async () => {
+    const app = createApp();
+    const token = buildAccessToken('ADMINISTRADOR / GERENTE');
+
+    const response = await request(app)
+      .patch('/api/employees/abc/restaurar')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+
+    expect([400, 403]).toContain(response.status);
+    expect(response.body.ok).toBe(false);
+  });
 });
