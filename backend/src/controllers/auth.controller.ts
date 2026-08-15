@@ -3,6 +3,7 @@ import { ZodError } from 'zod';
 
 import {
   assignUserRoleEntity,
+  getCurrentAuthUser,
   login,
   refreshAuthTokens,
   register,
@@ -98,6 +99,26 @@ export async function refreshController(req: Request, res: Response) {
 
     if (message === 'Refresh token inválido o expirado') {
       return res.status(401).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function meController(req: Request, res: Response) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ ok: false, message: 'Token inválido o expirado' });
+    }
+
+    const data = await getCurrentAuthUser(userId);
+    return res.status(200).json({ ok: true, message: 'Usuario actual', data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message === 'Usuario no existe') {
+      return res.status(404).json({ ok: false, message });
     }
 
     return res.status(500).json({ ok: false, message });

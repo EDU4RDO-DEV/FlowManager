@@ -60,8 +60,8 @@ function formatMoney(value: number): string {
 export default function PurchasesPage() {
   const pathname = usePathname();
   const { user } = useAuth();
-  const canDeletePurchases = hasModulePermission(user?.nombreRol, "compras", "delete");
-  const canUpdatePurchases = hasModulePermission(user?.nombreRol, "compras", "update");
+  const canDeletePurchases = hasModulePermission(user, "compras", "delete");
+  const canUpdatePurchases = hasModulePermission(user, "compras", "update");
   const [activePurchases, setActivePurchases] = useState<PurchaseDto[]>([]);
   const [anulatedPurchases, setAnulatedPurchases] = useState<PurchaseDto[]>([]);
   const [providers, setProviders] = useState<ProviderDto[]>([]);

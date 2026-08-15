@@ -120,7 +120,7 @@ export default function EditClientPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="clientes" action="update">
       <DashboardShell
         title="Editar Cliente"
         description="Submodulo para actualizar datos de cartera y contacto."

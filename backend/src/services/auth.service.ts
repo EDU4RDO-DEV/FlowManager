@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import { Prisma } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
 
@@ -22,8 +23,34 @@ type LoginResult = {
     correo: string;
     idRol: number | null;
     nombreRol: string | null;
+    permisos: UserPermissionsMap;
   };
 };
+
+type CrudAction = 'read' | 'create' | 'update' | 'delete';
+type FrontendModuleKey =
+  | 'resumen'
+  | 'usuarios'
+  | 'roles'
+  | 'empleados'
+  | 'clientes'
+  | 'proveedores'
+  | 'compras'
+  | 'sesiones'
+  | 'produccion'
+  | 'inventario';
+
+type BackendModuleKey = Exclude<FrontendModuleKey, 'resumen' | 'produccion'>;
+
+type UserPermissionsMap = Partial<Record<FrontendModuleKey, CrudAction[]>>;
+
+type RoleGroupKey =
+  | 'adminGerencia'
+  | 'produccion'
+  | 'logistica'
+  | 'cajeroVendedor'
+  | 'inventario'
+  | 'sinRol';
 
 type RegisterInput = {
   nombre: string;
@@ -64,6 +91,233 @@ const REFRESH_TOKEN_EXPIRES_IN_DAYS = Number(process.env.JWT_REFRESH_EXPIRES_IN_
 const JWT_ISSUER = process.env.JWT_ISSUER ?? 'flowmanager.api';
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE ?? 'flowmanager.web';
 const BCRYPT_SALT_ROUNDS = Number(process.env.BCRYPT_SALT_ROUNDS ?? '12');
+const RBAC_PERSISTED_MODE = process.env.RBAC_PERSISTED_MODE ?? 'fallback';
+
+const CRUD_ACTIONS: CrudAction[] = ['read', 'create', 'update', 'delete'];
+const FRONTEND_MODULES: FrontendModuleKey[] = [
+  'resumen',
+  'usuarios',
+  'roles',
+  'empleados',
+  'clientes',
+  'proveedores',
+  'compras',
+  'sesiones',
+  'produccion',
+  'inventario',
+];
+
+const BACKEND_MODULES: BackendModuleKey[] = [
+  'usuarios',
+  'roles',
+  'empleados',
+  'clientes',
+  'proveedores',
+  'compras',
+  'sesiones',
+  'inventario',
+];
+
+function normalizeRoleName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+function parseRoleNamesFromEnv(envVarName: string, defaults: string[]): string[] {
+  const configured = process.env[envVarName];
+  if (!configured) {
+    return defaults.map(normalizeRoleName);
+  }
+
+  return configured
+    .split(',')
+    .map(normalizeRoleName)
+    .filter((name) => name.length > 0);
+}
+
+const ROLE_GROUPS: Record<Exclude<RoleGroupKey, 'sinRol'>, string[]> = {
+  adminGerencia: parseRoleNamesFromEnv('RBAC_ADMIN_ROLE_NAMES', [
+    'ADMINISTRADOR / GERENTE',
+    'ADMINISTRADOR',
+    'GERENTE',
+  ]),
+  produccion: parseRoleNamesFromEnv('RBAC_PRODUCCION_ROLE_NAMES', [
+    'PERSONAL DE PRODUCCION',
+  ]),
+  logistica: parseRoleNamesFromEnv('RBAC_LOGISTICA_ROLE_NAMES', [
+    'PERSONAL DE LOGISTICA / REPARTIDOR',
+  ]),
+  cajeroVendedor: parseRoleNamesFromEnv('RBAC_CAJERO_ROLE_NAMES', [
+    'CAJERO / VENDEDOR (PUNTO DE VENTA)',
+  ]),
+  inventario: parseRoleNamesFromEnv('RBAC_INVENTARIO_ROLE_NAMES', [
+    'ENCARGADO DE INVENTARIO',
+  ]),
+};
+
+const FALLBACK_MATRIX: Record<RoleGroupKey, Partial<Record<FrontendModuleKey, readonly CrudAction[]>>> = {
+  adminGerencia: {
+    resumen: ['read'],
+    usuarios: ['read', 'create', 'update', 'delete'],
+    roles: ['read', 'create', 'update', 'delete'],
+    empleados: ['read', 'create', 'update', 'delete'],
+    clientes: ['read', 'create', 'update', 'delete'],
+    proveedores: ['read', 'create', 'update', 'delete'],
+    compras: ['read', 'create', 'update', 'delete'],
+    sesiones: ['read', 'create', 'update', 'delete'],
+    produccion: ['read'],
+    inventario: ['read', 'create', 'update', 'delete'],
+  },
+  produccion: {
+    resumen: ['read'],
+    empleados: ['read'],
+    produccion: ['read'],
+    inventario: ['read'],
+  },
+  logistica: {
+    resumen: ['read'],
+    clientes: ['read'],
+    sesiones: ['read'],
+    inventario: ['read'],
+  },
+  cajeroVendedor: {
+    resumen: ['read'],
+    clientes: ['read', 'create', 'update'],
+    sesiones: ['read'],
+    inventario: ['read'],
+  },
+  inventario: {
+    resumen: ['read'],
+    proveedores: ['read', 'create', 'update'],
+    compras: ['read', 'create', 'update', 'delete'],
+    inventario: ['read', 'create', 'update', 'delete'],
+  },
+  sinRol: {
+    resumen: ['read'],
+  },
+};
+
+function parseCountValue(row: Record<string, unknown> | undefined): number {
+  if (!row) {
+    return 0;
+  }
+
+  const firstValue = Object.values(row)[0];
+  const count = Number(firstValue);
+  return Number.isFinite(count) ? count : 0;
+}
+
+async function persistedTablesExist(): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
+    SELECT COUNT(*) AS total
+    FROM INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_NAME IN ('ModuloSistema', 'AccionSistema', 'RolPermiso')
+  `);
+
+  return parseCountValue(rows[0]) === 3;
+}
+
+async function persistedPermissionsConfigured(): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
+    SELECT COUNT(*) AS total
+    FROM RolPermiso
+    WHERE Anulado = 0 AND Permitido = 1
+  `);
+
+  return parseCountValue(rows[0]) > 0;
+}
+
+function getRoleGroup(nombreRol: string | null): RoleGroupKey {
+  if (!nombreRol) {
+    return 'sinRol';
+  }
+
+  const normalized = normalizeRoleName(nombreRol);
+
+  for (const [group, names] of Object.entries(ROLE_GROUPS) as [Exclude<RoleGroupKey, 'sinRol'>, string[]][]) {
+    if (names.includes(normalized)) {
+      return group;
+    }
+  }
+
+  return 'sinRol';
+}
+
+function buildDefaultPermissions(): UserPermissionsMap {
+  const map: UserPermissionsMap = {};
+  for (const moduleKey of FRONTEND_MODULES) {
+    map[moduleKey] = [];
+  }
+  return map;
+}
+
+function buildFallbackPermissions(nombreRol: string | null): UserPermissionsMap {
+  const map = buildDefaultPermissions();
+  const group = getRoleGroup(nombreRol);
+  const rules = FALLBACK_MATRIX[group];
+
+  for (const [moduleKey, actions] of Object.entries(rules) as [FrontendModuleKey, readonly CrudAction[]][]) {
+    map[moduleKey] = [...actions];
+  }
+
+  return map;
+}
+
+async function resolveEffectivePermissions(idRol: number | null, nombreRol: string | null): Promise<UserPermissionsMap> {
+  const fallback = buildFallbackPermissions(nombreRol);
+  if (!idRol) {
+    return fallback;
+  }
+
+  const tablesExist = await persistedTablesExist();
+  if (!tablesExist) {
+    return fallback;
+  }
+
+  const configured = await persistedPermissionsConfigured();
+  if (!configured) {
+    return RBAC_PERSISTED_MODE === 'strict' ? buildDefaultPermissions() : fallback;
+  }
+
+  const rows = await prisma.rolPermiso.findMany({
+    where: {
+      IdRol: idRol,
+      Permitido: true,
+      Anulado: false,
+      ModuloSistema: {
+        Clave: { in: [...BACKEND_MODULES] },
+        Anulado: false,
+      },
+      AccionSistema: {
+        Clave: { in: [...CRUD_ACTIONS] },
+        Anulado: false,
+      },
+    },
+    select: {
+      ModuloSistema: { select: { Clave: true } },
+      AccionSistema: { select: { Clave: true } },
+    },
+  });
+
+  const map = buildDefaultPermissions();
+  map.resumen = fallback.resumen ?? [];
+  map.produccion = fallback.produccion ?? [];
+
+  for (const row of rows) {
+    const moduleKey = row.ModuloSistema.Clave as BackendModuleKey;
+    const action = row.AccionSistema.Clave as CrudAction;
+    const current = map[moduleKey] ?? [];
+    if (!current.includes(action)) {
+      map[moduleKey] = [...current, action];
+    }
+  }
+
+  return map;
+}
 
 function getJwtSecrets() {
   const accessSecret = process.env.JWT_SECRET;
@@ -118,19 +372,25 @@ function sanitizeAccessMinutes(): number {
   return Math.floor(ACCESS_TOKEN_EXPIRES_IN_MINUTES);
 }
 
-function buildUserDto(usuario: {
+async function buildUserDto(usuario: {
   Id: number;
   Nombre: string;
   Correo: string;
   IdRol: number | null;
   Rol_Usuario_IdRolToRol: { Nombre: string } | null;
 }) {
+  const permisos = await resolveEffectivePermissions(
+    usuario.IdRol,
+    usuario.Rol_Usuario_IdRolToRol?.Nombre ?? null,
+  );
+
   return {
     id: usuario.Id,
     nombre: usuario.Nombre,
     correo: usuario.Correo,
     idRol: usuario.IdRol,
     nombreRol: usuario.Rol_Usuario_IdRolToRol?.Nombre ?? null,
+    permisos,
   };
 }
 
@@ -289,7 +549,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
     sessionId: createdSession.Id,
   });
 
-  const user = buildUserDto(usuario);
+  const user = await buildUserDto(usuario);
 
   return {
     token: accessToken,
@@ -387,8 +647,34 @@ export async function refreshAuthTokens(input: RefreshInput): Promise<LoginResul
     accessToken,
     refreshToken: nextRefreshToken,
     accessTokenExpiresIn: `${sanitizeAccessMinutes()}m`,
-    user: buildUserDto(usuario),
+    user: await buildUserDto(usuario),
   };
+}
+
+export async function getCurrentAuthUser(idUsuario: number) {
+  const usuario = await prisma.usuario.findFirst({
+    where: {
+      Id: idUsuario,
+      Anulado: false,
+    },
+    select: {
+      Id: true,
+      Nombre: true,
+      Correo: true,
+      IdRol: true,
+      Rol_Usuario_IdRolToRol: {
+        select: {
+          Nombre: true,
+        },
+      },
+    },
+  });
+
+  if (!usuario) {
+    throw new Error('Usuario no existe');
+  }
+
+  return buildUserDto(usuario);
 }
 
 export async function revokeRefreshToken(

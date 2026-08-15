@@ -56,9 +56,9 @@ function formatDate(value: string | null): string {
 
 export default function RolesPage() {
   const { user } = useAuth();
-  const canCreateRoles = hasModulePermission(user?.nombreRol, "roles", "create");
-  const canUpdateRoles = hasModulePermission(user?.nombreRol, "roles", "update");
-  const canDeleteRoles = hasModulePermission(user?.nombreRol, "roles", "delete");
+  const canCreateRoles = hasModulePermission(user, "roles", "create");
+  const canUpdateRoles = hasModulePermission(user, "roles", "update");
+  const canDeleteRoles = hasModulePermission(user, "roles", "delete");
   const [rolesActivos, setRolesActivos] = useState<RoleDto[]>([]);
   const [rolesAnulados, setRolesAnulados] = useState<RoleDto[]>([]);
   const [loading, setLoading] = useState(true);

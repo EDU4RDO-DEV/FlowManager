@@ -61,6 +61,11 @@ export function persistLogin(accessToken: string, refreshToken: string, user: Au
   emit();
 }
 
+export function persistUser(user: AuthUser): void {
+  setStoredUser(user);
+  emit();
+}
+
 export function persistLogout(): void {
   clearAuth();
   emit();

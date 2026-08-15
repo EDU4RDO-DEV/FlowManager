@@ -7,12 +7,29 @@ export interface ApiResponse<T> {
   data?: T;
 }
 
+export type PermissionAction = "read" | "create" | "update" | "delete";
+
+export type PermissionModule =
+  | "resumen"
+  | "usuarios"
+  | "roles"
+  | "empleados"
+  | "clientes"
+  | "proveedores"
+  | "compras"
+  | "sesiones"
+  | "produccion"
+  | "inventario";
+
+export type UserPermissionsMap = Partial<Record<PermissionModule, PermissionAction[]>>;
+
 export interface AuthUser {
   id: number;
   nombre: string;
   correo: string;
   idRol: number | null;
   nombreRol: string | null;
+  permisos?: UserPermissionsMap;
 }
 
 export interface LoginRequest {

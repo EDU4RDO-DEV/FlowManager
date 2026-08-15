@@ -107,7 +107,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
     rrhh: false,
     configuracion: false,
   });
-  const allowedModules = getAllowedModulesByRole(user?.nombreRol);
+  const allowedModules = getAllowedModulesByRole(user);
   const sections = useMemo<SidebarSection[]>(
     () => {
       const has = {
@@ -386,6 +386,41 @@ export function DashboardShell({ title, description, children }: DashboardShellP
       .slice(0, 8);
   }, [sections]);
 
+  const visibleSections = useMemo<SidebarSection[]>(() => {
+    return sections
+      .map((section) => {
+        const items = section.items
+          .map((entry) => {
+            if (entry.type === "link") {
+              if (!entry.item.path || !entry.item.available) {
+                return null;
+              }
+              return entry;
+            }
+
+            const visibleChildren = entry.children.filter(
+              (child) => Boolean(child.path) && child.available,
+            );
+
+            if (visibleChildren.length === 0) {
+              return null;
+            }
+
+            return {
+              ...entry,
+              children: visibleChildren,
+            };
+          })
+          .filter((item): item is SidebarEntry => item !== null);
+
+        return {
+          ...section,
+          items,
+        };
+      })
+      .filter((section) => section.items.length > 0);
+  }, [sections]);
+
   function isLinkActive(item: SidebarLinkItem): boolean {
     if (item.isActive) {
       return item.isActive(pathname);
@@ -479,7 +514,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
               </nav>
             ) : (
               <nav className="space-y-3">
-                {sections.map((section) => (
+                {visibleSections.map((section) => (
                   <div key={section.id} className="space-y-1.5">
                     {section.items.map((entry) => {
                       if (entry.type === "link") {
@@ -487,7 +522,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                         const Icon = item.icon;
                         const active = isLinkActive(item);
 
-                        if (!item.available || !item.path) {
+                        if (!item.path) {
                           return (
                             <div
                               key={item.id}
@@ -500,6 +535,10 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                               </span>
                             </div>
                           );
+                        }
+
+                        if (!item.available) {
+                          return null;
                         }
 
                         return (
@@ -553,7 +592,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                                 const ChildIcon = child.icon;
                                 const childActive = isLinkActive(child);
 
-                                if (!child.available || !child.path) {
+                                if (!child.path) {
                                   return (
                                     <div
                                       key={child.id}
@@ -563,6 +602,10 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                                       <span className="truncate">{child.name}</span>
                                     </div>
                                   );
+                                }
+
+                                if (!child.available) {
+                                  return null;
                                 }
 
                                 return (
@@ -627,7 +670,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
 
         <div className="h-[calc(100%-4rem)] overflow-y-auto p-4">
           <nav className="space-y-3">
-            {sections.map((section) => (
+            {visibleSections.map((section) => (
               <div key={`mobile-section-${section.id}`} className="space-y-1.5">
                 {section.items.map((entry) => {
                   if (entry.type === "link") {
@@ -635,7 +678,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                     const Icon = item.icon;
                     const active = isLinkActive(item);
 
-                    if (!item.available || !item.path) {
+                    if (!item.path) {
                       return (
                         <div
                           key={`mobile-${item.id}`}
@@ -645,6 +688,10 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                           <span className="truncate">{item.name}</span>
                         </div>
                       );
+                    }
+
+                    if (!item.available) {
+                      return null;
                     }
 
                     return (
@@ -699,7 +746,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                             const ChildIcon = child.icon;
                             const childActive = isLinkActive(child);
 
-                            if (!child.available || !child.path) {
+                            if (!child.path) {
                               return (
                                 <div
                                   key={`mobile-${child.id}`}
@@ -709,6 +756,10 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                                   <span className="truncate">{child.name}</span>
                                 </div>
                               );
+                            }
+
+                            if (!child.available) {
+                              return null;
                             }
 
                             return (

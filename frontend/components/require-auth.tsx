@@ -20,7 +20,7 @@ export function RequireAuth({
 }) {
   const router = useRouter();
   const { isAuthenticated, isLoading, user } = useAuth();
-  const hasPermission = moduleKey ? hasModulePermission(user?.nombreRol, moduleKey, action) : true;
+  const hasPermission = moduleKey ? hasModulePermission(user, moduleKey, action) : true;
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {

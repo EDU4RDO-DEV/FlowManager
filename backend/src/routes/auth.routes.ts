@@ -4,6 +4,7 @@ import {
 	assignUserRoleEntityController,
 	loginController,
 	logoutController,
+	meController,
 	refreshController,
 	registerController,
 } from '../controllers/auth.controller';
@@ -13,6 +14,7 @@ const authRouter = Router();
 
 authRouter.post('/login', loginController);
 authRouter.post('/refresh', refreshController);
+authRouter.get('/me', requireAuth, meController);
 authRouter.post('/register', requireBootstrapOrAuth, registerController);
 authRouter.post('/logout', requireAuth, logoutController);
 authRouter.patch('/users/:idUsuario/assignment', requireAuth, assignUserRoleEntityController);

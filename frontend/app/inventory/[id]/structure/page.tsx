@@ -53,9 +53,9 @@ export default function ProductStructurePage() {
   const router = useRouter();
   const { user } = useAuth();
   const productId = Number(params.id);
-  const canCreateStructure = hasModulePermission(user?.nombreRol, "inventario", "create");
-  const canUpdateStructure = hasModulePermission(user?.nombreRol, "inventario", "update");
-  const canDeleteStructure = hasModulePermission(user?.nombreRol, "inventario", "delete");
+  const canCreateStructure = hasModulePermission(user, "inventario", "create");
+  const canUpdateStructure = hasModulePermission(user, "inventario", "update");
+  const canDeleteStructure = hasModulePermission(user, "inventario", "delete");
 
   const [product, setProduct] = useState<ProductDto | null>(null);
   const [activeStructure, setActiveStructure] = useState<ProductStructureDto[]>([]);

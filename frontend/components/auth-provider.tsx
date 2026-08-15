@@ -7,6 +7,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
@@ -16,10 +17,12 @@ import {
   getServerSnapshot,
   getSnapshot,
   persistLogin,
+  persistUser,
   persistLogout,
   subscribe,
 } from '@/lib/auth-store';
 import { login as loginService } from '@/services/auth.service';
+import { getCurrentAuthUser } from '@/services/auth.service';
 import type { AuthUser, LoginRequest } from '@/types/auth';
 
 interface AuthContextValue {
@@ -35,6 +38,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const hasSyncedCurrentUserRef = useRef(false);
 
   const logout = useCallback(() => {
     persistLogout();
@@ -50,6 +54,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
   }, [router]);
+
+  useEffect(() => {
+    if (!snapshot.hydrated || !snapshot.user) {
+      hasSyncedCurrentUserRef.current = false;
+      return;
+    }
+
+    if (hasSyncedCurrentUserRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function syncCurrentUser() {
+      try {
+        if (!snapshot.user) {
+          return;
+        }
+
+        const currentUser = await getCurrentAuthUser();
+        if (!cancelled) {
+          const currentSnapshotUser = snapshot.user;
+          const isSameUser =
+            currentSnapshotUser.id === currentUser.id &&
+            JSON.stringify(currentSnapshotUser.permisos ?? {}) ===
+              JSON.stringify(currentUser.permisos ?? {}) &&
+            currentSnapshotUser.nombreRol === currentUser.nombreRol;
+
+          if (!isSameUser) {
+            persistUser(currentUser);
+          }
+
+          hasSyncedCurrentUserRef.current = true;
+        }
+      } catch {
+        if (!cancelled) {
+          persistLogout();
+          router.replace('/login');
+        }
+      }
+    }
+
+    void syncCurrentUser();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshot.hydrated, snapshot.user, router]);
 
   const login = useCallback(async (credentials: LoginRequest) => {
     const result = await loginService(credentials);

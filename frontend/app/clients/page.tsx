@@ -144,7 +144,7 @@ export default function ClientsPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="clientes" action="read">
       <DashboardShell
         title="Clientes"
         description="Gestion de cartera, contacto y relacion comercial con clientes."

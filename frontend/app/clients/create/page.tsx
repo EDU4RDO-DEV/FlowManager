@@ -71,7 +71,7 @@ export default function CreateClientPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="clientes" action="create">
       <DashboardShell
         title="Crear Cliente"
         description="Submodulo para registrar clientes y su informacion principal."

@@ -46,8 +46,8 @@ function formatDate(value: string | null): string {
 
 export default function SessionsPage() {
   const { user } = useAuth();
-  const canDeleteSessions = hasModulePermission(user?.nombreRol, "sesiones", "delete");
-  const canUpdateSessions = hasModulePermission(user?.nombreRol, "sesiones", "update");
+  const canDeleteSessions = hasModulePermission(user, "sesiones", "delete");
+  const canUpdateSessions = hasModulePermission(user, "sesiones", "update");
   const [sessionsActivas, setSessionsActivas] = useState<SessionDto[]>([]);
   const [sessionsAnuladas, setSessionsAnuladas] = useState<SessionDto[]>([]);
   const [loading, setLoading] = useState(true);

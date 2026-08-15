@@ -1,3 +1,5 @@
+import type { AuthUser } from '@/types/auth';
+
 export type RoleGroup =
   | 'adminGerencia'
   | 'produccion'
@@ -121,17 +123,26 @@ export function getRoleGroup(nombreRol: string | null | undefined): RoleGroup {
   return 'sinRol';
 }
 
-export function getAllowedModulesByRole(nombreRol: string | null | undefined): AppModuleKey[] {
+function getFallbackPermission(
+  nombreRol: string | null | undefined,
+  moduleKey: AppModuleKey,
+  action: CrudAction,
+): boolean {
+  const group = getRoleGroup(nombreRol);
+  const actions = actionMatrix[group][moduleKey] ?? [];
+  return actions.includes(action);
+}
+
+export function getAllowedModulesByRole(userOrRole: AuthUser | string | null | undefined): AppModuleKey[] {
   if (RBAC_PREVIEW_MODE) {
     return ALL_MODULES;
   }
 
-  const group = getRoleGroup(nombreRol);
-  return ALL_MODULES.filter((moduleKey) => hasModulePermission(nombreRol, moduleKey, 'read'));
+  return ALL_MODULES.filter((moduleKey) => hasModulePermission(userOrRole, moduleKey, 'read'));
 }
 
 export function hasModulePermission(
-  nombreRol: string | null | undefined,
+  userOrRole: AuthUser | string | null | undefined,
   moduleKey: AppModuleKey,
   action: CrudAction,
 ): boolean {
@@ -139,7 +150,16 @@ export function hasModulePermission(
     return true;
   }
 
-  const group = getRoleGroup(nombreRol);
-  const actions = actionMatrix[group][moduleKey] ?? [];
-  return actions.includes(action);
+  if (typeof userOrRole === 'object' && userOrRole !== null) {
+    const granted = userOrRole.permisos?.[moduleKey] ?? [];
+    if (granted.includes(action)) {
+      return true;
+    }
+    if (userOrRole.permisos) {
+      return false;
+    }
+    return getFallbackPermission(userOrRole.nombreRol, moduleKey, action);
+  }
+
+  return getFallbackPermission(userOrRole, moduleKey, action);
 }
