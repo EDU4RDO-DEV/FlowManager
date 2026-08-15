@@ -12,7 +12,9 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { useAuth } from "@/components/auth-provider";
 import { getApiErrorMessage } from "@/lib/api";
+import { listEmployees } from "@/services/employees.service";
 import { getUserById, listRoles, updateUser } from "@/services/users.service";
+import type { EmployeeDto } from "@/types/employees";
 import type { RoleDto } from "@/types/users";
 
 const EMPTY_FORM: UserFormValues = {
@@ -20,6 +22,7 @@ const EMPTY_FORM: UserFormValues = {
   correo: "",
   clave: "",
   idRol: "",
+  idEmpleadoVinculado: "",
   entidadSexo: "",
   entidadFechaNacimiento: "",
   entidadTelefono1: "",
@@ -34,6 +37,7 @@ export default function EditUserPage() {
   const router = useRouter();
   const { user } = useAuth();
   const [roles, setRoles] = useState<RoleDto[]>([]);
+  const [employees, setEmployees] = useState<EmployeeDto[]>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<UserFormValues>(EMPTY_FORM);
@@ -49,13 +53,22 @@ export default function EditUserPage() {
 
       setLoading(true);
       try {
-        const [rolesData, userData] = await Promise.all([listRoles(), getUserById(userId)]);
+        const [rolesData, employeesData, userData] = await Promise.all([
+          listRoles(),
+          listEmployees(),
+          getUserById(userId),
+        ]);
         setRoles(rolesData);
+        setEmployees(employeesData);
+        const linkedEmployee = employeesData.find(
+          (employee) => employee.idEntidad === userData.idEntidad,
+        );
         setForm({
           nombre: userData.nombre,
           correo: userData.correo,
           clave: "",
           idRol: userData.idRol ? String(userData.idRol) : "",
+          idEmpleadoVinculado: linkedEmployee ? String(linkedEmployee.id) : "",
           entidadSexo: userData.entidad?.sexo ?? "",
           entidadFechaNacimiento: userData.entidad?.fechaNacimiento?.slice(0, 10) ?? "",
           entidadTelefono1: userData.entidad?.telefono1 ?? "",
@@ -75,6 +88,27 @@ export default function EditUserPage() {
     void loadData();
   }, [params.id, router]);
 
+  useEffect(() => {
+    if (!form.idEmpleadoVinculado) return;
+    const linkedEmployeeId = Number(form.idEmpleadoVinculado);
+    if (!Number.isInteger(linkedEmployeeId) || linkedEmployeeId <= 0) return;
+
+    const linkedEmployee = employees.find((item) => item.id === linkedEmployeeId);
+    if (!linkedEmployee) return;
+
+    setForm((prev) => ({
+      ...prev,
+      nombre: linkedEmployee.entidad.nombreCompleto,
+      entidadSexo: linkedEmployee.entidad.sexo ?? "",
+      entidadFechaNacimiento: linkedEmployee.entidad.fechaNacimiento?.slice(0, 10) ?? "",
+      entidadTelefono1: linkedEmployee.entidad.telefono1 ?? "",
+      entidadTelefono2: linkedEmployee.entidad.telefono2 ?? "",
+      entidadCorreoElectronico: linkedEmployee.entidad.correoElectronico ?? "",
+      entidadNit: linkedEmployee.entidad.nit ?? "",
+      entidadDpi: linkedEmployee.entidad.dpi ?? "",
+    }));
+  }, [form.idEmpleadoVinculado, employees]);
+
   async function handleSubmit() {
     const userId = Number(params.id);
     if (!Number.isInteger(userId) || userId <= 0) {
@@ -90,10 +124,14 @@ export default function EditUserPage() {
     setSaving(true);
     try {
       const selectedRoleId = form.idRol ? Number(form.idRol) : null;
+      const selectedLinkedEmployeeId = form.idEmpleadoVinculado
+        ? Number(form.idEmpleadoVinculado)
+        : null;
       await updateUser(userId, {
         nombre: form.nombre.trim(),
         correo: form.correo.trim(),
         idRol: selectedRoleId,
+        idEmpleadoVinculado: selectedLinkedEmployeeId,
         ...(user?.id ? { idUsuarioModificador: user.id } : {}),
         entidad: {
           nombreCompleto: form.nombre.trim(),
@@ -133,6 +171,7 @@ export default function EditUserPage() {
               mode="edit"
               title={`Editar usuario #${params.id}`}
               roles={roles}
+              employees={employees}
               form={form}
               saving={saving}
               onChange={setForm}

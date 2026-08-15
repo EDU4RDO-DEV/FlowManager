@@ -37,6 +37,7 @@ export type EmployeesListResponse = ApiResponse<EmployeeDto[]>;
 
 export interface CreateEmployeePayload {
   idUsuario: number;
+  idUsuarioVinculado?: number;
   idConfiguracionComision?: number;
   puestoTrabajo: string;
   descripcionPuesto?: string;
@@ -58,6 +59,7 @@ export interface CreateEmployeePayload {
 
 export interface UpdateEmployeePayload {
   idUsuario?: number;
+  idUsuarioVinculado?: number | null;
   idUsuarioModificador?: number;
   idConfiguracionComision?: number | null;
   puestoTrabajo?: string;

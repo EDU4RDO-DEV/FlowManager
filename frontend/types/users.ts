@@ -49,6 +49,7 @@ export interface CreateUserPayload {
   correo: string;
   clave: string;
   idRol?: number;
+  idEmpleadoVinculado?: number;
   entidad?: {
     nombreCompleto?: string;
     sexo?: string;
@@ -66,6 +67,7 @@ export interface UpdateUserPayload {
   nombre?: string;
   correo?: string;
   idRol?: number | null;
+  idEmpleadoVinculado?: number | null;
   idUsuarioModificador?: number;
   entidad?: {
     nombreCompleto?: string;

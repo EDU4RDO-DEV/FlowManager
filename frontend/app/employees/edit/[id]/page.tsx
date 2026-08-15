@@ -13,8 +13,11 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
 import { getEmployeeById, updateEmployee } from "@/services/employees.service";
+import { listUsers } from "@/services/users.service";
+import type { UserDto } from "@/types/users";
 
 const EMPTY_FORM: EmployeeFormValues = {
+  idUsuarioVinculado: "",
   nombreCompleto: "",
   correoElectronico: "",
   telefono1: "",
@@ -41,6 +44,7 @@ export default function EditEmployeePage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<EmployeeFormValues>(EMPTY_FORM);
+  const [users, setUsers] = useState<UserDto[]>([]);
 
   useEffect(() => {
     async function loadData() {
@@ -53,8 +57,16 @@ export default function EditEmployeePage() {
 
       setLoading(true);
       try {
-        const employeeData = await getEmployeeById(employeeId);
+        const [employeeData, usersData] = await Promise.all([
+          getEmployeeById(employeeId),
+          listUsers(),
+        ]);
+        setUsers(usersData);
+        const linkedUser = usersData.find(
+          (candidateUser) => candidateUser.idEntidad === employeeData.idEntidad,
+        );
         setForm({
+          idUsuarioVinculado: linkedUser ? String(linkedUser.id) : "",
           nombreCompleto: employeeData.entidad.nombreCompleto,
           correoElectronico: employeeData.entidad.correoElectronico ?? "",
           telefono1: employeeData.entidad.telefono1 ?? "",
@@ -76,6 +88,24 @@ export default function EditEmployeePage() {
 
     void loadData();
   }, [params.id, router]);
+
+  useEffect(() => {
+    if (!form.idUsuarioVinculado) return;
+    const linkedUserId = Number(form.idUsuarioVinculado);
+    if (!Number.isInteger(linkedUserId) || linkedUserId <= 0) return;
+
+    const linkedUser = users.find((item) => item.id === linkedUserId);
+    if (!linkedUser) return;
+
+    setForm((prev) => ({
+      ...prev,
+      nombreCompleto: linkedUser.entidad?.nombreCompleto ?? linkedUser.nombre,
+      correoElectronico: linkedUser.entidad?.correoElectronico ?? linkedUser.correo,
+      telefono1: linkedUser.entidad?.telefono1 ?? "",
+      nit: linkedUser.entidad?.nit ?? "",
+      dpi: linkedUser.entidad?.dpi ?? "",
+    }));
+  }, [form.idUsuarioVinculado, users]);
 
   async function handleSubmit() {
     const employeeId = Number(params.id);
@@ -112,8 +142,10 @@ export default function EditEmployeePage() {
 
     setSaving(true);
     try {
+      const linkedUserId = form.idUsuarioVinculado ? Number(form.idUsuarioVinculado) : null;
       await updateEmployee(employeeId, {
         idUsuarioModificador: user.id,
+        idUsuarioVinculado: linkedUserId,
         puestoTrabajo: form.puestoTrabajo.trim(),
         descripcionPuesto: form.descripcionPuesto.trim() || null,
         fechaContratacion: form.fechaContratacion,
@@ -152,6 +184,7 @@ export default function EditEmployeePage() {
           ) : (
             <EmployeeFormCard
               title={`Editar empleado #${params.id}`}
+              users={users}
               form={form}
               saving={saving}
               onChange={setForm}

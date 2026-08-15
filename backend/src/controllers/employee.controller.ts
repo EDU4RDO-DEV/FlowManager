@@ -80,11 +80,19 @@ export async function createEmployeeController(req: Request, res: Response) {
       return res.status(404).json({ ok: false, message });
     }
 
+    if (message === 'La entidad ya está vinculada a otro empleado') {
+      return res.status(409).json({ ok: false, message });
+    }
+
     if (
       message === 'fechaNacimiento inválida' ||
       message === 'fechaContratacion inválida' ||
       message === 'fechaSalida inválida'
     ) {
+      return res.status(400).json({ ok: false, message });
+    }
+
+    if (message === 'Usuario vinculado no tiene entidad') {
       return res.status(400).json({ ok: false, message });
     }
 
@@ -115,6 +123,10 @@ export async function updateEmployeeController(req: Request, res: Response) {
       message === 'Configuracion de comision no existe'
     ) {
       return res.status(404).json({ ok: false, message });
+    }
+
+    if (message === 'La entidad ya está vinculada a otro empleado') {
+      return res.status(409).json({ ok: false, message });
     }
 
     if (

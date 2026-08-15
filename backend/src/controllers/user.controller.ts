@@ -69,12 +69,13 @@ export async function getUserByIdController(req: Request, res: Response) {
 
 export async function createUserController(req: Request, res: Response) {
   try {
-    const { nombre, correo, clave, idUsuario, idRol, entidad } = req.body as {
+    const { nombre, correo, clave, idUsuario, idRol, idEmpleadoVinculado, entidad } = req.body as {
       nombre?: string;
       correo?: string;
       clave?: string;
       idUsuario?: number;
       idRol?: number;
+      idEmpleadoVinculado?: number;
       entidad?: {
         nombreCompleto?: string;
         sexo?: string;
@@ -109,6 +110,13 @@ export async function createUserController(req: Request, res: Response) {
       });
     }
 
+    if (idEmpleadoVinculado !== undefined && !isValidPositiveInteger(idEmpleadoVinculado)) {
+      return res.status(400).json({
+        ok: false,
+        message: 'idEmpleadoVinculado debe ser entero positivo cuando se envía',
+      });
+    }
+
     if (entidad?.fechaNacimiento !== undefined) {
       const parsedDate = new Date(entidad.fechaNacimiento);
       if (Number.isNaN(parsedDate.getTime())) {
@@ -125,6 +133,7 @@ export async function createUserController(req: Request, res: Response) {
       clave,
       idUsuario,
       idRol,
+      idEmpleadoVinculado,
       entidad,
     });
 
@@ -139,7 +148,8 @@ export async function createUserController(req: Request, res: Response) {
     if (
       message === 'Usuario no existe' ||
       message === 'Rol no existe' ||
-      message === 'Entidad no existe'
+      message === 'Entidad no existe' ||
+      message === 'Empleado no existe'
     ) {
       return res.status(404).json({ ok: false, message });
     }
@@ -159,7 +169,7 @@ export async function updateUserController(req: Request, res: Response) {
       return res.status(400).json({ ok: false, message: 'id debe ser un entero positivo' });
     }
 
-    const { nombre, correo, clave, idUsuario, idEntidad, idRol, idUsuarioModificador, entidad } =
+    const { nombre, correo, clave, idUsuario, idEntidad, idRol, idEmpleadoVinculado, idUsuarioModificador, entidad } =
       req.body as {
         nombre?: string;
         correo?: string;
@@ -167,6 +177,7 @@ export async function updateUserController(req: Request, res: Response) {
         idUsuario?: number | null;
         idEntidad?: number | null;
         idRol?: number | null;
+        idEmpleadoVinculado?: number | null;
         idUsuarioModificador?: number;
         entidad?: {
           nombreCompleto?: string;
@@ -211,6 +222,17 @@ export async function updateUserController(req: Request, res: Response) {
     }
 
     if (
+      idEmpleadoVinculado !== undefined &&
+      idEmpleadoVinculado !== null &&
+      !isValidPositiveInteger(idEmpleadoVinculado)
+    ) {
+      return res.status(400).json({
+        ok: false,
+        message: 'idEmpleadoVinculado debe ser entero positivo cuando se envía',
+      });
+    }
+
+    if (
       idUsuarioModificador !== undefined &&
       !isValidPositiveInteger(idUsuarioModificador)
     ) {
@@ -237,6 +259,7 @@ export async function updateUserController(req: Request, res: Response) {
       ...(idUsuario !== undefined ? { idUsuario } : {}),
       ...(idEntidad !== undefined ? { idEntidad } : {}),
       ...(idRol !== undefined ? { idRol } : {}),
+      ...(idEmpleadoVinculado !== undefined ? { idEmpleadoVinculado } : {}),
       ...(idUsuarioModificador !== undefined ? { idUsuarioModificador } : {}),
       ...(entidad !== undefined ? { entidad } : {}),
     });
@@ -252,7 +275,8 @@ export async function updateUserController(req: Request, res: Response) {
     if (
       message === 'Usuario no existe' ||
       message === 'Rol no existe' ||
-      message === 'Entidad no existe'
+      message === 'Entidad no existe' ||
+      message === 'Empleado no existe'
     ) {
       return res.status(404).json({ ok: false, message });
     }

@@ -11,7 +11,9 @@ import {
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
+import { listEmployees } from "@/services/employees.service";
 import { createUser, listRoles } from "@/services/users.service";
+import type { EmployeeDto } from "@/types/employees";
 import type { RoleDto } from "@/types/users";
 
 const EMPTY_FORM: UserFormValues = {
@@ -19,6 +21,7 @@ const EMPTY_FORM: UserFormValues = {
   correo: "",
   clave: "",
   idRol: "",
+  idEmpleadoVinculado: "",
   entidadSexo: "",
   entidadFechaNacimiento: "",
   entidadTelefono1: "",
@@ -36,21 +39,44 @@ function emptyToUndefined(value: string): string | undefined {
 export default function CreateUserPage() {
   const router = useRouter();
   const [roles, setRoles] = useState<RoleDto[]>([]);
+  const [employees, setEmployees] = useState<EmployeeDto[]>([]);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<UserFormValues>(EMPTY_FORM);
 
   useEffect(() => {
-    async function loadRoles() {
+    async function loadCatalogs() {
       try {
-        const data = await listRoles();
-        setRoles(data);
+        const [rolesData, employeesData] = await Promise.all([listRoles(), listEmployees()]);
+        setRoles(rolesData);
+        setEmployees(employeesData);
       } catch (error) {
-        toast.error(getApiErrorMessage(error, "No se pudieron cargar los roles."));
+        toast.error(getApiErrorMessage(error, "No se pudieron cargar los catalogos del formulario."));
       }
     }
 
-    void loadRoles();
+    void loadCatalogs();
   }, []);
+
+  useEffect(() => {
+    if (!form.idEmpleadoVinculado) return;
+    const linkedEmployeeId = Number(form.idEmpleadoVinculado);
+    if (!Number.isInteger(linkedEmployeeId) || linkedEmployeeId <= 0) return;
+
+    const linkedEmployee = employees.find((item) => item.id === linkedEmployeeId);
+    if (!linkedEmployee) return;
+
+    setForm((prev) => ({
+      ...prev,
+      nombre: linkedEmployee.entidad.nombreCompleto,
+      entidadSexo: linkedEmployee.entidad.sexo ?? "",
+      entidadFechaNacimiento: linkedEmployee.entidad.fechaNacimiento?.slice(0, 10) ?? "",
+      entidadTelefono1: linkedEmployee.entidad.telefono1 ?? "",
+      entidadTelefono2: linkedEmployee.entidad.telefono2 ?? "",
+      entidadCorreoElectronico: linkedEmployee.entidad.correoElectronico ?? "",
+      entidadNit: linkedEmployee.entidad.nit ?? "",
+      entidadDpi: linkedEmployee.entidad.dpi ?? "",
+    }));
+  }, [form.idEmpleadoVinculado, employees]);
 
   async function handleSubmit() {
     if (!form.nombre.trim() || !form.correo.trim()) {
@@ -66,11 +92,17 @@ export default function CreateUserPage() {
     setSaving(true);
     try {
       const selectedRoleId = form.idRol ? Number(form.idRol) : undefined;
+      const selectedLinkedEmployeeId = form.idEmpleadoVinculado
+        ? Number(form.idEmpleadoVinculado)
+        : undefined;
       await createUser({
         nombre: form.nombre.trim(),
         correo: form.correo.trim(),
         clave: form.clave,
         ...(selectedRoleId ? { idRol: selectedRoleId } : {}),
+        ...(selectedLinkedEmployeeId
+          ? { idEmpleadoVinculado: selectedLinkedEmployeeId }
+          : {}),
         entidad: {
           nombreCompleto: form.nombre.trim(),
           sexo: emptyToUndefined(form.entidadSexo),
@@ -104,6 +136,7 @@ export default function CreateUserPage() {
             mode="create"
             title="Nuevo usuario"
             roles={roles}
+            employees={employees}
             form={form}
             saving={saving}
             onChange={setForm}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -13,8 +13,11 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
 import { createEmployee } from "@/services/employees.service";
+import { listUsers } from "@/services/users.service";
+import type { UserDto } from "@/types/users";
 
 const EMPTY_FORM: EmployeeFormValues = {
+  idUsuarioVinculado: "",
   nombreCompleto: "",
   correoElectronico: "",
   telefono1: "",
@@ -32,6 +35,38 @@ export default function CreateEmployeePage() {
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<EmployeeFormValues>(EMPTY_FORM);
+  const [users, setUsers] = useState<UserDto[]>([]);
+
+  useEffect(() => {
+    async function loadUsers() {
+      try {
+        const usersData = await listUsers();
+        setUsers(usersData);
+      } catch (error) {
+        toast.error(getApiErrorMessage(error, "No se pudieron cargar los usuarios."));
+      }
+    }
+
+    void loadUsers();
+  }, []);
+
+  useEffect(() => {
+    if (!form.idUsuarioVinculado) return;
+    const linkedUserId = Number(form.idUsuarioVinculado);
+    if (!Number.isInteger(linkedUserId) || linkedUserId <= 0) return;
+
+    const linkedUser = users.find((item) => item.id === linkedUserId);
+    if (!linkedUser) return;
+
+    setForm((prev) => ({
+      ...prev,
+      nombreCompleto: linkedUser.entidad?.nombreCompleto ?? linkedUser.nombre,
+      correoElectronico: linkedUser.entidad?.correoElectronico ?? linkedUser.correo,
+      telefono1: linkedUser.entidad?.telefono1 ?? "",
+      nit: linkedUser.entidad?.nit ?? "",
+      dpi: linkedUser.entidad?.dpi ?? "",
+    }));
+  }, [form.idUsuarioVinculado, users]);
 
   async function handleSubmit() {
     if (!user?.id) {
@@ -62,8 +97,10 @@ export default function CreateEmployeePage() {
 
     setSaving(true);
     try {
+      const linkedUserId = form.idUsuarioVinculado ? Number(form.idUsuarioVinculado) : undefined;
       await createEmployee({
         idUsuario: user.id,
+        ...(linkedUserId ? { idUsuarioVinculado: linkedUserId } : {}),
         puestoTrabajo: form.puestoTrabajo.trim(),
         descripcionPuesto: form.descripcionPuesto.trim() || undefined,
         fechaContratacion: form.fechaContratacion,
@@ -97,6 +134,7 @@ export default function CreateEmployeePage() {
         <div className="w-full">
           <EmployeeFormCard
             title="Nuevo empleado"
+            users={users}
             form={form}
             saving={saving}
             onChange={setForm}

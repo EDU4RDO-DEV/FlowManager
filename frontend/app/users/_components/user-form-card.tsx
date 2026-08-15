@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { EmployeeDto } from "@/types/employees";
 import type { RoleDto } from "@/types/users";
 
 export type UserFormValues = {
@@ -11,6 +12,7 @@ export type UserFormValues = {
   correo: string;
   clave: string;
   idRol: string;
+  idEmpleadoVinculado: string;
   entidadSexo: string;
   entidadFechaNacimiento: string;
   entidadTelefono1: string;
@@ -24,6 +26,7 @@ type UserFormCardProps = {
   mode: "create" | "edit";
   title: string;
   roles: RoleDto[];
+  employees: EmployeeDto[];
   form: UserFormValues;
   saving: boolean;
   onChange: (next: UserFormValues) => void;
@@ -35,6 +38,7 @@ export function UserFormCard({
   mode,
   title,
   roles,
+  employees,
   form,
   saving,
   onChange,
@@ -89,6 +93,25 @@ export function UserFormCard({
               {roles.map((role) => (
                 <option key={role.id} value={String(role.id)}>
                   {role.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1.5 md:col-span-2">
+            <Label htmlFor="user-linked-employee">Vincular con empleado existente (opcional)</Label>
+            <select
+              id="user-linked-employee"
+              className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm transition-colors hover:bg-muted/50"
+              value={form.idEmpleadoVinculado}
+              onChange={(event) =>
+                onChange({ ...form, idEmpleadoVinculado: event.target.value })
+              }
+            >
+              <option value="">Sin vinculo</option>
+              {employees.map((employee) => (
+                <option key={employee.id} value={String(employee.id)}>
+                  {employee.entidad.nombreCompleto} (Empleado #{employee.id})
                 </option>
               ))}
             </select>

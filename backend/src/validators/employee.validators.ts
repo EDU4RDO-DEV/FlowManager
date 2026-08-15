@@ -44,6 +44,7 @@ export const employeeEntityUpdateSchema = z.object({
 
 export const createEmployeeSchema = z.object({
   idUsuario: positiveInt,
+  idUsuarioVinculado: positiveInt.optional(),
   idConfiguracionComision: positiveInt.optional(),
   puestoTrabajo: z.string().trim().min(1, 'puestoTrabajo es obligatorio').max(255, 'puestoTrabajo demasiado largo'),
   descripcionPuesto: optionalString255,
@@ -56,6 +57,7 @@ export const createEmployeeSchema = z.object({
 export const updateEmployeeSchema = z
   .object({
     idUsuario: positiveInt.optional(),
+    idUsuarioVinculado: z.union([positiveInt, z.null()]).optional(),
     idUsuarioModificador: positiveInt.optional(),
     idConfiguracionComision: z.union([positiveInt, z.null()]).optional(),
     puestoTrabajo: z.string().trim().min(1, 'puestoTrabajo no puede ir vacío').max(255, 'puestoTrabajo demasiado largo').optional(),
