@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { ZodError } from 'zod';
 
 import {
   createRole,
@@ -9,6 +10,15 @@ import {
   restoreRole,
   updateRole,
 } from '../services/role.service';
+import {
+  listRolePermissions,
+  updateRolePermissions,
+} from '../services/role-permission.service';
+import {
+  roleIdParamsSchema,
+  updateRolePermissionsSchema,
+} from '../validators/role-permission.validators';
+import { getZodErrorMessage } from '../validators/validation';
 
 function parseId(value: unknown): number {
   if (typeof value === 'string') {
@@ -231,6 +241,65 @@ export async function restoreRoleController(req: Request, res: Response) {
     }
 
     if (message === 'Ya existe un rol con ese nombre') {
+      return res.status(409).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function listRolePermissionsController(req: Request, res: Response) {
+  try {
+    const { id } = roleIdParamsSchema.parse(req.params);
+    const data = await listRolePermissions(id);
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message === 'Rol no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function updateRolePermissionsController(req: Request, res: Response) {
+  try {
+    const { id } = roleIdParamsSchema.parse(req.params);
+    const body = updateRolePermissionsSchema.parse(req.body ?? {});
+
+    const actorId = req.auth?.userId ?? body.idUsuarioModificador;
+    if (!actorId) {
+      return res.status(400).json({
+        ok: false,
+        message: 'idUsuarioModificador es obligatorio cuando no hay usuario autenticado',
+      });
+    }
+
+    const data = await updateRolePermissions(
+      id,
+      actorId,
+      body.permissions,
+    );
+
+    return res.status(200).json({ ok: true, data, message: 'Permisos actualizados correctamente' });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message === 'Rol no existe' || message === 'Usuario no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+
+    if (message === 'Catalogo de modulos/acciones incompleto') {
       return res.status(409).json({ ok: false, message });
     }
 

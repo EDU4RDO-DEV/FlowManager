@@ -1,0 +1,35 @@
+import { z } from 'zod';
+
+export const rbacModuleKeys = [
+  'usuarios',
+  'roles',
+  'clientes',
+  'empleados',
+  'proveedores',
+  'compras',
+  'inventario',
+  'planilla',
+  'sesiones',
+] as const;
+
+export const rbacActionKeys = ['read', 'create', 'update', 'delete'] as const;
+
+const positiveInt = z
+  .number()
+  .int('debe ser entero')
+  .positive('debe ser mayor a 0');
+
+export const roleIdParamsSchema = z.object({
+  id: z.coerce.number().int('id debe ser entero').positive('id debe ser mayor a 0'),
+});
+
+export const rolePermissionEntrySchema = z.object({
+  moduleKey: z.enum(rbacModuleKeys),
+  action: z.enum(rbacActionKeys),
+  permitido: z.boolean(),
+});
+
+export const updateRolePermissionsSchema = z.object({
+  idUsuarioModificador: positiveInt.optional(),
+  permissions: z.array(rolePermissionEntrySchema).min(1, 'permissions debe incluir al menos un permiso'),
+});
