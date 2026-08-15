@@ -18,6 +18,8 @@ export type AppModuleKey =
   | 'produccion'
   | 'inventario';
 
+export type CrudAction = 'read' | 'create' | 'update' | 'delete';
+
 const ALL_MODULES: AppModuleKey[] = [
   'resumen',
   'usuarios',
@@ -61,6 +63,48 @@ const moduleByRole: Record<RoleGroup, AppModuleKey[]> = {
   sinRol: ['resumen'],
 };
 
+const actionMatrix: Record<RoleGroup, Partial<Record<AppModuleKey, readonly CrudAction[]>>> = {
+  adminGerencia: {
+    usuarios: ['read', 'create', 'update', 'delete'],
+    roles: ['read', 'create', 'update', 'delete'],
+    empleados: ['read', 'create', 'update', 'delete'],
+    clientes: ['read', 'create', 'update', 'delete'],
+    proveedores: ['read', 'create', 'update', 'delete'],
+    compras: ['read', 'create', 'update', 'delete'],
+    sesiones: ['read', 'create', 'update', 'delete'],
+    inventario: ['read', 'create', 'update', 'delete'],
+    produccion: ['read'],
+    resumen: ['read'],
+  },
+  produccion: {
+    empleados: ['read'],
+    inventario: ['read'],
+    produccion: ['read'],
+    resumen: ['read'],
+  },
+  logistica: {
+    clientes: ['read'],
+    sesiones: ['read'],
+    inventario: ['read'],
+    resumen: ['read'],
+  },
+  cajeroVendedor: {
+    clientes: ['read', 'create', 'update'],
+    sesiones: ['read'],
+    inventario: ['read'],
+    resumen: ['read'],
+  },
+  inventario: {
+    proveedores: ['read', 'create', 'update'],
+    compras: ['read', 'create', 'update', 'delete'],
+    inventario: ['read', 'create', 'update', 'delete'],
+    resumen: ['read'],
+  },
+  sinRol: {
+    resumen: ['read'],
+  },
+};
+
 export function getRoleGroup(nombreRol: string | null | undefined): RoleGroup {
   if (!nombreRol) {
     return 'sinRol';
@@ -83,5 +127,19 @@ export function getAllowedModulesByRole(nombreRol: string | null | undefined): A
   }
 
   const group = getRoleGroup(nombreRol);
-  return moduleByRole[group];
+  return ALL_MODULES.filter((moduleKey) => hasModulePermission(nombreRol, moduleKey, 'read'));
+}
+
+export function hasModulePermission(
+  nombreRol: string | null | undefined,
+  moduleKey: AppModuleKey,
+  action: CrudAction,
+): boolean {
+  if (RBAC_PREVIEW_MODE) {
+    return true;
+  }
+
+  const group = getRoleGroup(nombreRol);
+  const actions = actionMatrix[group][moduleKey] ?? [];
+  return actions.includes(action);
 }

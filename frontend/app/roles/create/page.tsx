@@ -55,7 +55,7 @@ export default function CreateRolePage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="roles" action="create">
       <DashboardShell
         title="Crear Rol"
         description="Submodulo para crear roles y permisos del sistema."

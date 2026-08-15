@@ -110,7 +110,7 @@ export default function EditUserPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="usuarios" action="update">
       <DashboardShell
         title="Editar Usuario"
         description="Submodulo corporativo para ajustes y mantenimiento de perfiles Basan."

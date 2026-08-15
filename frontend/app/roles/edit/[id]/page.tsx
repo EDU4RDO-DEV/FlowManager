@@ -90,7 +90,7 @@ export default function EditRolePage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="roles" action="update">
       <DashboardShell
         title="Editar Rol"
         description="Submodulo para actualizar configuraciones de permisos."

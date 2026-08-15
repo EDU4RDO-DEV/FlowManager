@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getApiErrorMessage } from "@/lib/api";
+import { hasModulePermission } from "@/lib/rbac";
 import {
   changeUserPassword,
   deleteUser,
@@ -35,6 +36,9 @@ function formatDate(value: string | null): string {
 
 export default function UsersPage() {
   const { user } = useAuth();
+  const canCreateUsers = hasModulePermission(user?.nombreRol, "usuarios", "create");
+  const canUpdateUsers = hasModulePermission(user?.nombreRol, "usuarios", "update");
+  const canDeleteUsers = hasModulePermission(user?.nombreRol, "usuarios", "delete");
   const [activeUsers, setActiveUsers] = useState<UserDto[]>([]);
   const [anulatedUsers, setAnulatedUsers] = useState<UserDto[]>([]);
   const [roles, setRoles] = useState<RoleDto[]>([]);
@@ -124,6 +128,11 @@ export default function UsersPage() {
   }, [activeUsers, anulatedUsers]);
 
   async function confirmDelete() {
+    if (!canDeleteUsers) {
+      toast.error("No tienes permisos para anular usuarios.");
+      return;
+    }
+
     if (!deleteCandidate) return;
 
     setActionLoading(true);
@@ -152,6 +161,11 @@ export default function UsersPage() {
   }
 
   async function restoreUserFromTrash(candidate: UserDto) {
+    if (!canUpdateUsers) {
+      toast.error("No tienes permisos para restaurar usuarios.");
+      return;
+    }
+
     setActionLoading(true);
     try {
       const restored = await restoreUser(
@@ -169,6 +183,11 @@ export default function UsersPage() {
   }
 
   async function confirmResetPassword() {
+    if (!canUpdateUsers) {
+      toast.error("No tienes permisos para restablecer claves.");
+      return;
+    }
+
     if (!resetCandidate) return;
 
     if (!resetPasswordValue || resetPasswordValue.length < 8) {
@@ -227,7 +246,7 @@ export default function UsersPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="usuarios" action="read">
       <DashboardShell
         title="Administracion de Usuarios"
         description="Panel corporativo Basan para gestionar acceso, roles y ciclo de vida de usuarios."
@@ -302,6 +321,9 @@ export default function UsersPage() {
                     onReload={loadData}
                     onDelete={setDeleteCandidate}
                     onResetPassword={setResetCandidate}
+                    canCreate={canCreateUsers}
+                    canUpdate={canUpdateUsers}
+                    canDelete={canDeleteUsers}
                     roleNameByUser={(item) =>
                       item.idRol ? roleById.get(item.idRol)?.nombre ?? `Rol ${item.idRol}` : "Sin rol"
                     }
@@ -324,6 +346,9 @@ export default function UsersPage() {
                     onDelete={() => undefined}
                     onRestore={restoreUserFromTrash}
                     onResetPassword={() => undefined}
+                    canCreate={canCreateUsers}
+                    canUpdate={canUpdateUsers}
+                    canDelete={canDeleteUsers}
                     roleNameByUser={(item) =>
                       item.idRol ? roleById.get(item.idRol)?.nombre ?? `Rol ${item.idRol}` : "Sin rol"
                     }
@@ -348,6 +373,7 @@ export default function UsersPage() {
                   <Button
                     variant="outline"
                     onClick={() => setShowOwnPasswordModal(true)}
+                    disabled={!canUpdateUsers}
                     className="hover:bg-muted/50 transition-colors"
                   >
                     <KeyRound className="size-4" />

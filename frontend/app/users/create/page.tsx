@@ -95,7 +95,7 @@ export default function CreateUserPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="usuarios" action="create">
       <DashboardShell
         title="Crear Usuario"
         description="Submodulo corporativo para alta de usuarios en Industrias Basan."

@@ -32,6 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getApiErrorMessage } from "@/lib/api";
+import { hasModulePermission } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { RolesEmptyState } from "@/app/roles/_components/roles-empty-state";
 import {
@@ -55,6 +56,9 @@ function formatDate(value: string | null): string {
 
 export default function RolesPage() {
   const { user } = useAuth();
+  const canCreateRoles = hasModulePermission(user?.nombreRol, "roles", "create");
+  const canUpdateRoles = hasModulePermission(user?.nombreRol, "roles", "update");
+  const canDeleteRoles = hasModulePermission(user?.nombreRol, "roles", "delete");
   const [rolesActivos, setRolesActivos] = useState<RoleDto[]>([]);
   const [rolesAnulados, setRolesAnulados] = useState<RoleDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -114,6 +118,11 @@ export default function RolesPage() {
   }, [rolesActivos, rolesAnulados]);
 
   async function confirmDeleteRole() {
+    if (!canDeleteRoles) {
+      toast.error("No tienes permisos para anular roles.");
+      return;
+    }
+
     if (!deleteCandidate) return;
 
     try {
@@ -138,6 +147,11 @@ export default function RolesPage() {
   }
 
   async function restoreRoleFromTrash(role: RoleDto) {
+    if (!canUpdateRoles) {
+      toast.error("No tienes permisos para restaurar roles.");
+      return;
+    }
+
     try {
       const restored = await restoreRole(
         role.id,
@@ -152,7 +166,7 @@ export default function RolesPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="roles" action="read">
       <DashboardShell
         title="Roles y Permisos"
         description="Configura acceso por perfil y politicas operativas por modulo."
@@ -218,16 +232,18 @@ export default function RolesPage() {
                   {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                   Recargar
                 </Button>
-                <Button
-                  size="sm"
-                  asChild
-                  className="bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
-                >
-                  <Link href="/roles/create">
-                    <Plus className="size-4" />
-                    Nuevo rol
-                  </Link>
-                </Button>
+                {canCreateRoles ? (
+                  <Button
+                    size="sm"
+                    asChild
+                    className="bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
+                  >
+                    <Link href="/roles/create">
+                      <Plus className="size-4" />
+                      Nuevo rol
+                    </Link>
+                  </Button>
+                ) : null}
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -287,25 +303,29 @@ export default function RolesPage() {
                                 <TableCell>{formatDate(role.fechaRegistro)}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-2">
-                                    <Button
-                                      size="xs"
-                                      variant="outline"
-                                      asChild
-                                      className="hover:bg-muted/50 transition-colors"
-                                    >
-                                      <Link href={`/roles/edit/${role.id}`}>
-                                        <Pencil className="size-3.5" />
-                                        Editar
-                                      </Link>
-                                    </Button>
-                                    <Button
-                                      size="xs"
-                                      variant="destructive"
-                                      onClick={() => setDeleteCandidate(role)}
-                                    >
-                                      <Trash2 className="size-3.5" />
-                                      Anular
-                                    </Button>
+                                    {canUpdateRoles ? (
+                                      <Button
+                                        size="xs"
+                                        variant="outline"
+                                        asChild
+                                        className="hover:bg-muted/50 transition-colors"
+                                      >
+                                        <Link href={`/roles/edit/${role.id}`}>
+                                          <Pencil className="size-3.5" />
+                                          Editar
+                                        </Link>
+                                      </Button>
+                                    ) : null}
+                                    {canDeleteRoles ? (
+                                      <Button
+                                        size="xs"
+                                        variant="destructive"
+                                        onClick={() => setDeleteCandidate(role)}
+                                      >
+                                        <Trash2 className="size-3.5" />
+                                        Anular
+                                      </Button>
+                                    ) : null}
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -349,6 +369,7 @@ export default function RolesPage() {
                                     size="xs"
                                     variant="secondary"
                                     onClick={() => restoreRoleFromTrash(role)}
+                                    disabled={!canUpdateRoles}
                                   >
                                     <RotateCcw className="size-3.5" />
                                     Restaurar

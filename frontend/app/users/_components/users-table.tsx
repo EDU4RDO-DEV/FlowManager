@@ -38,6 +38,9 @@ type UsersTableProps = {
   onResetPassword: (user: UserDto) => void;
   roleNameByUser: (user: UserDto) => string;
   formatDate: (value: string | null) => string;
+  canCreate: boolean;
+  canUpdate: boolean;
+  canDelete: boolean;
 };
 
 export function UsersTable({
@@ -56,6 +59,9 @@ export function UsersTable({
   onResetPassword,
   roleNameByUser,
   formatDate,
+  canCreate,
+  canUpdate,
+  canDelete,
 }: UsersTableProps) {
   const router = useRouter();
   const isAnulatedMode = mode === "anulados";
@@ -78,7 +84,7 @@ export function UsersTable({
             {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
             Recargar
           </Button>
-          {!isAnulatedMode ? (
+          {!isAnulatedMode && canCreate ? (
             <Button size="sm" asChild className="bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors">
               <Link href="/users/create">
                 <Plus className="size-4" />
@@ -163,6 +169,7 @@ export function UsersTable({
                               size="xs"
                               variant="secondary"
                               onClick={() => onRestore?.(item)}
+                              disabled={!canUpdate}
                               className="hover:bg-muted/50 transition-colors"
                             >
                               <RotateCcw className="size-3.5" />
@@ -170,33 +177,39 @@ export function UsersTable({
                             </Button>
                           ) : (
                             <>
-                              <Button
-                                size="xs"
-                                variant="outline"
-                                onClick={() => router.push(`/users/edit/${item.id}`)}
-                                className="hover:bg-muted/50 transition-colors"
-                              >
-                                <Pencil className="size-3.5" />
-                                Editar
-                              </Button>
-                              <Button
-                                size="xs"
-                                variant="secondary"
-                                onClick={() => onResetPassword(item)}
-                                className="hover:bg-muted/50 transition-colors"
-                              >
-                                <KeyRound className="size-3.5" />
-                                Reset clave
-                              </Button>
-                              <Button
-                                size="xs"
-                                variant="destructive"
-                                onClick={() => onDelete(item)}
-                                className="transition-colors"
-                              >
-                                <Trash2 className="size-3.5" />
-                                Anular
-                              </Button>
+                              {canUpdate ? (
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  onClick={() => router.push(`/users/edit/${item.id}`)}
+                                  className="hover:bg-muted/50 transition-colors"
+                                >
+                                  <Pencil className="size-3.5" />
+                                  Editar
+                                </Button>
+                              ) : null}
+                              {canUpdate ? (
+                                <Button
+                                  size="xs"
+                                  variant="secondary"
+                                  onClick={() => onResetPassword(item)}
+                                  className="hover:bg-muted/50 transition-colors"
+                                >
+                                  <KeyRound className="size-3.5" />
+                                  Reset clave
+                                </Button>
+                              ) : null}
+                              {canDelete ? (
+                                <Button
+                                  size="xs"
+                                  variant="destructive"
+                                  onClick={() => onDelete(item)}
+                                  className="transition-colors"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                  Anular
+                                </Button>
+                              ) : null}
                             </>
                           )}
                         </div>

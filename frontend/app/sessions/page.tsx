@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getApiErrorMessage } from "@/lib/api";
+import { hasModulePermission } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { SessionsEmptyState } from "@/app/sessions/_components/sessions-empty-state";
 import {
@@ -45,6 +46,8 @@ function formatDate(value: string | null): string {
 
 export default function SessionsPage() {
   const { user } = useAuth();
+  const canDeleteSessions = hasModulePermission(user?.nombreRol, "sesiones", "delete");
+  const canUpdateSessions = hasModulePermission(user?.nombreRol, "sesiones", "update");
   const [sessionsActivas, setSessionsActivas] = useState<SessionDto[]>([]);
   const [sessionsAnuladas, setSessionsAnuladas] = useState<SessionDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,6 +105,11 @@ export default function SessionsPage() {
   }, [sessionsActivas, sessionsAnuladas]);
 
   async function confirmDeleteSession() {
+    if (!canDeleteSessions) {
+      toast.error("No tienes permisos para anular sesiones.");
+      return;
+    }
+
     if (!deleteCandidate) return;
     try {
       await deleteSession(
@@ -126,6 +134,11 @@ export default function SessionsPage() {
   }
 
   async function restoreSessionFromTrash(item: SessionDto) {
+    if (!canUpdateSessions) {
+      toast.error("No tienes permisos para restaurar sesiones.");
+      return;
+    }
+
     try {
       const restored = await restoreSession(
         item.id,
@@ -141,7 +154,7 @@ export default function SessionsPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="sesiones" action="read">
       <DashboardShell
         title="Sesiones de Ruta y Caja"
         description="Controla apertura, cierre y trazabilidad de sesiones operativas."
@@ -258,14 +271,16 @@ export default function SessionsPage() {
                                 <TableCell>{formatDate(item.fechaRegistro)}</TableCell>
                                 <TableCell>{formatDate(item.fechaExpiracionToken)}</TableCell>
                                 <TableCell className="text-right">
-                                  <Button
-                                    size="xs"
-                                    variant="destructive"
-                                    onClick={() => setDeleteCandidate(item)}
-                                  >
-                                    <Trash2 className="size-3.5" />
-                                    Anular
-                                  </Button>
+                                  {canDeleteSessions ? (
+                                    <Button
+                                      size="xs"
+                                      variant="destructive"
+                                      onClick={() => setDeleteCandidate(item)}
+                                    >
+                                      <Trash2 className="size-3.5" />
+                                      Anular
+                                    </Button>
+                                  ) : null}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -310,6 +325,7 @@ export default function SessionsPage() {
                                     size="xs"
                                     variant="secondary"
                                     onClick={() => restoreSessionFromTrash(item)}
+                                    disabled={!canUpdateSessions}
                                   >
                                     <RotateCcw className="size-3.5" />
                                     Restaurar
