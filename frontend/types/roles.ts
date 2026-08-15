@@ -34,3 +34,38 @@ export interface DeleteRolePayload {
 export interface RestoreRolePayload {
   idUsuarioModificador?: number;
 }
+
+export interface RolePermissionActionDto {
+  action: "read" | "create" | "update" | "delete";
+  actionName: string;
+  permitido: boolean;
+}
+
+export interface RolePermissionModuleDto {
+  moduleKey:
+    | "usuarios"
+    | "roles"
+    | "clientes"
+    | "empleados"
+    | "proveedores"
+    | "compras"
+    | "inventario"
+    | "planilla"
+    | "sesiones";
+  moduleName: string;
+  actions: RolePermissionActionDto[];
+}
+
+export interface RolePermissionsDto {
+  roleId: number;
+  modules: RolePermissionModuleDto[];
+}
+
+export interface UpdateRolePermissionsPayload {
+  idUsuarioModificador?: number;
+  permissions: Array<{
+    moduleKey: RolePermissionModuleDto["moduleKey"];
+    action: RolePermissionActionDto["action"];
+    permitido: boolean;
+  }>;
+}

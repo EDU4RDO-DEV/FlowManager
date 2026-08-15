@@ -3,9 +3,11 @@ import type { ApiResponse } from "@/types/auth";
 import type {
   CreateRolePayload,
   DeleteRolePayload,
+  RolePermissionsDto,
   RoleDto,
   RestoreRolePayload,
   RolesListResponse,
+  UpdateRolePermissionsPayload,
   UpdateRolePayload,
 } from "@/types/roles";
 
@@ -51,6 +53,25 @@ export async function restoreRole(id: number, payload?: RestoreRolePayload): Pro
   const { data } = await api.patch<ApiResponse<RoleDto>>(`/api/roles/${id}/restaurar`, payload);
   if (!data.data) {
     throw new Error(data.message || "Respuesta invalida al restaurar rol");
+  }
+  return data.data;
+}
+
+export async function getRolePermissions(id: number): Promise<RolePermissionsDto> {
+  const { data } = await api.get<ApiResponse<RolePermissionsDto>>(`/api/roles/${id}/permisos`);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al obtener permisos");
+  }
+  return data.data;
+}
+
+export async function updateRolePermissions(
+  id: number,
+  payload: UpdateRolePermissionsPayload,
+): Promise<RolePermissionsDto> {
+  const { data } = await api.patch<ApiResponse<RolePermissionsDto>>(`/api/roles/${id}/permisos`, payload);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al actualizar permisos");
   }
   return data.data;
 }
