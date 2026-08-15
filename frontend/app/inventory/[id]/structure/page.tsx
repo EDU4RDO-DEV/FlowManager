@@ -64,6 +64,7 @@ export default function ProductStructurePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedComponent, setSelectedComponent] = useState<ProductStructureDto | null>(null);
@@ -117,6 +118,7 @@ export default function ProductStructurePage() {
     }
 
     try {
+      setIsCreating(true);
       await createProductStructure({
         idProductoTerminado: productId,
         idMateriaPrima: data.idMateriaPrima,
@@ -128,6 +130,8 @@ export default function ProductStructurePage() {
       await loadData();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "No se pudo agregar el componente."));
+    } finally {
+      setIsCreating(false);
     }
   }
 
@@ -237,27 +241,43 @@ export default function ProductStructurePage() {
         description="Configura componentes y costos BOM por producto terminado"
       >
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold">Estructura de Producto</h1>
-          <p className="text-muted-foreground">
-            {product?.nombre} - {product?.categoria}
-          </p>
+      <div className="rounded-xl border border-border bg-muted/40 p-3 sm:p-4">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:text-sm">
+          <button
+            type="button"
+            onClick={() => router.push("/inventory")}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-background"
+          >
+            Inventario
+          </button>
+          <span>/</span>
+          <button
+            type="button"
+            onClick={() => router.push("/inventory/structure")}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-background"
+          >
+            Estructuras
+          </button>
+          <span>/</span>
+          <span className="font-medium text-foreground">{product?.nombre ?? "Producto"}</span>
+        </div>
+
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="truncate text-2xl font-bold sm:text-3xl">Estructura de Producto</h1>
+            <p className="mt-1 truncate text-sm text-muted-foreground sm:text-base">
+              {product?.nombre} - {product?.categoria}
+            </p>
+          </div>
+
+          <Button variant="outline" onClick={() => router.back()} className="w-full sm:w-auto">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Volver
+          </Button>
         </div>
       </div>
 
-      {error && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="py-4">
-            <p className="text-sm text-red-600">{error}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold">
             Componentes ({activeStructure.length + anulatedStructure.length})
@@ -269,11 +289,20 @@ export default function ProductStructurePage() {
         <Button
           onClick={() => setIsFormOpen(true)}
           disabled={isLoading || !canCreateStructure}
+          className="w-full sm:w-auto"
         >
-          <Plus className="h-4 w-4 mr-2" />
-          Agregar Componente
+          <Plus className="mr-2 h-4 w-4" />
+          Agregar componente
         </Button>
       </div>
+
+      {error && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="py-4">
+            <p className="text-sm text-red-600">{error}</p>
+          </CardContent>
+        </Card>
+      )}
 
       {isLoading && hasLoadedOnce ? (
         <p className="text-xs text-muted-foreground">Actualizando estructura...</p>
@@ -497,8 +526,8 @@ export default function ProductStructurePage() {
       </Dialog>
 
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] sm:max-w-4xl max-h-[90vh] overflow-y-auto p-5 sm:p-6">
+          <DialogHeader className="space-y-2">
             <DialogTitle>Agregar Componente</DialogTitle>
             <DialogDescription>
               Selecciona materia prima, insumo o envase para integrarlo en la estructura del producto.
@@ -508,6 +537,7 @@ export default function ProductStructurePage() {
             availableProducts={availableProducts}
             onSubmit={handleCreate}
             onCancel={() => setIsFormOpen(false)}
+            isLoading={isCreating}
           />
         </DialogContent>
       </Dialog>

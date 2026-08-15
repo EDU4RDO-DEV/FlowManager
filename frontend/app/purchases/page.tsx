@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { toast } from "sonner";
 
 import { PurchaseDetailDialog } from "@/app/purchases/_components/purchase-detail-dialog";
+import { PurchaseExpenseFormDialog } from "@/app/purchases/_components/purchase-expense-form-dialog";
 import { PurchaseFormDialog } from "@/app/purchases/_components/purchase-form-dialog";
 import { PurchasesEmptyState } from "@/app/purchases/_components/purchases-empty-state";
 import { PurchasesTableSkeleton } from "@/app/purchases/_components/purchases-skeletons";
@@ -59,6 +60,7 @@ function formatMoney(value: number): string {
 
 export default function PurchasesPage() {
   const pathname = usePathname();
+  const isGastosView = pathname === "/purchases/gastos";
   const { user } = useAuth();
   const canDeletePurchases = hasModulePermission(user, "compras", "delete");
   const canUpdatePurchases = hasModulePermission(user, "compras", "update");
@@ -69,7 +71,6 @@ export default function PurchasesPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
   const [idProveedor, setIdProveedor] = useState<number | "">("");
-  const [soloGastos, setSoloGastos] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<PurchaseDto | null>(null);
   const [detailCandidate, setDetailCandidate] = useState<PurchaseDto | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
@@ -77,11 +78,7 @@ export default function PurchasesPage() {
 
   useEffect(() => {
     void loadData();
-  }, []);
-
-  useEffect(() => {
-    setSoloGastos(pathname === "/purchases/gastos");
-  }, [pathname]);
+  }, [isGastosView]);
 
   async function loadData() {
     setIsLoading(true);
@@ -90,7 +87,7 @@ export default function PurchasesPage() {
         limit: 100,
         ...(query.trim() ? { busqueda: query.trim() } : {}),
         ...(idProveedor !== "" ? { idProveedor } : {}),
-        ...(soloGastos ? { esGasto: true } : {}),
+        esGasto: isGastosView,
       };
 
       const [providersList, activeResult, anulatedResult] = await Promise.all([
@@ -110,8 +107,7 @@ export default function PurchasesPage() {
     }
   }
 
-  const hasFilters =
-    query.trim().length > 0 || idProveedor !== "" || soloGastos;
+  const hasFilters = query.trim().length > 0 || idProveedor !== "";
 
   const sortedActivePurchases = useMemo(
     () => [...activePurchases].sort((a, b) => b.id - a.id),
@@ -186,8 +182,12 @@ export default function PurchasesPage() {
   return (
     <RequireAuth moduleKey="compras" action="read">
       <DashboardShell
-        title="Administración de Compras"
-        description="Controla compras de inventario, gastos asociados y su estado de anulación"
+        title={isGastosView ? "Administración de Gastos de Compra" : "Administración de Compras"}
+        description={
+          isGastosView
+            ? "Controla gastos de compra y su estado de anulación"
+            : "Controla compras de inventario y su estado de anulación"
+        }
       >
         <Tabs defaultValue="activos">
           <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -203,7 +203,7 @@ export default function PurchasesPage() {
                 </Label>
                 <Input
                   id="purchases-search"
-                  placeholder="Factura o proveedor"
+                  placeholder={isGastosView ? "Factura o proveedor de gasto" : "Factura o proveedor"}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   className="w-56"
@@ -232,15 +232,6 @@ export default function PurchasesPage() {
                 </select>
               </div>
 
-              <label className="flex h-9 items-center gap-2 rounded-md border border-input px-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={soloGastos}
-                  onChange={(event) => setSoloGastos(event.target.checked)}
-                />
-                Sólo Gastos
-              </label>
-
               <Button variant="outline" onClick={() => void loadData()} disabled={isLoading}>
                 {isLoading ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -252,7 +243,7 @@ export default function PurchasesPage() {
 
               <Button onClick={() => setFormDialogOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" />
-                Nueva Compra
+                {isGastosView ? "Nuevo Gasto" : "Nueva Compra"}
               </Button>
             </div>
           </div>
@@ -261,9 +252,10 @@ export default function PurchasesPage() {
             {isLoading && !hasLoadedOnce ? (
               <PurchasesTableSkeleton />
             ) : sortedActivePurchases.length === 0 ? (
-              <PurchasesEmptyState
+                <PurchasesEmptyState
                 isEmpty={activePurchases.length === 0}
                 hasFilters={hasFilters}
+                  entityLabel={isGastosView ? "gastos" : "compras"}
               />
             ) : (
               <Card>
@@ -272,7 +264,7 @@ export default function PurchasesPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead># Compra</TableHead>
+                          <TableHead>{isGastosView ? "# Gasto" : "# Compra"}</TableHead>
                           <TableHead>Factura</TableHead>
                           <TableHead>Proveedor</TableHead>
                           <TableHead>Tipo</TableHead>
@@ -329,7 +321,7 @@ export default function PurchasesPage() {
                                       size="icon"
                                       variant="ghost"
                                       onClick={() => setDeleteCandidate(purchase)}
-                                      title="Anular compra"
+                                      title={isGastosView ? "Anular gasto" : "Anular compra"}
                                     >
                                       <Trash2 className="h-4 w-4" />
                                     </Button>
@@ -355,6 +347,7 @@ export default function PurchasesPage() {
                 isEmpty={anulatedPurchases.length === 0}
                 hasFilters={hasFilters}
                 isTrash
+                entityLabel={isGastosView ? "gastos" : "compras"}
               />
             ) : (
               <Card>
@@ -363,7 +356,7 @@ export default function PurchasesPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead># Compra</TableHead>
+                          <TableHead>{isGastosView ? "# Gasto" : "# Compra"}</TableHead>
                           <TableHead>Factura</TableHead>
                           <TableHead>Proveedor</TableHead>
                           <TableHead>Tipo</TableHead>
@@ -404,7 +397,7 @@ export default function PurchasesPage() {
                                     size="icon"
                                     variant="ghost"
                                     onClick={() => void restorePurchaseFromTrash(purchase)}
-                                    title="Restaurar compra"
+                                    title={isGastosView ? "Restaurar gasto" : "Restaurar compra"}
                                   >
                                     <RotateCcw className="h-4 w-4" />
                                   </Button>
@@ -422,11 +415,19 @@ export default function PurchasesPage() {
           </TabsContent>
         </Tabs>
 
-        <PurchaseFormDialog
-          open={formDialogOpen}
-          onOpenChange={setFormDialogOpen}
-          onSuccess={handlePurchaseCreated}
-        />
+        {isGastosView ? (
+          <PurchaseExpenseFormDialog
+            open={formDialogOpen}
+            onOpenChange={setFormDialogOpen}
+            onSuccess={handlePurchaseCreated}
+          />
+        ) : (
+          <PurchaseFormDialog
+            open={formDialogOpen}
+            onOpenChange={setFormDialogOpen}
+            onSuccess={handlePurchaseCreated}
+          />
+        )}
 
         <PurchaseDetailDialog
           open={detailDialogOpen}
