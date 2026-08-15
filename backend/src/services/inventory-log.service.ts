@@ -9,6 +9,41 @@ type ListInventoryLogInput = {
   idInventarioItem?: number;
 };
 
+function buildInventoryLogWhere(input: ListInventoryLogInput, forcedAnulado?: boolean) {
+  return {
+    ...(forcedAnulado !== undefined
+      ? { Anulado: forcedAnulado }
+      : input.anulado !== undefined
+        ? { Anulado: input.anulado }
+        : { Anulado: false }),
+    ...(input.tipoMovimiento !== undefined ? { TipoMovimiento: input.tipoMovimiento } : {}),
+    ...(input.idInventarioItem !== undefined ? { IdInventarioItem: input.idInventarioItem } : {}),
+    ...(input.busqueda
+      ? {
+          OR: [
+            {
+              Nombre: {
+                contains: input.busqueda,
+              },
+            },
+            {
+              InventarioItem: {
+                Nombre: {
+                  contains: input.busqueda,
+                },
+              },
+            },
+            {
+              Documento: {
+                contains: input.busqueda,
+              },
+            },
+          ],
+        }
+      : {}),
+  };
+}
+
 function toInventoryLogDto(movement: {
   Id: number;
   IdInventarioItem: number;
@@ -70,34 +105,7 @@ export async function listInventoryLog(input: ListInventoryLogInput) {
   const limit = input.limit ?? 20;
   const skip = (page - 1) * limit;
 
-  const where = {
-    ...(input.anulado !== undefined ? { Anulado: input.anulado } : { Anulado: false }),
-    ...(input.tipoMovimiento !== undefined ? { TipoMovimiento: input.tipoMovimiento } : {}),
-    ...(input.idInventarioItem !== undefined ? { IdInventarioItem: input.idInventarioItem } : {}),
-    ...(input.busqueda
-      ? {
-          OR: [
-            {
-              Nombre: {
-                contains: input.busqueda,
-              },
-            },
-            {
-              InventarioItem: {
-                Nombre: {
-                  contains: input.busqueda,
-                },
-              },
-            },
-            {
-              Documento: {
-                contains: input.busqueda,
-              },
-            },
-          ],
-        }
-      : {}),
-  };
+  const where = buildInventoryLogWhere(input);
 
   const [total, movements] = await Promise.all([
     prisma.bitacoraInventario.count({ where }),
@@ -137,9 +145,19 @@ export async function listInventoryLog(input: ListInventoryLogInput) {
   };
 }
 
-export async function listAnulatedInventoryLog() {
+export async function listAnulatedInventoryLog(
+  input: Pick<ListInventoryLogInput, 'busqueda' | 'tipoMovimiento' | 'idInventarioItem'> = {},
+) {
+  const where = buildInventoryLogWhere(
+    {
+      ...input,
+      anulado: true,
+    },
+    true,
+  );
+
   const movements = await prisma.bitacoraInventario.findMany({
-    where: { Anulado: true },
+    where,
     orderBy: { FechaAnulacion: 'desc' },
     include: {
       InventarioItem: {

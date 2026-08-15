@@ -31,9 +31,20 @@ export async function listInventoryLogController(req: Request, res: Response) {
 
 export async function listAnulatedInventoryLogController(_req: Request, res: Response) {
   try {
-    const data = await listAnulatedInventoryLog();
+    const query = listInventoryLogQuerySchema.parse(_req.query);
+
+    const data = await listAnulatedInventoryLog({
+      busqueda: query.busqueda,
+      tipoMovimiento: query.tipoMovimiento,
+      idInventarioItem: query.idInventarioItem,
+    });
+
     return res.status(200).json({ ok: true, data });
   } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
     const message = error instanceof Error ? error.message : 'Error interno';
     return res.status(500).json({ ok: false, message });
   }

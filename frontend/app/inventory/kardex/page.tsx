@@ -101,7 +101,7 @@ export default function InventoryKardexPage() {
   }, [anulatedMovements, query, movementFilter]);
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="inventario" action="read">
       <DashboardShell
         title="Bitacora / Kardex"
         description="Historial de entradas y salidas de inventario"
