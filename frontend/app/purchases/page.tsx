@@ -168,10 +168,10 @@ export default function PurchasesPage() {
     }
   }
 
-  function handlePurchaseCreated(newPurchase: PurchaseDto) {
-    setActivePurchases((prev) => [newPurchase, ...prev]);
+  function handlePurchaseCreated(_: PurchaseDto) {
     setFormDialogOpen(false);
-    toast.success("Compra registrada correctamente");
+    void loadData();
+    toast.success(isGastosView ? "Gasto registrado correctamente" : "Compra registrada correctamente");
   }
 
   function openDetailDialog(purchase: PurchaseDto) {

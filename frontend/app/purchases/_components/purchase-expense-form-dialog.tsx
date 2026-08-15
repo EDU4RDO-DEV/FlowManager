@@ -189,8 +189,8 @@ export function PurchaseExpenseFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden p-0 sm:max-w-3xl lg:max-w-5xl">
-        <DialogHeader className="border-b px-4 py-3 sm:px-6 sm:py-4">
+      <DialogContent className="flex max-h-[94vh] w-[95vw] max-w-lg flex-col overflow-hidden p-0 sm:max-w-4xl lg:max-w-6xl xl:max-w-7xl">
+        <DialogHeader className="border-b px-5 py-4 sm:px-7 sm:py-5">
           <DialogTitle>Registrar Gasto de Compra</DialogTitle>
           <DialogDescription>
             Registra gastos asociados a proveedor para control operativo.
@@ -198,7 +198,7 @@ export function PurchaseExpenseFormDialog({
         </DialogHeader>
 
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit(onSubmit)}>
-          <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
+          <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-7">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Proveedor *</Label>
@@ -358,7 +358,7 @@ export function PurchaseExpenseFormDialog({
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="border-t px-5 py-4 sm:px-7 sm:py-5">
             <div className="mr-auto text-sm font-semibold">
               Total Gasto: Q{totalGasto.toFixed(2)}
             </div>
