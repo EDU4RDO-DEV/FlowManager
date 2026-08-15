@@ -27,6 +27,27 @@ function buildAccessToken(roleName: string) {
   );
 }
 
+function buildAccessTokenWithSid(roleName: string, sid: unknown) {
+  return jwt.sign(
+    {
+      sub: 101,
+      sid,
+      correo: 'tester@basan.com',
+      idRol: 5,
+      nombreRol: roleName,
+      nombre: 'Tester',
+      tokenType: 'access',
+    },
+    accessSecret,
+    {
+      algorithm: 'HS256',
+      expiresIn: 60,
+      issuer: 'flowmanager.api',
+      audience: 'flowmanager.web',
+    },
+  );
+}
+
 function buildRefreshTokenForAuthHeader() {
   return jwt.sign(
     {
@@ -123,6 +144,30 @@ describe('Auth/RBAC critical flows', () => {
   it('returns 401 when using refresh token as bearer token', async () => {
     const app = createApp();
     const token = buildRefreshTokenForAuthHeader();
+
+    const response = await request(app)
+      .get('/api/users')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(401);
+    expect(response.body.ok).toBe(false);
+  });
+
+  it('returns 401 when access token includes invalid sid type', async () => {
+    const app = createApp();
+    const token = buildAccessTokenWithSid('ADMINISTRADOR / GERENTE', 'sid-invalido');
+
+    const response = await request(app)
+      .get('/api/users')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(401);
+    expect(response.body.ok).toBe(false);
+  });
+
+  it('returns 401 when access token sid does not match active session', async () => {
+    const app = createApp();
+    const token = buildAccessTokenWithSid('ADMINISTRADOR / GERENTE', 99999999);
 
     const response = await request(app)
       .get('/api/users')

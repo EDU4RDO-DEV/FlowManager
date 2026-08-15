@@ -53,7 +53,7 @@ export const createAdjustmentSchema = z.object({
   idUsuario: positiveInt,
   idInventarioItem: positiveInt,
   tipoAjuste: z.enum(['ENTRADA', 'SALIDA'], {
-    errorMap: () => ({ message: 'tipoAjuste debe ser ENTRADA o SALIDA' }),
+    message: 'tipoAjuste debe ser ENTRADA o SALIDA',
   }),
   cantidadAjustada: finitePositiveNumber,
   observacion: z

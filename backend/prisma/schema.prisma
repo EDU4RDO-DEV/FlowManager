@@ -213,8 +213,59 @@ model EstructuraProducto {
   CantidadRequerida                                                     Float
   FechaRegistro                                                         DateTime?      @default(now(), map: "DF__Estructur__Fecha__05D8E0BE") @db.DateTime
   Anulado                                                               Boolean        @default(false, map: "DF__Estructur__Anula__06CD04F7")
+  IdUsuarioAnulador                                                     Int?
+  FechaAnulacion                                                        DateTime?      @db.DateTime
   InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem      InventarioItem @relation("EstructuraProducto_IdMateriaPrimaToInventarioItem", fields: [IdMateriaPrima], references: [Id], onUpdate: NoAction, map: "FK_EstructuraProducto_MateriaPrima")
   InventarioItem_EstructuraProducto_IdProductoTerminadoToInventarioItem InventarioItem @relation("EstructuraProducto_IdProductoTerminadoToInventarioItem", fields: [IdProductoTerminado], references: [Id], onUpdate: NoAction, map: "FK_EstructuraProducto_ProductoTerminado")
+}
+
+model ModuloSistema {
+  Id            Int          @id(map: "PK__ModuloSi__3214EC0731B7C0E1") @default(autoincrement())
+  Clave         String       @db.VarChar(50)
+  Nombre        String       @db.VarChar(100)
+  Descripcion   String?      @db.VarChar(255)
+  FechaRegistro DateTime?    @default(now(), map: "DF__ModuloSis__Fecha__7A2BFE54") @db.DateTime
+  Anulado       Boolean      @default(false, map: "DF__ModuloSis__Anula__7B20228D")
+  IdUsuarioAnulador Int?
+  FechaAnulacion DateTime?   @db.DateTime
+  RolPermiso    RolPermiso[]
+
+  @@index([Clave, Anulado], map: "IX_ModuloSistema_Clave_Activo")
+}
+
+model AccionSistema {
+  Id            Int          @id(map: "PK__AccionSi__3214EC07596498AA") @default(autoincrement())
+  Clave         String       @db.VarChar(50)
+  Nombre        String       @db.VarChar(100)
+  Descripcion   String?      @db.VarChar(255)
+  FechaRegistro DateTime?    @default(now(), map: "DF__AccionSis__Fecha__7FDC2A5B") @db.DateTime
+  Anulado       Boolean      @default(false, map: "DF__AccionSis__Anula__00D04E94")
+  IdUsuarioAnulador Int?
+  FechaAnulacion DateTime?   @db.DateTime
+  RolPermiso    RolPermiso[]
+
+  @@index([Clave, Anulado], map: "IX_AccionSistema_Clave_Activo")
+}
+
+model RolPermiso {
+  Id                  Int           @id(map: "PK__RolPermi__3214EC0738183B77") @default(autoincrement())
+  IdRol               Int
+  IdModuloSistema     Int
+  IdAccionSistema     Int
+  Permitido           Boolean       @default(true, map: "DF__RolPermis__Permi__04E4BC85")
+  IdUsuario           Int
+  FechaRegistro       DateTime?     @default(now(), map: "DF__RolPermis__Fecha__05D8E0BE") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion   DateTime?     @db.DateTime
+  Anulado             Boolean       @default(false, map: "DF__RolPermis__Anula__06CD04F7")
+  IdUsuarioAnulador   Int?
+  FechaAnulacion      DateTime?     @db.DateTime
+  AccionSistema       AccionSistema @relation(fields: [IdAccionSistema], references: [Id], onUpdate: NoAction, map: "FK_RolPermiso_AccionSistema")
+  ModuloSistema       ModuloSistema @relation(fields: [IdModuloSistema], references: [Id], onUpdate: NoAction, map: "FK_RolPermiso_ModuloSistema")
+  Rol                 Rol           @relation(fields: [IdRol], references: [Id], onUpdate: NoAction, map: "FK_RolPermiso_Rol")
+  Usuario             Usuario       @relation("RolPermiso_IdUsuarioToUsuario", fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_RolPermiso_Usuario")
+
+  @@index([IdRol, IdModuloSistema, IdAccionSistema, Anulado, Permitido], map: "IX_RolPermiso_RolModuloAccion_Activo")
 }
 
 model GastoVehiculo {
@@ -348,6 +399,7 @@ model Rol {
   Anulado                        Boolean   @default(false, map: "DF__Rol__Anulado__4AB81AF0")
   IdUsuarioAnulador              Int?
   FechaAnulacion                 DateTime? @db.DateTime
+  RolPermiso                     RolPermiso[]
   Usuario_Rol_IdUsuarioToUsuario Usuario   @relation("Rol_IdUsuarioToUsuario", fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Rol_Usuario")
   Usuario_Usuario_IdRolToRol     Usuario[] @relation("Usuario_IdRolToRol")
 
@@ -448,6 +500,7 @@ model Usuario {
   InventarioItem                                   InventarioItem[]
   PagoVenta                                        PagoVenta[]
   Proveedor                                        Proveedor[]
+  RolPermiso_RolPermiso_IdUsuarioToUsuario         RolPermiso[]            @relation("RolPermiso_IdUsuarioToUsuario")
   Rol_Rol_IdUsuarioToUsuario                       Rol[]                   @relation("Rol_IdUsuarioToUsuario")
   RutaSesion_RutaSesion_IdUsuarioChoferToUsuario   RutaSesion[]            @relation("RutaSesion_IdUsuarioChoferToUsuario")
   RutaSesion_RutaSesion_IdUsuarioVendedorToUsuario RutaSesion[]            @relation("RutaSesion_IdUsuarioVendedorToUsuario")
