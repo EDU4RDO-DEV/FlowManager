@@ -56,7 +56,6 @@ export async function listProductsController(req: Request, res: Response) {
       limit: query.limit,
       busqueda: query.busqueda,
       categoria: query.categoria,
-      esProductoFinal: query.esProductoFinal,
       anulado: query.anulado,
       idProveedor: query.idProveedor,
     });

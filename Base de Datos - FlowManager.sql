@@ -230,7 +230,6 @@ CREATE TABLE InventarioItem (
     Existencia FLOAT NOT NULL,
     CostoPromedio DECIMAL(10, 2) NOT NULL,
     PrecioVenta DECIMAL(10, 2) NOT NULL,
-    EsProductoFinal BIT NOT NULL DEFAULT 1,
     RutaImagen VARCHAR(255) NULL,
     FechaRegistro DATETIME DEFAULT GETDATE(),
     IdUsuarioModificador INT NULL,

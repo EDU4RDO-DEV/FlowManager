@@ -7,7 +7,6 @@ export interface ProductStructureMateriaPrimaDto {
   existencia: number;
   costoPromedio: number;
   precioVenta: number;
-  esProductoFinal: boolean;
   rutaImagen: string | null;
   anulado: boolean;
 }

@@ -301,7 +301,6 @@ model InventarioItem {
   Existencia                                                                Float
   CostoPromedio                                                             Decimal              @db.Decimal(10, 2)
   PrecioVenta                                                               Decimal              @db.Decimal(10, 2)
-  EsProductoFinal                                                           Boolean              @default(true, map: "DF__Inventari__EsPro__01142BA1")
   RutaImagen                                                                String?              @db.VarChar(255)
   FechaRegistro                                                             DateTime?            @default(now(), map: "DF__Inventari__Fecha__02084FDA") @db.DateTime
   IdUsuarioModificador                                                      Int?

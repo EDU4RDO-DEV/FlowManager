@@ -63,7 +63,6 @@ export const listProductsQuerySchema = z.object({
   limit: optionalLimitFromQuery,
   busqueda: z.string().trim().min(1, 'busqueda no puede ir vacía').max(255).optional(),
   categoria: categorySchema.optional(),
-  esProductoFinal: optionalBooleanFromQuery,
   anulado: optionalBooleanFromQuery,
   idProveedor: optionalPositiveIntFromQuery,
 });
@@ -76,7 +75,6 @@ export const createProductSchema = z
     categoria: categorySchema,
     costoPromedio: finitePositiveNumber,
     precioVenta: finitePositiveNumber,
-    esProductoFinal: z.boolean().optional().default(true),
     rutaImagen: z.string().trim().max(255, 'rutaImagen demasiado larga').optional(),
   })
   .refine((data) => data.precioVenta >= data.costoPromedio, {
@@ -93,7 +91,6 @@ export const updateProductSchema = z
     categoria: categorySchema.optional(),
     costoPromedio: finitePositiveNumber.optional(),
     precioVenta: finitePositiveNumber.optional(),
-    esProductoFinal: z.boolean().optional(),
     rutaImagen: z.string().trim().max(255, 'rutaImagen demasiado larga').optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {

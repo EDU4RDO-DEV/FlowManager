@@ -22,7 +22,6 @@ const EMPTY_FORM: ProductFormValues = {
   idProveedor: "",
   costoPromedio: "",
   precioVenta: "",
-  esProductoFinal: true,
   rutaImagen: "",
 };
 
@@ -95,7 +94,6 @@ export default function CreateProductPage() {
         categoria: form.categoria,
         costoPromedio,
         precioVenta,
-        esProductoFinal: form.esProductoFinal,
         rutaImagen: form.rutaImagen.trim() || undefined,
       });
 

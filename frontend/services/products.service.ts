@@ -21,9 +21,6 @@ export async function listProducts(filters: ProductFilters = {}): Promise<Produc
       ...(filters.limit !== undefined ? { limit: filters.limit } : {}),
       ...(filters.busqueda ? { busqueda: filters.busqueda } : {}),
       ...(filters.categoria ? { categoria: filters.categoria } : {}),
-      ...(filters.esProductoFinal !== undefined
-        ? { esProductoFinal: String(filters.esProductoFinal) }
-        : {}),
       ...(filters.anulado !== undefined ? { anulado: String(filters.anulado) } : {}),
       ...(filters.idProveedor !== undefined ? { idProveedor: filters.idProveedor } : {}),
     },

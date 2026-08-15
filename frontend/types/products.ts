@@ -15,7 +15,6 @@ export interface ProductDto {
   existencia: number;
   costoPromedio: number;
   precioVenta: number;
-  esProductoFinal: boolean;
   rutaImagen: string | null;
   fechaRegistro: string | null;
   idUsuarioModificador: number | null;
@@ -46,7 +45,6 @@ export interface ProductFilters {
   limit?: number;
   busqueda?: string;
   categoria?: ProductDto["categoria"];
-  esProductoFinal?: boolean;
   anulado?: boolean;
   idProveedor?: number;
 }
@@ -58,7 +56,6 @@ export interface CreateProductPayload {
   categoria: ProductDto["categoria"];
   costoPromedio: number;
   precioVenta: number;
-  esProductoFinal?: boolean;
   rutaImagen?: string;
 }
 
@@ -70,7 +67,6 @@ export interface UpdateProductPayload {
   categoria?: ProductDto["categoria"];
   costoPromedio?: number;
   precioVenta?: number;
-  esProductoFinal?: boolean;
   rutaImagen?: string;
 }
 

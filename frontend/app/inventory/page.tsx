@@ -118,7 +118,7 @@ export default function InventoryPage() {
     const total = activeProducts.length + anulatedProducts.length;
     const activos = activeProducts.length;
     const sinExistencia = activeProducts.filter((item) => item.existencia <= 0).length;
-    const finales = activeProducts.filter((item) => item.esProductoFinal).length;
+    const finales = activeProducts.filter((item) => item.categoria === "PRODUCTO_TERMINADO").length;
     return { total, activos, sinExistencia, finales };
   }, [activeProducts, anulatedProducts]);
 
@@ -331,7 +331,7 @@ export default function InventoryPage() {
                                 <TableCell className="font-medium">
                                   <div className="flex items-center gap-2">
                                     <span>{product.nombre}</span>
-                                    {product.esProductoFinal ? (
+                                    {product.categoria === "PRODUCTO_TERMINADO" ? (
                                       <Badge variant="secondary">Final</Badge>
                                     ) : (
                                       <Badge variant="outline">Insumo</Badge>
@@ -346,7 +346,7 @@ export default function InventoryPage() {
                                 <TableCell>{formatDate(product.fechaRegistro)}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-2">
-                                    {product.esProductoFinal && (
+                                    {product.categoria === "PRODUCTO_TERMINADO" && (
                                       <Button
                                         size="xs"
                                         variant="outline"

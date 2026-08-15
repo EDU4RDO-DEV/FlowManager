@@ -29,7 +29,6 @@ function toStructureDto(structure: {
     Existencia: number;
     CostoPromedio: unknown;
     PrecioVenta: unknown;
-    EsProductoFinal: boolean;
     RutaImagen: string | null;
     Anulado: boolean;
   };
@@ -48,7 +47,6 @@ function toStructureDto(structure: {
       existencia: structure.InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem.Existencia,
       costoPromedio: Number(structure.InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem.CostoPromedio),
       precioVenta: Number(structure.InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem.PrecioVenta),
-      esProductoFinal: structure.InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem.EsProductoFinal,
       rutaImagen: structure.InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem.RutaImagen,
       anulado: structure.InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem.Anulado,
     },
@@ -59,7 +57,7 @@ async function validateProductoTerminadoExists(id: number) {
   const product = await prisma.inventarioItem.findFirst({
     where: {
       Id: id,
-      EsProductoFinal: true,
+      Categoria: 'PRODUCTO_TERMINADO',
       Anulado: false,
     },
     select: { Id: true },
@@ -145,7 +143,6 @@ export async function listStructureByProduct(input: ListStructureByProductInput)
           Existencia: true,
           CostoPromedio: true,
           PrecioVenta: true,
-          EsProductoFinal: true,
           RutaImagen: true,
           Anulado: true,
         },
@@ -174,7 +171,6 @@ export async function listAnulatedStructureByProduct(idProducto: number) {
           Existencia: true,
           CostoPromedio: true,
           PrecioVenta: true,
-          EsProductoFinal: true,
           RutaImagen: true,
           Anulado: true,
         },
@@ -197,7 +193,6 @@ export async function getStructureById(id: number) {
           Existencia: true,
           CostoPromedio: true,
           PrecioVenta: true,
-          EsProductoFinal: true,
           RutaImagen: true,
           Anulado: true,
         },
@@ -234,7 +229,6 @@ export async function createProductStructure(input: CreateProductStructureInput)
           Existencia: true,
           CostoPromedio: true,
           PrecioVenta: true,
-          EsProductoFinal: true,
           RutaImagen: true,
           Anulado: true,
         },
@@ -271,7 +265,6 @@ export async function updateProductStructure(id: number, input: UpdateProductStr
           Existencia: true,
           CostoPromedio: true,
           PrecioVenta: true,
-          EsProductoFinal: true,
           RutaImagen: true,
           Anulado: true,
         },
@@ -340,7 +333,6 @@ export async function restoreProductStructure(id: number, idUsuarioModificador?:
           Existencia: true,
           CostoPromedio: true,
           PrecioVenta: true,
-          EsProductoFinal: true,
           RutaImagen: true,
           Anulado: true,
         },

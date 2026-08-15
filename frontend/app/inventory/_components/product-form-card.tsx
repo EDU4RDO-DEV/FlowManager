@@ -13,7 +13,6 @@ export type ProductFormValues = {
   idProveedor: string;
   costoPromedio: string;
   precioVenta: string;
-  esProductoFinal: boolean;
   rutaImagen: string;
 };
 
@@ -179,18 +178,6 @@ export function ProductFormCard({
               className="bg-background"
             />
           </div>
-
-          <label className="flex items-center gap-2 text-sm text-foreground">
-            <input
-              type="checkbox"
-              checked={form.esProductoFinal}
-              onChange={(event) =>
-                onChange({ ...form, esProductoFinal: event.target.checked })
-              }
-              className="size-4 rounded border-border"
-            />
-            Es producto final
-          </label>
 
           <div className="md:col-span-2">
             {form.rutaImagen.trim() ? (

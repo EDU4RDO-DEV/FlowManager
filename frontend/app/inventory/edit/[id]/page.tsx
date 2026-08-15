@@ -22,7 +22,6 @@ const EMPTY_FORM: ProductFormValues = {
   idProveedor: "",
   costoPromedio: "",
   precioVenta: "",
-  esProductoFinal: true,
   rutaImagen: "",
 };
 
@@ -59,7 +58,6 @@ export default function EditProductPage() {
           idProveedor: String(productData.idProveedor),
           costoPromedio: String(productData.costoPromedio),
           precioVenta: String(productData.precioVenta),
-          esProductoFinal: productData.esProductoFinal,
           rutaImagen: productData.rutaImagen ?? "",
         });
       } catch (error) {
@@ -123,7 +121,6 @@ export default function EditProductPage() {
         categoria: form.categoria,
         costoPromedio,
         precioVenta,
-        esProductoFinal: form.esProductoFinal,
         rutaImagen: form.rutaImagen.trim() || undefined,
       });
 

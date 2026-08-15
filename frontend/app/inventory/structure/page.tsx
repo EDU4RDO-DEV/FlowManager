@@ -39,7 +39,7 @@ export default function InventoryStructureIndexPage() {
         page: 1,
         limit: 100,
         anulado: false,
-        esProductoFinal: true,
+        categoria: "PRODUCTO_TERMINADO",
       });
       setItems(response.items);
     } catch (error) {

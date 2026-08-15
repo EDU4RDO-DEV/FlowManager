@@ -10,7 +10,6 @@ type ListProductsInput = {
   limit?: number;
   busqueda?: string;
   categoria?: string;
-  esProductoFinal?: boolean;
   anulado?: boolean;
   idProveedor?: number;
 };
@@ -22,7 +21,6 @@ type CreateProductInput = {
   categoria: string;
   costoPromedio: number;
   precioVenta: number;
-  esProductoFinal: boolean;
   rutaImagen?: string;
 };
 
@@ -34,7 +32,6 @@ type UpdateProductInput = {
   categoria?: string;
   costoPromedio?: number;
   precioVenta?: number;
-  esProductoFinal?: boolean;
   rutaImagen?: string;
 };
 
@@ -47,7 +44,6 @@ function toProductDto(product: {
   Existencia: number;
   CostoPromedio: unknown;
   PrecioVenta: unknown;
-  EsProductoFinal: boolean;
   RutaImagen: string | null;
   FechaRegistro: Date | null;
   IdUsuarioModificador: number | null;
@@ -70,7 +66,6 @@ function toProductDto(product: {
     existencia: product.Existencia,
     costoPromedio: Number(product.CostoPromedio),
     precioVenta: Number(product.PrecioVenta),
-    esProductoFinal: product.EsProductoFinal,
     rutaImagen: product.RutaImagen,
     fechaRegistro: product.FechaRegistro,
     idUsuarioModificador: product.IdUsuarioModificador,
@@ -162,7 +157,6 @@ export async function listProducts(input: ListProductsInput) {
   const where = {
     ...(input.anulado !== undefined ? { Anulado: input.anulado } : { Anulado: false }),
     ...(input.categoria !== undefined ? { Categoria: input.categoria } : {}),
-    ...(input.esProductoFinal !== undefined ? { EsProductoFinal: input.esProductoFinal } : {}),
     ...(input.idProveedor !== undefined ? { IdProveedor: input.idProveedor } : {}),
     ...(input.busqueda
       ? {
@@ -259,7 +253,6 @@ export async function createProduct(input: CreateProductInput) {
         Existencia: 0,
         CostoPromedio: input.costoPromedio,
         PrecioVenta: input.precioVenta,
-        EsProductoFinal: input.esProductoFinal,
         RutaImagen: input.rutaImagen,
         Anulado: false,
       },
@@ -343,9 +336,6 @@ export async function updateProduct(id: number, input: UpdateProductInput) {
       ...(input.categoria !== undefined ? { Categoria: input.categoria } : {}),
       ...(input.costoPromedio !== undefined ? { CostoPromedio: input.costoPromedio } : {}),
       ...(input.precioVenta !== undefined ? { PrecioVenta: input.precioVenta } : {}),
-      ...(input.esProductoFinal !== undefined
-        ? { EsProductoFinal: input.esProductoFinal }
-        : {}),
       ...(input.rutaImagen !== undefined ? { RutaImagen: input.rutaImagen } : {}),
       FechaModificacion: new Date(),
     },
