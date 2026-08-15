@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock } = vi.hoisted(() => ({
+const { prismaMock, registerInventoryMovementMock } = vi.hoisted(() => ({
   prismaMock: {
     compra: {
       findFirst: vi.fn(),
@@ -14,6 +14,7 @@ const { prismaMock } = vi.hoisted(() => ({
     },
     $transaction: vi.fn(),
   },
+  registerInventoryMovementMock: vi.fn(),
 }));
 
 vi.mock('../config/prisma', () => ({
@@ -21,7 +22,7 @@ vi.mock('../config/prisma', () => ({
 }));
 
 vi.mock('../services/inventory-movement.service', () => ({
-  registerInventoryMovement: vi.fn(),
+  registerInventoryMovement: registerInventoryMovementMock,
 }));
 
 import {
@@ -34,6 +35,56 @@ describe('purchase.service business rules', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
+
+  function buildPurchaseAggregate(anulado: boolean) {
+    return {
+      Id: 10,
+      IdProveedor: 2,
+      IdUsuario: 4,
+      NumeroCompra: 123,
+      NumeroFactura: 'F-123',
+      EsGasto: false,
+      Observaciones: null,
+      FechaFactura: new Date('2026-08-15T00:00:00.000Z'),
+      FechaRegistro: new Date('2026-08-15T01:00:00.000Z'),
+      IdUsuarioModificador: null,
+      FechaModificacion: null,
+      Anulado: anulado,
+      IdUsuarioAnulador: anulado ? 9 : null,
+      FechaAnulacion: anulado ? new Date('2026-08-15T02:00:00.000Z') : null,
+      Proveedor: {
+        Id: 2,
+        Nombre: 'Proveedor A',
+        Anulado: false,
+      },
+      Usuario: {
+        Id: 4,
+        Nombre: 'Tester',
+        Correo: 'tester@flow.com',
+      },
+      DetalleCompra: [
+        {
+          Id: 22,
+          IdCompra: 10,
+          IdInventarioItem: 7,
+          Cantidad: 3,
+          CostoUnitario: 12.5,
+          FechaRegistro: new Date('2026-08-15T01:00:00.000Z'),
+          Anulado: anulado,
+          IdUsuarioAnulador: anulado ? 9 : null,
+          FechaAnulacion: anulado ? new Date('2026-08-15T02:00:00.000Z') : null,
+          InventarioItem: {
+            Id: 7,
+            Nombre: 'Resina',
+            Categoria: 'MATERIA_PRIMA',
+            Existencia: anulado ? 10 : 13,
+            Anulado: false,
+          },
+        },
+      ],
+      DetalleGasto: [],
+    };
+  }
 
   it('restorePurchase fails when purchase is not anulated', async () => {
     prismaMock.compra.findFirst.mockResolvedValueOnce(null);
@@ -58,5 +109,111 @@ describe('purchase.service business rules', () => {
     prismaMock.usuario.findFirst.mockResolvedValueOnce(null);
 
     await expect(restorePurchaseExpense(1, 55, 999)).rejects.toThrowError('Usuario no existe');
+  });
+
+  it('anulatePurchase applies stock reversal and marks records as anulated', async () => {
+    prismaMock.compra.findFirst.mockResolvedValueOnce({
+      Id: 10,
+      IdUsuario: 4,
+      NumeroCompra: 123,
+      EsGasto: false,
+      DetalleCompra: [{ Id: 22, IdInventarioItem: 7, Cantidad: 3 }],
+      DetalleGasto: [],
+    });
+
+    const tx = {
+      inventarioItem: {
+        findFirst: vi.fn().mockResolvedValue({ Id: 7, Nombre: 'Resina', Existencia: 13 }),
+        update: vi.fn().mockResolvedValue({ Id: 7 }),
+      },
+      detalleCompra: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      detalleGasto: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      compra: {
+        update: vi.fn().mockResolvedValue({ Id: 10 }),
+      },
+    };
+
+    prismaMock.$transaction.mockImplementationOnce(async (callback: (txArg: typeof tx) => unknown) =>
+      callback(tx),
+    );
+
+    await anulatePurchase(10);
+
+    expect(tx.inventarioItem.update).toHaveBeenCalledWith({
+      where: { Id: 7 },
+      data: { Existencia: 10 },
+    });
+    expect(tx.detalleCompra.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.compra.update).toHaveBeenCalledTimes(1);
+    expect(registerInventoryMovementMock).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        tipoDocumento: 'COMAN',
+        tipoMovimiento: false,
+        existenciaAnterior: 13,
+        nuevaExistencia: 10,
+      }),
+    );
+  });
+
+  it('restorePurchase reapplies stock and clears anulation flags', async () => {
+    prismaMock.compra.findFirst.mockResolvedValueOnce({
+      Id: 10,
+      IdUsuario: 4,
+      NumeroCompra: 123,
+      EsGasto: false,
+      DetalleCompra: [{ Id: 22, IdInventarioItem: 7, Cantidad: 3 }],
+      DetalleGasto: [],
+    });
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
+
+    const tx = {
+      inventarioItem: {
+        findFirst: vi.fn().mockResolvedValue({ Id: 7, Nombre: 'Resina', Existencia: 10 }),
+        update: vi.fn().mockResolvedValue({ Id: 7 }),
+      },
+      detalleCompra: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      detalleGasto: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      compra: {
+        update: vi.fn().mockResolvedValue({ Id: 10 }),
+        findFirst: vi.fn().mockResolvedValue(buildPurchaseAggregate(false)),
+      },
+    };
+
+    prismaMock.$transaction.mockImplementationOnce(async (callback: (txArg: typeof tx) => unknown) =>
+      callback(tx),
+    );
+
+    const restored = await restorePurchase(10, 9);
+
+    expect(tx.inventarioItem.update).toHaveBeenCalledWith({
+      where: { Id: 7 },
+      data: { Existencia: 13 },
+    });
+    expect(tx.detalleCompra.updateMany).toHaveBeenCalledWith({
+      where: { IdCompra: 10, Anulado: true },
+      data: {
+        Anulado: false,
+        IdUsuarioAnulador: null,
+        FechaAnulacion: null,
+      },
+    });
+    expect(registerInventoryMovementMock).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        tipoDocumento: 'COMRES',
+        tipoMovimiento: true,
+      }),
+    );
+    expect(restored.anulado).toBe(false);
+    expect(restored.id).toBe(10);
   });
 });
