@@ -124,6 +124,10 @@ export interface AnulatePurchasePayload {
   idUsuarioAnulador?: number;
 }
 
+export interface RestorePurchasePayload {
+  idUsuarioModificador?: number;
+}
+
 export type PurchaseExpensesResponse = ApiResponse<PurchaseExpenseItemDto[]>;
 export type PurchaseExpenseResponse = ApiResponse<PurchaseExpenseItemDto>;
 
@@ -135,4 +139,8 @@ export interface UpdatePurchaseExpensePayload {
 
 export interface DeletePurchaseExpensePayload {
   idUsuarioAnulador?: number;
+}
+
+export interface RestorePurchaseExpensePayload {
+  idUsuarioModificador?: number;
 }

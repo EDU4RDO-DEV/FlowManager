@@ -8,6 +8,8 @@ import {
   getPurchaseByIdController,
   listPurchaseExpensesController,
   listPurchasesController,
+  restorePurchaseController,
+  restorePurchaseExpenseController,
   updatePurchaseExpenseController,
 } from '../controllers/purchase.controller';
 import { requireModulePermission } from '../middlewares/auth.middleware';
@@ -21,6 +23,11 @@ purchaseRouter.patch(
   '/:id/anular',
   requireModulePermission('compras', 'delete'),
   anulatePurchaseController,
+);
+purchaseRouter.patch(
+  '/:id/restaurar',
+  requireModulePermission('compras', 'update'),
+  restorePurchaseController,
 );
 
 purchaseRouter.get(
@@ -42,6 +49,11 @@ purchaseRouter.delete(
   '/:id/gastos/:idGasto',
   requireModulePermission('compras', 'delete'),
   deletePurchaseExpenseController,
+);
+purchaseRouter.patch(
+  '/:id/gastos/:idGasto/restaurar',
+  requireModulePermission('compras', 'update'),
+  restorePurchaseExpenseController,
 );
 
 export default purchaseRouter;

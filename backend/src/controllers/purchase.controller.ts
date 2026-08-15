@@ -9,6 +9,8 @@ import {
   getPurchaseById,
   listPurchaseExpenses,
   listPurchases,
+  restorePurchase,
+  restorePurchaseExpense,
   updatePurchaseExpense,
 } from '../services/purchase.service';
 import {
@@ -19,6 +21,8 @@ import {
   listPurchasesQuerySchema,
   purchaseExpenseIdParamsSchema,
   purchaseIdParamsSchema,
+  restorePurchaseBodySchema,
+  restorePurchaseExpenseBodySchema,
   updatePurchaseExpenseSchema,
 } from '../validators/purchase.validators';
 import { getZodErrorMessage } from '../validators/validation';
@@ -136,6 +140,33 @@ export async function anulatePurchaseController(req: Request, res: Response) {
   }
 }
 
+export async function restorePurchaseController(req: Request, res: Response) {
+  try {
+    const { id } = purchaseIdParamsSchema.parse(req.params);
+    const { idUsuarioModificador } = restorePurchaseBodySchema.parse(req.body ?? {});
+
+    const data = await restorePurchase(id, req.auth?.userId ?? idUsuarioModificador);
+
+    return res.status(200).json({ ok: true, data, message: 'Compra restaurada correctamente' });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (
+      message === 'Compra anulada no existe' ||
+      message === 'Usuario no existe' ||
+      message.includes('no existe o está anulado')
+    ) {
+      return res.status(404).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
 export async function listPurchaseExpensesController(req: Request, res: Response) {
   try {
     const { id } = purchaseIdParamsSchema.parse(req.params);
@@ -231,6 +262,33 @@ export async function deletePurchaseExpenseController(req: Request, res: Respons
     const message = error instanceof Error ? error.message : 'Error interno';
 
     if (message === 'Detalle de gasto no existe' || message === 'Usuario no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function restorePurchaseExpenseController(req: Request, res: Response) {
+  try {
+    const { id, idGasto } = purchaseExpenseIdParamsSchema.parse(req.params);
+    const { idUsuarioModificador } = restorePurchaseExpenseBodySchema.parse(req.body ?? {});
+
+    const data = await restorePurchaseExpense(
+      id,
+      idGasto,
+      req.auth?.userId ?? idUsuarioModificador,
+    );
+
+    return res.status(200).json({ ok: true, data, message: 'Gasto restaurado correctamente' });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message === 'Detalle de gasto anulado no existe' || message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
     }
 

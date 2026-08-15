@@ -611,6 +611,156 @@ export async function anulatePurchase(id: number, idUsuarioAnulador?: number) {
   });
 }
 
+export async function restorePurchase(id: number, idUsuarioModificador?: number) {
+  const purchase = await prisma.compra.findFirst({
+    where: {
+      Id: id,
+      Anulado: true,
+    },
+    include: {
+      DetalleCompra: {
+        where: { Anulado: true },
+        select: {
+          Id: true,
+          IdInventarioItem: true,
+          Cantidad: true,
+        },
+      },
+      DetalleGasto: {
+        where: { Anulado: true },
+        select: {
+          Id: true,
+        },
+      },
+    },
+  });
+
+  if (!purchase) {
+    throw new Error('Compra anulada no existe');
+  }
+
+  if (idUsuarioModificador !== undefined) {
+    await validateUsuarioExists(idUsuarioModificador);
+  }
+
+  const restored = await prisma.$transaction(async (tx) => {
+    const fechaModificacion = new Date();
+
+    if (!purchase.EsGasto) {
+      for (const detail of purchase.DetalleCompra) {
+        const item = await tx.inventarioItem.findFirst({
+          where: {
+            Id: detail.IdInventarioItem,
+            Anulado: false,
+          },
+          select: {
+            Id: true,
+            Nombre: true,
+            Existencia: true,
+          },
+        });
+
+        if (!item) {
+          throw new Error(`InventarioItem ${detail.IdInventarioItem} no existe o está anulado`);
+        }
+
+        const existenciaAnterior = item.Existencia;
+        const nuevaExistencia = existenciaAnterior + detail.Cantidad;
+
+        await tx.inventarioItem.update({
+          where: { Id: item.Id },
+          data: {
+            Existencia: nuevaExistencia,
+          },
+        });
+
+        await registerInventoryMovement(tx, {
+          idInventarioItem: item.Id,
+          idUsuario: idUsuarioModificador ?? purchase.IdUsuario,
+          tipoDocumento: 'COMRES',
+          documento: formatDocumentoId(purchase.Id),
+          nombre: `Entrada por restauración compra #${purchase.NumeroCompra} - ${item.Nombre}`,
+          tipoMovimiento: true,
+          existenciaAnterior,
+          cantidad: detail.Cantidad,
+          nuevaExistencia,
+        });
+      }
+
+      await tx.detalleCompra.updateMany({
+        where: { IdCompra: purchase.Id, Anulado: true },
+        data: {
+          Anulado: false,
+          IdUsuarioAnulador: null,
+          FechaAnulacion: null,
+        },
+      });
+    }
+
+    if (purchase.EsGasto && purchase.DetalleGasto.length > 0) {
+      await tx.detalleGasto.updateMany({
+        where: { IdCompra: purchase.Id, Anulado: true },
+        data: {
+          Anulado: false,
+          IdUsuarioAnulador: null,
+          FechaAnulacion: null,
+        },
+      });
+    }
+
+    await tx.compra.update({
+      where: { Id: purchase.Id },
+      data: {
+        Anulado: false,
+        IdUsuarioAnulador: null,
+        FechaAnulacion: null,
+        IdUsuarioModificador: idUsuarioModificador,
+        FechaModificacion: fechaModificacion,
+      },
+    });
+
+    return tx.compra.findFirst({
+      where: { Id: purchase.Id },
+      include: {
+        Proveedor: {
+          select: {
+            Id: true,
+            Nombre: true,
+            Anulado: true,
+          },
+        },
+        Usuario: {
+          select: {
+            Id: true,
+            Nombre: true,
+            Correo: true,
+          },
+        },
+        DetalleCompra: {
+          include: {
+            InventarioItem: {
+              select: {
+                Id: true,
+                Nombre: true,
+                Categoria: true,
+                Existencia: true,
+                Anulado: true,
+              },
+            },
+          },
+        },
+        DetalleGasto: true,
+      },
+    });
+  });
+
+  if (!restored) {
+    throw new Error('No se pudo restaurar la compra');
+  }
+
+  return toPurchaseDto(restored);
+}
+
 export async function listPurchaseExpenses(idCompra: number) {
   const purchase = await prisma.compra.findFirst({
     where: { Id: idCompra, Anulado: false },
@@ -766,4 +916,51 @@ export async function deletePurchaseExpense(
       FechaAnulacion: new Date(),
     },
   });
+}
+
+export async function restorePurchaseExpense(
+  idCompra: number,
+  idGasto: number,
+  idUsuarioModificador?: number,
+) {
+  const expense = await prisma.detalleGasto.findFirst({
+    where: {
+      Id: idGasto,
+      IdCompra: idCompra,
+      Anulado: true,
+    },
+    select: {
+      Id: true,
+    },
+  });
+
+  if (!expense) {
+    throw new Error('Detalle de gasto anulado no existe');
+  }
+
+  if (idUsuarioModificador !== undefined) {
+    await validateUsuarioExists(idUsuarioModificador);
+  }
+
+  const updated = await prisma.detalleGasto.update({
+    where: { Id: idGasto },
+    data: {
+      Anulado: false,
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
+    },
+  });
+
+  return {
+    id: updated.Id,
+    idCompra: updated.IdCompra,
+    descripcion: updated.Descripcion,
+    cantidad: toNumber(updated.Cantidad),
+    precioUnitario: toNumber(updated.PrecioUnitario),
+    subtotal: getSubtotal(toNumber(updated.Cantidad), toNumber(updated.PrecioUnitario)),
+    fechaRegistro: updated.FechaRegistro,
+    anulado: updated.Anulado,
+    idUsuarioAnulador: updated.IdUsuarioAnulador,
+    fechaAnulacion: updated.FechaAnulacion,
+  };
 }

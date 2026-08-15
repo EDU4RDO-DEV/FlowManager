@@ -27,8 +27,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getApiErrorMessage } from "@/lib/api";
+import { hasModulePermission } from "@/lib/rbac";
 import { listProviders } from "@/services/providers.service";
-import { anulatePurchase, listPurchases } from "@/services/purchases.service";
+import {
+  anulatePurchase,
+  listPurchases,
+  restorePurchase,
+} from "@/services/purchases.service";
 import type { ProviderDto } from "@/types/providers";
 import type { PurchaseDto } from "@/types/purchases";
 
@@ -55,6 +60,8 @@ function formatMoney(value: number): string {
 export default function PurchasesPage() {
   const pathname = usePathname();
   const { user } = useAuth();
+  const canDeletePurchases = hasModulePermission(user?.nombreRol, "compras", "delete");
+  const canUpdatePurchases = hasModulePermission(user?.nombreRol, "compras", "update");
   const [activePurchases, setActivePurchases] = useState<PurchaseDto[]>([]);
   const [anulatedPurchases, setAnulatedPurchases] = useState<PurchaseDto[]>([]);
   const [providers, setProviders] = useState<ProviderDto[]>([]);
@@ -117,6 +124,11 @@ export default function PurchasesPage() {
   );
 
   async function confirmDeletePurchase(purchase: PurchaseDto) {
+    if (!canDeletePurchases) {
+      toast.error("No tienes permisos para anular compras");
+      return;
+    }
+
     try {
       await anulatePurchase(
         purchase.id,
@@ -140,6 +152,26 @@ export default function PurchasesPage() {
     }
   }
 
+  async function restorePurchaseFromTrash(purchase: PurchaseDto) {
+    if (!canUpdatePurchases) {
+      toast.error("No tienes permisos para restaurar compras");
+      return;
+    }
+
+    try {
+      const restored = await restorePurchase(
+        purchase.id,
+        user?.id ? { idUsuarioModificador: user.id } : undefined,
+      );
+
+      setAnulatedPurchases((prev) => prev.filter((item) => item.id !== purchase.id));
+      setActivePurchases((prev) => [restored, ...prev]);
+      toast.success("Compra restaurada correctamente");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo restaurar la compra"));
+    }
+  }
+
   function handlePurchaseCreated(newPurchase: PurchaseDto) {
     setActivePurchases((prev) => [newPurchase, ...prev]);
     setFormDialogOpen(false);
@@ -152,7 +184,7 @@ export default function PurchasesPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="compras" action="read">
       <DashboardShell
         title="Administración de Compras"
         description="Controla compras de inventario, gastos asociados y su estado de anulación"
@@ -292,14 +324,16 @@ export default function PurchasesPage() {
                                   >
                                     <Eye className="h-4 w-4" />
                                   </Button>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    onClick={() => setDeleteCandidate(purchase)}
-                                    title="Anular compra"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
+                                  {canDeletePurchases ? (
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      onClick={() => setDeleteCandidate(purchase)}
+                                      title="Anular compra"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  ) : null}
                                 </div>
                               )}
                             </TableCell>
@@ -356,14 +390,26 @@ export default function PurchasesPage() {
                               {formatMoney(purchase.totalGeneral)}
                             </TableCell>
                             <TableCell className="text-right">
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => openDetailDialog(purchase)}
-                                title="Ver detalle"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => openDetailDialog(purchase)}
+                                  title="Ver detalle"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                {canUpdatePurchases ? (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => void restorePurchaseFromTrash(purchase)}
+                                    title="Restaurar compra"
+                                  >
+                                    <RotateCcw className="h-4 w-4" />
+                                  </Button>
+                                ) : null}
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}

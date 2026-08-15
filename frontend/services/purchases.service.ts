@@ -11,6 +11,8 @@ import type {
   PurchaseExpensesResponse,
   PurchaseFilters,
   PurchaseResponse,
+  RestorePurchaseExpensePayload,
+  RestorePurchasePayload,
   PurchasesListResponse,
   PurchasesListResult,
   UpdatePurchaseExpensePayload,
@@ -78,6 +80,18 @@ export async function anulatePurchase(
   await api.patch(`/api/compras/${id}/anular`, payload);
 }
 
+export async function restorePurchase(
+  id: number,
+  payload?: RestorePurchasePayload,
+): Promise<PurchaseDto> {
+  const { data } = await api.patch<PurchaseResponse>(`/api/compras/${id}/restaurar`, payload);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al restaurar compra");
+  }
+
+  return data.data;
+}
+
 export async function listPurchaseExpenses(
   idCompra: number,
 ): Promise<PurchaseExpenseItemDto[]> {
@@ -128,4 +142,21 @@ export async function deletePurchaseExpense(
   await api.delete(`/api/compras/${idCompra}/gastos/${idGasto}`, {
     data: payload,
   });
+}
+
+export async function restorePurchaseExpense(
+  idCompra: number,
+  idGasto: number,
+  payload?: RestorePurchaseExpensePayload,
+): Promise<PurchaseExpenseItemDto> {
+  const { data } = await api.patch<PurchaseExpenseResponse>(
+    `/api/compras/${idCompra}/gastos/${idGasto}/restaurar`,
+    payload,
+  );
+
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al restaurar gasto");
+  }
+
+  return data.data;
 }

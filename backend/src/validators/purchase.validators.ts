@@ -170,6 +170,10 @@ export const anulatePurchaseBodySchema = z.object({
   idUsuarioAnulador: positiveInt.optional(),
 });
 
+export const restorePurchaseBodySchema = z.object({
+  idUsuarioModificador: positiveInt.optional(),
+});
+
 export const createPurchaseExpenseSchema = z.object({
   descripcion: z
     .string()
@@ -192,4 +196,8 @@ export const updatePurchaseExpenseSchema = z
 
 export const deletePurchaseExpenseBodySchema = z.object({
   idUsuarioAnulador: positiveInt.optional(),
+});
+
+export const restorePurchaseExpenseBodySchema = z.object({
+  idUsuarioModificador: positiveInt.optional(),
 });
