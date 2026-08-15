@@ -9,8 +9,12 @@ import type { UserDto } from "@/types/users";
 export type EmployeeFormValues = {
   idUsuarioVinculado: string;
   nombreCompleto: string;
+  sexo: string;
+  fechaNacimiento: string;
   correoElectronico: string;
   telefono1: string;
+  telefono2: string;
+  rutaImagen: string;
   nit: string;
   dpi: string;
   puestoTrabajo: string;
@@ -77,6 +81,31 @@ export function EmployeeFormCard({
           </div>
 
           <div className="space-y-1.5">
+            <Label htmlFor="employee-sex">Sexo</Label>
+            <select
+              id="employee-sex"
+              className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm transition-colors hover:bg-muted/50"
+              value={form.sexo}
+              onChange={(event) => onChange({ ...form, sexo: event.target.value })}
+            >
+              <option value="">Sin especificar</option>
+              <option value="M">Masculino</option>
+              <option value="F">Femenino</option>
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="employee-birth-date">Fecha de nacimiento</Label>
+            <Input
+              id="employee-birth-date"
+              type="date"
+              value={form.fechaNacimiento}
+              onChange={(event) => onChange({ ...form, fechaNacimiento: event.target.value })}
+              className="bg-background"
+            />
+          </div>
+
+          <div className="space-y-1.5">
             <Label htmlFor="correo">Correo electronico</Label>
             <Input
               id="correo"
@@ -94,6 +123,28 @@ export function EmployeeFormCard({
               value={form.telefono1}
               onChange={(event) => onChange({ ...form, telefono1: event.target.value })}
               placeholder="5555-5555"
+              className="bg-background"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="telefono-2">Telefono 2</Label>
+            <Input
+              id="telefono-2"
+              value={form.telefono2}
+              onChange={(event) => onChange({ ...form, telefono2: event.target.value })}
+              placeholder="5555-5556"
+              className="bg-background"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="ruta-imagen">Ruta imagen</Label>
+            <Input
+              id="ruta-imagen"
+              value={form.rutaImagen}
+              onChange={(event) => onChange({ ...form, rutaImagen: event.target.value })}
+              placeholder="/uploads/empleados/foto.jpg"
               className="bg-background"
             />
           </div>

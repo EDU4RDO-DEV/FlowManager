@@ -28,6 +28,7 @@ const EMPTY_FORM: UserFormValues = {
   entidadTelefono1: "",
   entidadTelefono2: "",
   entidadCorreoElectronico: "",
+  entidadRutaImagen: "",
   entidadNit: "",
   entidadDpi: "",
 };
@@ -74,6 +75,7 @@ export default function EditUserPage() {
           entidadTelefono1: userData.entidad?.telefono1 ?? "",
           entidadTelefono2: userData.entidad?.telefono2 ?? "",
           entidadCorreoElectronico: userData.entidad?.correoElectronico ?? "",
+          entidadRutaImagen: userData.entidad?.rutaImagen ?? "",
           entidadNit: userData.entidad?.nit ?? "",
           entidadDpi: userData.entidad?.dpi ?? "",
         });
@@ -104,6 +106,7 @@ export default function EditUserPage() {
       entidadTelefono1: linkedEmployee.entidad.telefono1 ?? "",
       entidadTelefono2: linkedEmployee.entidad.telefono2 ?? "",
       entidadCorreoElectronico: linkedEmployee.entidad.correoElectronico ?? "",
+      entidadRutaImagen: linkedEmployee.entidad.rutaImagen ?? "",
       entidadNit: linkedEmployee.entidad.nit ?? "",
       entidadDpi: linkedEmployee.entidad.dpi ?? "",
     }));
@@ -140,6 +143,7 @@ export default function EditUserPage() {
           telefono1: form.entidadTelefono1.trim() || undefined,
           telefono2: form.entidadTelefono2.trim() || undefined,
           correoElectronico: form.entidadCorreoElectronico.trim() || undefined,
+          rutaImagen: form.entidadRutaImagen.trim() || undefined,
           nit: form.entidadNit.trim() || undefined,
           dpi: form.entidadDpi.trim() || undefined,
         },

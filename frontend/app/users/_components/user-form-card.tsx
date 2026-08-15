@@ -18,6 +18,7 @@ export type UserFormValues = {
   entidadTelefono1: string;
   entidadTelefono2: string;
   entidadCorreoElectronico: string;
+  entidadRutaImagen: string;
   entidadNit: string;
   entidadDpi: string;
 };
@@ -189,6 +190,17 @@ export function UserFormCard({
                   value={form.entidadTelefono2}
                   onChange={(event) => onChange({ ...form, entidadTelefono2: event.target.value })}
                   placeholder="50255550102"
+                  className="bg-background"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="entity-image-path">Ruta imagen</Label>
+                <Input
+                  id="entity-image-path"
+                  value={form.entidadRutaImagen}
+                  onChange={(event) => onChange({ ...form, entidadRutaImagen: event.target.value })}
+                  placeholder="/uploads/personas/foto.jpg"
                   className="bg-background"
                 />
               </div>

@@ -16,11 +16,22 @@ import { getClientById, updateClient } from "@/services/clients.service";
 
 const EMPTY_FORM: ClientFormValues = {
   nombreCompleto: "",
+  sexo: "",
+  fechaNacimiento: "",
   correoElectronico: "",
   telefono1: "",
+  telefono2: "",
+  rutaImagen: "",
   nit: "",
   dpi: "",
 };
+
+function toInputDate(value: string | null): string {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+}
 
 export default function EditClientPage() {
   const params = useParams<{ id: string }>();
@@ -44,8 +55,12 @@ export default function EditClientPage() {
         const clientData = await getClientById(clientId);
         setForm({
           nombreCompleto: clientData.entidad.nombreCompleto,
+          sexo: clientData.entidad.sexo ?? "",
+          fechaNacimiento: toInputDate(clientData.entidad.fechaNacimiento),
           correoElectronico: clientData.entidad.correoElectronico ?? "",
           telefono1: clientData.entidad.telefono1 ?? "",
+          telefono2: clientData.entidad.telefono2 ?? "",
+          rutaImagen: clientData.entidad.rutaImagen ?? "",
           nit: clientData.entidad.nit ?? "",
           dpi: clientData.entidad.dpi ?? "",
         });
@@ -83,8 +98,12 @@ export default function EditClientPage() {
         idUsuarioModificador: user.id,
         entidad: {
           nombreCompleto: form.nombreCompleto.trim(),
+          sexo: form.sexo.trim() || undefined,
+          fechaNacimiento: form.fechaNacimiento.trim() || undefined,
           correoElectronico: form.correoElectronico.trim() || undefined,
           telefono1: form.telefono1.trim() || undefined,
+          telefono2: form.telefono2.trim() || undefined,
+          rutaImagen: form.rutaImagen.trim() || undefined,
           nit: form.nit.trim() || undefined,
           dpi: form.dpi.trim() || undefined,
         },

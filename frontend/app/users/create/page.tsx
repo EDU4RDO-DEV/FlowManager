@@ -27,6 +27,7 @@ const EMPTY_FORM: UserFormValues = {
   entidadTelefono1: "",
   entidadTelefono2: "",
   entidadCorreoElectronico: "",
+  entidadRutaImagen: "",
   entidadNit: "",
   entidadDpi: "",
 };
@@ -73,6 +74,7 @@ export default function CreateUserPage() {
       entidadTelefono1: linkedEmployee.entidad.telefono1 ?? "",
       entidadTelefono2: linkedEmployee.entidad.telefono2 ?? "",
       entidadCorreoElectronico: linkedEmployee.entidad.correoElectronico ?? "",
+      entidadRutaImagen: linkedEmployee.entidad.rutaImagen ?? "",
       entidadNit: linkedEmployee.entidad.nit ?? "",
       entidadDpi: linkedEmployee.entidad.dpi ?? "",
     }));
@@ -110,6 +112,7 @@ export default function CreateUserPage() {
           telefono1: emptyToUndefined(form.entidadTelefono1),
           telefono2: emptyToUndefined(form.entidadTelefono2),
           correoElectronico: emptyToUndefined(form.entidadCorreoElectronico),
+          rutaImagen: emptyToUndefined(form.entidadRutaImagen),
           nit: emptyToUndefined(form.entidadNit),
           dpi: emptyToUndefined(form.entidadDpi),
         },

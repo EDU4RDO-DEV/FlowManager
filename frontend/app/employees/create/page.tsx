@@ -19,8 +19,12 @@ import type { UserDto } from "@/types/users";
 const EMPTY_FORM: EmployeeFormValues = {
   idUsuarioVinculado: "",
   nombreCompleto: "",
+  sexo: "",
+  fechaNacimiento: "",
   correoElectronico: "",
   telefono1: "",
+  telefono2: "",
+  rutaImagen: "",
   nit: "",
   dpi: "",
   puestoTrabajo: "",
@@ -61,8 +65,12 @@ export default function CreateEmployeePage() {
     setForm((prev) => ({
       ...prev,
       nombreCompleto: linkedUser.entidad?.nombreCompleto ?? linkedUser.nombre,
+      sexo: linkedUser.entidad?.sexo ?? "",
+      fechaNacimiento: linkedUser.entidad?.fechaNacimiento?.slice(0, 10) ?? "",
       correoElectronico: linkedUser.entidad?.correoElectronico ?? linkedUser.correo,
       telefono1: linkedUser.entidad?.telefono1 ?? "",
+      telefono2: linkedUser.entidad?.telefono2 ?? "",
+      rutaImagen: linkedUser.entidad?.rutaImagen ?? "",
       nit: linkedUser.entidad?.nit ?? "",
       dpi: linkedUser.entidad?.dpi ?? "",
     }));
@@ -108,8 +116,12 @@ export default function CreateEmployeePage() {
         sueldoBase,
         entidad: {
           nombreCompleto: form.nombreCompleto.trim(),
+          sexo: form.sexo.trim() || undefined,
+          fechaNacimiento: form.fechaNacimiento.trim() || undefined,
           correoElectronico: form.correoElectronico.trim() || undefined,
           telefono1: form.telefono1.trim() || undefined,
+          telefono2: form.telefono2.trim() || undefined,
+          rutaImagen: form.rutaImagen.trim() || undefined,
           nit: form.nit.trim() || undefined,
           dpi: form.dpi.trim() || undefined,
         },

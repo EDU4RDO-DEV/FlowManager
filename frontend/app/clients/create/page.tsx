@@ -16,8 +16,12 @@ import { createClient } from "@/services/clients.service";
 
 const EMPTY_FORM: ClientFormValues = {
   nombreCompleto: "",
+  sexo: "",
+  fechaNacimiento: "",
   correoElectronico: "",
   telefono1: "",
+  telefono2: "",
+  rutaImagen: "",
   nit: "",
   dpi: "",
 };
@@ -45,8 +49,12 @@ export default function CreateClientPage() {
         idUsuario: user.id,
         entidad: {
           nombreCompleto: form.nombreCompleto.trim(),
+          sexo: form.sexo.trim() || undefined,
+          fechaNacimiento: form.fechaNacimiento.trim() || undefined,
           correoElectronico: form.correoElectronico.trim() || undefined,
           telefono1: form.telefono1.trim() || undefined,
+          telefono2: form.telefono2.trim() || undefined,
+          rutaImagen: form.rutaImagen.trim() || undefined,
           nit: form.nit.trim() || undefined,
           dpi: form.dpi.trim() || undefined,
         },
