@@ -14,6 +14,14 @@ type RolePermissionsCardProps = {
     action: RolePermissionModuleDto["actions"][number]["action"],
     permitido: boolean,
   ) => void;
+  onToggleModule: (
+    moduleKey: RolePermissionModuleDto["moduleKey"],
+    permitido: boolean,
+  ) => void;
+  onToggleActionColumn: (
+    action: RolePermissionModuleDto["actions"][number]["action"],
+    permitido: boolean,
+  ) => void;
   onSave: () => void;
 };
 
@@ -22,9 +30,17 @@ export function RolePermissionsCard({
   loading,
   saving,
   onToggle,
+  onToggleModule,
+  onToggleActionColumn,
   onSave,
 }: RolePermissionsCardProps) {
   const headers = modules[0]?.actions ?? [];
+
+  function isColumnFullyEnabled(action: RolePermissionModuleDto["actions"][number]["action"]): boolean {
+    return modules.length > 0 && modules.every((moduleItem) =>
+      moduleItem.actions.find((actionItem) => actionItem.action === action)?.permitido === true,
+    );
+  }
 
   return (
     <Card className="rounded-xl border border-border bg-background">
@@ -55,7 +71,15 @@ export function RolePermissionsCard({
                   <th className="px-3 py-2 text-left font-medium">Modulo</th>
                   {headers.map((action) => (
                     <th key={action.action} className="px-3 py-2 text-center font-medium">
-                      {action.actionName}
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={isColumnFullyEnabled(action.action)}
+                          onChange={(event) => onToggleActionColumn(action.action, event.target.checked)}
+                          className="size-4 rounded border-border"
+                        />
+                        <span>{action.actionName}</span>
+                      </label>
                     </th>
                   ))}
                 </tr>
@@ -63,7 +87,17 @@ export function RolePermissionsCard({
               <tbody>
                 {modules.map((moduleItem) => (
                   <tr key={moduleItem.moduleKey} className="border-t border-border">
-                    <td className="px-3 py-2 font-medium">{moduleItem.moduleName}</td>
+                    <td className="px-3 py-2 font-medium">
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={moduleItem.actions.every((actionItem) => actionItem.permitido)}
+                          onChange={(event) => onToggleModule(moduleItem.moduleKey, event.target.checked)}
+                          className="size-4 rounded border-border"
+                        />
+                        <span>{moduleItem.moduleName}</span>
+                      </label>
+                    </td>
                     {moduleItem.actions.map((actionItem) => (
                       <td key={`${moduleItem.moduleKey}-${actionItem.action}`} className="px-3 py-2 text-center">
                         <input

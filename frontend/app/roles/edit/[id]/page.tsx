@@ -159,6 +159,38 @@ export default function EditRolePage() {
     );
   }
 
+  function handleToggleModule(
+    moduleKey: RolePermissionModuleDto["moduleKey"],
+    permitido: boolean,
+  ) {
+    setPermissions((prev) =>
+      prev.map((moduleItem) => {
+        if (moduleItem.moduleKey !== moduleKey) {
+          return moduleItem;
+        }
+
+        return {
+          ...moduleItem,
+          actions: moduleItem.actions.map((actionItem) => ({ ...actionItem, permitido })),
+        };
+      }),
+    );
+  }
+
+  function handleToggleActionColumn(
+    action: RolePermissionModuleDto["actions"][number]["action"],
+    permitido: boolean,
+  ) {
+    setPermissions((prev) =>
+      prev.map((moduleItem) => ({
+        ...moduleItem,
+        actions: moduleItem.actions.map((actionItem) =>
+          actionItem.action === action ? { ...actionItem, permitido } : actionItem,
+        ),
+      })),
+    );
+  }
+
   return (
     <RequireAuth moduleKey="roles" action="update">
       <DashboardShell
@@ -186,6 +218,8 @@ export default function EditRolePage() {
                 loading={loading}
                 saving={savingPermissions}
                 onToggle={handleTogglePermission}
+                onToggleModule={handleToggleModule}
+                onToggleActionColumn={handleToggleActionColumn}
                 onSave={handleSavePermissions}
               />
             </>
