@@ -82,7 +82,7 @@ export async function getStructureByIdController(req: Request, res: Response) {
 
     const message = error instanceof Error ? error.message : 'Error interno';
 
-    if (message === 'Componente de estructura no existe') {
+    if (message === 'Componente de estructura no existe' || message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
     }
 
@@ -150,9 +150,9 @@ export async function updateProductStructureController(req: Request, res: Respon
 export async function deleteProductStructureController(req: Request, res: Response) {
   try {
     const { id } = structureIdParamsSchema.parse(req.params);
-    deleteProductStructureBodySchema.parse(req.body ?? {});
+    const { idUsuarioAnulador } = deleteProductStructureBodySchema.parse(req.body ?? {});
 
-    await deleteProductStructure(id);
+    await deleteProductStructure(id, req.auth?.userId ?? idUsuarioAnulador);
 
     return res.status(200).json({ ok: true, message: 'Componente de estructura anulado correctamente' });
   } catch (error) {
@@ -173,9 +173,9 @@ export async function deleteProductStructureController(req: Request, res: Respon
 export async function restoreProductStructureController(req: Request, res: Response) {
   try {
     const { id } = structureIdParamsSchema.parse(req.params);
-    restoreProductStructureBodySchema.parse(req.body ?? {});
+    const { idUsuarioModificador } = restoreProductStructureBodySchema.parse(req.body ?? {});
 
-    const data = await restoreProductStructure(id);
+    const data = await restoreProductStructure(id, req.auth?.userId ?? idUsuarioModificador);
 
     return res.status(200).json({
       ok: true,
@@ -191,6 +191,7 @@ export async function restoreProductStructureController(req: Request, res: Respo
 
     if (
       message === 'Componente anulado no existe' ||
+      message === 'Usuario no existe' ||
       message === 'Producto terminado no existe o no es un producto final' ||
       message === 'El componente debe ser una materia prima, insumo o envase activo'
     ) {

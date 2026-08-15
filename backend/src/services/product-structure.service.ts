@@ -93,6 +93,20 @@ async function validateNotCircular(idProductoTerminado: number, idMateriaPrima: 
   }
 }
 
+async function validateUsuarioExists(idUsuario: number) {
+  const user = await prisma.usuario.findFirst({
+    where: {
+      Id: idUsuario,
+      Anulado: false,
+    },
+    select: { Id: true },
+  });
+
+  if (!user) {
+    throw new Error('Usuario no existe');
+  }
+}
+
 async function validateUniqueComponent(
   idProductoTerminado: number,
   idMateriaPrima: number,
@@ -268,7 +282,7 @@ export async function updateProductStructure(id: number, input: UpdateProductStr
   return toStructureDto(updated);
 }
 
-export async function deleteProductStructure(id: number) {
+export async function deleteProductStructure(id: number, idUsuarioAnulador?: number) {
   const existing = await prisma.estructuraProducto.findFirst({
     where: { Id: id, Anulado: false },
     select: { Id: true },
@@ -276,6 +290,10 @@ export async function deleteProductStructure(id: number) {
 
   if (!existing) {
     throw new Error('Componente de estructura no existe');
+  }
+
+  if (idUsuarioAnulador !== undefined) {
+    await validateUsuarioExists(idUsuarioAnulador);
   }
 
   await prisma.estructuraProducto.update({
@@ -286,7 +304,7 @@ export async function deleteProductStructure(id: number) {
   });
 }
 
-export async function restoreProductStructure(id: number) {
+export async function restoreProductStructure(id: number, idUsuarioModificador?: number) {
   const existing = await prisma.estructuraProducto.findFirst({
     where: { Id: id, Anulado: true },
     select: {
@@ -298,6 +316,10 @@ export async function restoreProductStructure(id: number) {
 
   if (!existing) {
     throw new Error('Componente anulado no existe');
+  }
+
+  if (idUsuarioModificador !== undefined) {
+    await validateUsuarioExists(idUsuarioModificador);
   }
 
   await validateProductoTerminadoExists(existing.IdProductoTerminado);

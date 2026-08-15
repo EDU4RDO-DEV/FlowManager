@@ -36,5 +36,9 @@ export interface UpdateProductStructurePayload {
 }
 
 export interface RestoreProductStructurePayload {
-  // Sin payload por ahora; se mantiene tipo para consistencia de interfaz
+  idUsuarioModificador?: number;
+}
+
+export interface DeleteProductStructurePayload {
+  idUsuarioAnulador?: number;
 }

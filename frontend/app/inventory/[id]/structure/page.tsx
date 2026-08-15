@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/components/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ import {
 } from "@/app/inventory/_components/inventory-skeletons";
 import { InventoryEmptyState } from "@/app/inventory/_components/inventory-empty-state";
 import { getApiErrorMessage } from "@/lib/api";
+import { hasModulePermission } from "@/lib/rbac";
 import { getProductById, listProducts } from "@/services/products.service";
 import {
   listStructureByProduct,
@@ -49,7 +51,11 @@ import type { ProductStructureDto } from "@/types/product-structure";
 export default function ProductStructurePage() {
   const params = useParams();
   const router = useRouter();
+  const { user } = useAuth();
   const productId = Number(params.id);
+  const canCreateStructure = hasModulePermission(user?.nombreRol, "inventario", "create");
+  const canUpdateStructure = hasModulePermission(user?.nombreRol, "inventario", "update");
+  const canDeleteStructure = hasModulePermission(user?.nombreRol, "inventario", "delete");
 
   const [product, setProduct] = useState<ProductDto | null>(null);
   const [activeStructure, setActiveStructure] = useState<ProductStructureDto[]>([]);
@@ -105,6 +111,11 @@ export default function ProductStructurePage() {
   }
 
   async function handleCreate(data: { idMateriaPrima: number; cantidadRequerida: number }) {
+    if (!canCreateStructure) {
+      toast.error("No tienes permisos para crear componentes.");
+      return;
+    }
+
     try {
       await createProductStructure({
         idProductoTerminado: productId,
@@ -122,6 +133,11 @@ export default function ProductStructurePage() {
 
   async function handleEdit() {
     if (!selectedComponent) return;
+
+    if (!canUpdateStructure) {
+      toast.error("No tienes permisos para editar componentes.");
+      return;
+    }
 
     try {
       await updateProductStructure(selectedComponent.id, {
@@ -152,8 +168,16 @@ export default function ProductStructurePage() {
   async function handleDelete() {
     if (!selectedComponent) return;
 
+    if (!canDeleteStructure) {
+      toast.error("No tienes permisos para anular componentes.");
+      return;
+    }
+
     try {
-      await deleteProductStructure(selectedComponent.id);
+      await deleteProductStructure(
+        selectedComponent.id,
+        user?.id ? { idUsuarioAnulador: user.id } : undefined,
+      );
 
       const movedToTrash: ProductStructureDto = {
         ...selectedComponent,
@@ -174,8 +198,16 @@ export default function ProductStructurePage() {
   }
 
   async function handleRestore(component: ProductStructureDto) {
+    if (!canUpdateStructure) {
+      toast.error("No tienes permisos para restaurar componentes.");
+      return;
+    }
+
     try {
-      const restored = await restoreProductStructure(component.id);
+      const restored = await restoreProductStructure(
+        component.id,
+        user?.id ? { idUsuarioModificador: user.id } : undefined,
+      );
 
       setAnulatedStructure((prev) => prev.filter((item) => item.id !== component.id));
       setActiveStructure((prev) => [restored, ...prev]);
@@ -199,7 +231,7 @@ export default function ProductStructurePage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="inventario" action="read">
       <DashboardShell
         title="Estructura de Producto"
         description="Configura componentes y costos BOM por producto terminado"
@@ -234,7 +266,10 @@ export default function ProductStructurePage() {
             Lista de materias primas y componentes necesarios
           </p>
         </div>
-        <Button onClick={() => setIsFormOpen(true)} disabled={isLoading}>
+        <Button
+          onClick={() => setIsFormOpen(true)}
+          disabled={isLoading || !canCreateStructure}
+        >
           <Plus className="h-4 w-4 mr-2" />
           Agregar Componente
         </Button>
@@ -297,20 +332,24 @@ export default function ProductStructurePage() {
                             </TableCell>
                             <TableCell className="text-center">
                               <div className="flex justify-center gap-2">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => openEditModal(item)}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => openDeleteModal(item)}
-                                >
-                                  <Trash2 className="h-4 w-4 text-red-600" />
-                                </Button>
+                                {canUpdateStructure ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => openEditModal(item)}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                ) : null}
+                                {canDeleteStructure ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => openDeleteModal(item)}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-red-600" />
+                                  </Button>
+                                ) : null}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -361,14 +400,16 @@ export default function ProductStructurePage() {
                               Q{(item.materiaPrima.costoPromedio * item.cantidadRequerida).toFixed(2)}
                             </TableCell>
                             <TableCell className="text-center">
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => handleRestore(item)}
-                              >
-                                <RotateCcw className="h-4 w-4 mr-1" />
-                                Restaurar
-                              </Button>
+                              {canUpdateStructure ? (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => handleRestore(item)}
+                                >
+                                  <RotateCcw className="h-4 w-4 mr-1" />
+                                  Restaurar
+                                </Button>
+                              ) : null}
                             </TableCell>
                           </TableRow>
                         ))}

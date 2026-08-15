@@ -3,6 +3,7 @@ import type { ApiResponse } from "@/types/auth";
 import type {
   AnulatedProductStructureListResponse,
   CreateProductStructurePayload,
+  DeleteProductStructurePayload,
   ProductStructureDto,
   ProductStructureListResponse,
   RestoreProductStructurePayload,
@@ -62,8 +63,11 @@ export async function updateProductStructure(
   return data.data;
 }
 
-export async function deleteProductStructure(id: number): Promise<void> {
-  await api.delete(`/api/product-structure/${id}`);
+export async function deleteProductStructure(
+  id: number,
+  payload?: DeleteProductStructurePayload,
+): Promise<void> {
+  await api.delete(`/api/product-structure/${id}`, { data: payload });
 }
 
 export async function listAnulatedStructureByProduct(
