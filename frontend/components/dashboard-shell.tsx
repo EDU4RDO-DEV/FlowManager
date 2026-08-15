@@ -151,14 +151,6 @@ export function DashboardShell({ title, description, children }: DashboardShellP
               icon: ShoppingCart,
               children: [
                 {
-                  id: "ventas-pdv",
-                  name: "Punto de Venta / Ventas",
-                  path: "/sessions",
-                  icon: CreditCard,
-                  available: has.sesiones,
-                  isActive: (currentPath: string) => isPathActive(currentPath, "/sessions"),
-                },
-                {
                   id: "ventas-pagos",
                   name: "Pagos y Abonos",
                   icon: Wallet,
@@ -361,6 +353,14 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                   icon: ShieldCheck,
                   available: has.roles,
                   isActive: (currentPath: string) => isPathActive(currentPath, "/roles"),
+                },
+                {
+                  id: "config-sesiones",
+                  name: "Sesiones de Caja y Ruta",
+                  path: "/sessions",
+                  icon: CreditCard,
+                  available: has.sesiones,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/sessions"),
                 },
               ],
             },
