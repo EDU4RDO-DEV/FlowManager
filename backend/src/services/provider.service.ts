@@ -14,13 +14,11 @@ type EntidadInput = {
 
 type CreateProviderInput = {
   idUsuario: number;
-  nombre: string;
   entidad: EntidadInput;
 };
 
 type UpdateProviderInput = {
   idUsuario?: number;
-  nombre?: string;
   idUsuarioModificador?: number;
   entidad?: Partial<EntidadInput>;
 };
@@ -29,7 +27,6 @@ function toProviderDto(proveedor: {
   Id: number;
   IdEntidad: number;
   IdUsuario: number;
-  Nombre: string;
   FechaRegistro: Date | null;
   IdUsuarioModificador: number | null;
   FechaModificacion: Date | null;
@@ -54,7 +51,7 @@ function toProviderDto(proveedor: {
     id: proveedor.Id,
     idEntidad: proveedor.IdEntidad,
     idUsuario: proveedor.IdUsuario,
-    nombre: proveedor.Nombre,
+    nombre: proveedor.Entidad.NombreCompleto,
     fechaRegistro: proveedor.FechaRegistro,
     idUsuarioModificador: proveedor.IdUsuarioModificador,
     fechaModificacion: proveedor.FechaModificacion,
@@ -224,7 +221,6 @@ export async function createProvider(input: CreateProviderInput) {
       data: {
         IdEntidad: entidad.Id,
         IdUsuario: input.idUsuario,
-        Nombre: input.nombre,
         Anulado: false,
       },
       include: {
@@ -308,7 +304,6 @@ export async function updateProvider(id: number, input: UpdateProviderInput) {
       where: { Id: id },
       data: {
         ...(input.idUsuario !== undefined ? { IdUsuario: input.idUsuario } : {}),
-        ...(input.nombre !== undefined ? { Nombre: input.nombre } : {}),
         ...(input.idUsuarioModificador !== undefined
           ? { IdUsuarioModificador: input.idUsuarioModificador }
           : {}),

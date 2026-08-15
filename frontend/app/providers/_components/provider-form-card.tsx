@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export type ProviderFormValues = {
-  nombre: string;
   nombreCompleto: string;
   correoElectronico: string;
   telefono1: string;
@@ -38,24 +37,13 @@ export function ProviderFormCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-4 rounded-xl border border-border bg-muted/50 p-4 md:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="provider-name">Nombre comercial</Label>
-            <Input
-              id="provider-name"
-              value={form.nombre}
-              onChange={(event) => onChange({ ...form, nombre: event.target.value })}
-              placeholder="Ej. Distribuidora Central"
-              className="bg-background"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="provider-fullname">Nombre contacto</Label>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label htmlFor="provider-fullname">Nombre proveedor</Label>
             <Input
               id="provider-fullname"
               value={form.nombreCompleto}
               onChange={(event) => onChange({ ...form, nombreCompleto: event.target.value })}
-              placeholder="Nombre del representante"
+              placeholder="Nombre completo de proveedor"
               className="bg-background"
             />
           </div>

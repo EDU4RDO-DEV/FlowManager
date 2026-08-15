@@ -19,7 +19,6 @@ const EMPTY_FORM: UserFormValues = {
   correo: "",
   clave: "",
   idRol: "",
-  entidadNombreCompleto: "",
   entidadSexo: "",
   entidadFechaNacimiento: "",
   entidadTelefono1: "",
@@ -73,7 +72,7 @@ export default function CreateUserPage() {
         clave: form.clave,
         ...(selectedRoleId ? { idRol: selectedRoleId } : {}),
         entidad: {
-          nombreCompleto: emptyToUndefined(form.entidadNombreCompleto),
+          nombreCompleto: form.nombre.trim(),
           sexo: emptyToUndefined(form.entidadSexo),
           fechaNacimiento: emptyToUndefined(form.entidadFechaNacimiento),
           telefono1: emptyToUndefined(form.entidadTelefono1),

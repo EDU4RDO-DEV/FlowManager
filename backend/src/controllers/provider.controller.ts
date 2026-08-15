@@ -56,7 +56,6 @@ export async function createProviderController(req: Request, res: Response) {
 
     const data = await createProvider({
       idUsuario: payload.idUsuario,
-      nombre: payload.nombre,
       entidad: payload.entidad,
     });
 

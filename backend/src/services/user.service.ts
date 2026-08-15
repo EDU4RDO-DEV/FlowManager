@@ -8,17 +8,19 @@ type CreateUserInput = {
   clave: string;
   idUsuario?: number;
   idRol?: number;
-  entidad?: {
-    nombreCompleto?: string;
-    sexo?: string;
-    fechaNacimiento?: string;
-    telefono1?: string;
-    telefono2?: string;
-    correoElectronico?: string;
-    rutaImagen?: string;
-    nit?: string;
-    dpi?: string;
-  };
+  entidad?: EntidadInput;
+};
+
+type EntidadInput = {
+  nombreCompleto?: string;
+  sexo?: string;
+  fechaNacimiento?: string;
+  telefono1?: string;
+  telefono2?: string;
+  correoElectronico?: string;
+  rutaImagen?: string;
+  nit?: string;
+  dpi?: string;
 };
 
 type UpdateUserInput = {
@@ -29,6 +31,7 @@ type UpdateUserInput = {
   idEntidad?: number | null;
   idRol?: number | null;
   idUsuarioModificador?: number;
+  entidad?: EntidadInput;
 };
 
 type ChangeUserPasswordInput = {
@@ -55,6 +58,19 @@ function toUserDto(usuario: {
   Anulado: boolean;
   IdUsuarioAnulador: number | null;
   FechaAnulacion: Date | null;
+  Entidad_Usuario_IdEntidadToEntidad?: {
+    Id: number;
+    NombreCompleto: string;
+    Sexo: string | null;
+    FechaNacimiento: Date | null;
+    Telefono1: string | null;
+    Telefono2: string | null;
+    CorreoElectronico: string | null;
+    RutaImagen: string | null;
+    Nit: string | null;
+    Dpi: string | null;
+    Anulado: boolean;
+  } | null;
 }) {
   return {
     id: usuario.Id,
@@ -69,6 +85,23 @@ function toUserDto(usuario: {
     anulado: usuario.Anulado,
     idUsuarioAnulador: usuario.IdUsuarioAnulador,
     fechaAnulacion: usuario.FechaAnulacion,
+    ...(usuario.Entidad_Usuario_IdEntidadToEntidad
+      ? {
+          entidad: {
+            id: usuario.Entidad_Usuario_IdEntidadToEntidad.Id,
+            nombreCompleto: usuario.Entidad_Usuario_IdEntidadToEntidad.NombreCompleto,
+            sexo: usuario.Entidad_Usuario_IdEntidadToEntidad.Sexo,
+            fechaNacimiento: usuario.Entidad_Usuario_IdEntidadToEntidad.FechaNacimiento,
+            telefono1: usuario.Entidad_Usuario_IdEntidadToEntidad.Telefono1,
+            telefono2: usuario.Entidad_Usuario_IdEntidadToEntidad.Telefono2,
+            correoElectronico: usuario.Entidad_Usuario_IdEntidadToEntidad.CorreoElectronico,
+            rutaImagen: usuario.Entidad_Usuario_IdEntidadToEntidad.RutaImagen,
+            nit: usuario.Entidad_Usuario_IdEntidadToEntidad.Nit,
+            dpi: usuario.Entidad_Usuario_IdEntidadToEntidad.Dpi,
+            anulado: usuario.Entidad_Usuario_IdEntidadToEntidad.Anulado,
+          },
+        }
+      : {}),
   };
 }
 
@@ -195,6 +228,21 @@ export async function getUserById(id: number) {
       Anulado: true,
       IdUsuarioAnulador: true,
       FechaAnulacion: true,
+      Entidad_Usuario_IdEntidadToEntidad: {
+        select: {
+          Id: true,
+          NombreCompleto: true,
+          Sexo: true,
+          FechaNacimiento: true,
+          Telefono1: true,
+          Telefono2: true,
+          CorreoElectronico: true,
+          RutaImagen: true,
+          Nit: true,
+          Dpi: true,
+          Anulado: true,
+        },
+      },
     },
   });
 
@@ -352,17 +400,95 @@ export async function updateUser(id: number, input: UpdateUserInput) {
     },
   });
 
-  if (updated.IdEntidad && (input.nombre !== undefined || input.correo !== undefined)) {
+  const shouldUpdateEntidad =
+    input.nombre !== undefined ||
+    input.correo !== undefined ||
+    input.entidad !== undefined;
+
+  if (updated.IdEntidad && shouldUpdateEntidad) {
+    const fechaNacimiento =
+      input.entidad?.fechaNacimiento !== undefined
+        ? new Date(input.entidad.fechaNacimiento)
+        : undefined;
+
+    if (fechaNacimiento && Number.isNaN(fechaNacimiento.getTime())) {
+      throw new Error('fechaNacimiento inválida');
+    }
+
     await prisma.entidad.update({
       where: { Id: updated.IdEntidad },
       data: {
-        ...(input.nombre !== undefined ? { NombreCompleto: input.nombre } : {}),
-        ...(input.correo !== undefined ? { CorreoElectronico: input.correo } : {}),
+        ...(input.nombre !== undefined
+          ? { NombreCompleto: input.nombre }
+          : input.entidad?.nombreCompleto !== undefined
+            ? { NombreCompleto: input.entidad.nombreCompleto }
+            : {}),
+        ...(input.correo !== undefined
+          ? { CorreoElectronico: input.correo }
+          : input.entidad?.correoElectronico !== undefined
+            ? { CorreoElectronico: input.entidad.correoElectronico }
+            : {}),
+        ...(input.entidad?.sexo !== undefined ? { Sexo: input.entidad.sexo } : {}),
+        ...(input.entidad?.fechaNacimiento !== undefined
+          ? { FechaNacimiento: fechaNacimiento }
+          : {}),
+        ...(input.entidad?.telefono1 !== undefined
+          ? { Telefono1: input.entidad.telefono1 }
+          : {}),
+        ...(input.entidad?.telefono2 !== undefined
+          ? { Telefono2: input.entidad.telefono2 }
+          : {}),
+        ...(input.entidad?.rutaImagen !== undefined
+          ? { RutaImagen: input.entidad.rutaImagen }
+          : {}),
+        ...(input.entidad?.nit !== undefined ? { Nit: input.entidad.nit } : {}),
+        ...(input.entidad?.dpi !== undefined ? { Dpi: input.entidad.dpi } : {}),
+        ...(input.idUsuarioModificador !== undefined
+          ? { IdUsuarioModificador: input.idUsuarioModificador }
+          : {}),
+        FechaModificacion: new Date(),
       },
     });
   }
 
-  return toUserDto(updated);
+  const refreshed = await prisma.usuario.findFirst({
+    where: { Id: id, Anulado: false },
+    select: {
+      Id: true,
+      IdUsuario: true,
+      IdEntidad: true,
+      IdRol: true,
+      Nombre: true,
+      Correo: true,
+      FechaRegistro: true,
+      IdUsuarioModificador: true,
+      FechaModificacion: true,
+      Anulado: true,
+      IdUsuarioAnulador: true,
+      FechaAnulacion: true,
+      Entidad_Usuario_IdEntidadToEntidad: {
+        select: {
+          Id: true,
+          NombreCompleto: true,
+          Sexo: true,
+          FechaNacimiento: true,
+          Telefono1: true,
+          Telefono2: true,
+          CorreoElectronico: true,
+          RutaImagen: true,
+          Nit: true,
+          Dpi: true,
+          Anulado: true,
+        },
+      },
+    },
+  });
+
+  if (!refreshed) {
+    throw new Error('Usuario no existe');
+  }
+
+  return toUserDto(refreshed);
 }
 
 export async function deleteUser(id: number, idUsuarioAnulador?: number) {

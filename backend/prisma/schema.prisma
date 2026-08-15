@@ -361,7 +361,6 @@ model Proveedor {
   Id                   Int              @id(map: "PK__Proveedo__3214EC079578DEBB") @default(autoincrement())
   IdEntidad            Int
   IdUsuario            Int
-  Nombre               String           @db.VarChar(255)
   FechaRegistro        DateTime?        @default(now(), map: "DF__Proveedor__Fecha__6477ECF3") @db.DateTime
   IdUsuarioModificador Int?
   FechaModificacion    DateTime?        @db.DateTime

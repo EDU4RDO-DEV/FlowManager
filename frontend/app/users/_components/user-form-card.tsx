@@ -11,7 +11,6 @@ export type UserFormValues = {
   correo: string;
   clave: string;
   idRol: string;
-  entidadNombreCompleto: string;
   entidadSexo: string;
   entidadFechaNacimiento: string;
   entidadTelefono1: string;
@@ -52,17 +51,6 @@ export function UserFormCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-4 rounded-xl border border-border bg-muted/50 p-4 md:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="user-name">Nombre</Label>
-            <Input
-              id="user-name"
-              value={form.nombre}
-              onChange={(event) => onChange({ ...form, nombre: event.target.value })}
-              placeholder="Nombre completo"
-              className="bg-background"
-            />
-          </div>
-
           <div className="space-y-1.5">
             <Label htmlFor="user-email">Correo</Label>
             <Input
@@ -106,24 +94,22 @@ export function UserFormCard({
             </select>
           </div>
 
-          {mode === "create" ? (
-            <>
-              <div className="space-y-1.5 md:col-span-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Datos de entidad
-                </p>
-              </div>
+          <div className="space-y-1.5 md:col-span-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Datos de entidad
+            </p>
+          </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="entity-full-name">Nombre completo</Label>
-                <Input
-                  id="entity-full-name"
-                  value={form.entidadNombreCompleto}
-                  onChange={(event) => onChange({ ...form, entidadNombreCompleto: event.target.value })}
-                  placeholder="Nombre completo de entidad"
-                  className="bg-background"
-                />
-              </div>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label htmlFor="user-name">Nombre completo</Label>
+            <Input
+              id="user-name"
+              value={form.nombre}
+              onChange={(event) => onChange({ ...form, nombre: event.target.value })}
+              placeholder="Nombre completo"
+              className="bg-background"
+            />
+          </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="entity-sex">Sexo</Label>
@@ -205,9 +191,6 @@ export function UserFormCard({
                   className="bg-background"
                 />
               </div>
-
-            </>
-          ) : null}
         </div>
 
         <div className="flex justify-end gap-2">

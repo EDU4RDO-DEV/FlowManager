@@ -134,7 +134,6 @@ CREATE TABLE Proveedor (
     Id INT IDENTITY(1,1) PRIMARY KEY,
     IdEntidad INT NOT NULL,
     IdUsuario INT NOT NULL,
-    Nombre VARCHAR(255) NOT NULL,
     FechaRegistro DATETIME DEFAULT GETDATE(),
     IdUsuarioModificador INT NULL,
     FechaModificacion DATETIME NULL,

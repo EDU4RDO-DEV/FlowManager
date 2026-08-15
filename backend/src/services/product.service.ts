@@ -53,8 +53,11 @@ function toProductDto(product: {
   FechaAnulacion: Date | null;
   Proveedor: {
     Id: number;
-    Nombre: string;
+    Nombre?: string;
     Anulado: boolean;
+    Entidad?: {
+      NombreCompleto: string;
+    };
   };
 }) {
   return {
@@ -75,7 +78,7 @@ function toProductDto(product: {
     fechaAnulacion: product.FechaAnulacion,
     proveedor: {
       id: product.Proveedor.Id,
-      nombre: product.Proveedor.Nombre,
+      nombre: product.Proveedor.Entidad?.NombreCompleto ?? product.Proveedor.Nombre ?? '',
       anulado: product.Proveedor.Anulado,
     },
   };
@@ -178,8 +181,12 @@ export async function listProducts(input: ListProductsInput) {
         Proveedor: {
           select: {
             Id: true,
-            Nombre: true,
             Anulado: true,
+            Entidad: {
+              select: {
+                NombreCompleto: true,
+              },
+            },
           },
         },
       },
@@ -207,8 +214,12 @@ export async function listAnulatedProducts() {
       Proveedor: {
         select: {
           Id: true,
-          Nombre: true,
           Anulado: true,
+          Entidad: {
+            select: {
+              NombreCompleto: true,
+            },
+          },
         },
       },
     },
@@ -224,8 +235,12 @@ export async function getProductById(id: number) {
       Proveedor: {
         select: {
           Id: true,
-          Nombre: true,
           Anulado: true,
+          Entidad: {
+            select: {
+              NombreCompleto: true,
+            },
+          },
         },
       },
     },
@@ -260,8 +275,12 @@ export async function createProduct(input: CreateProductInput) {
         Proveedor: {
           select: {
             Id: true,
-            Nombre: true,
             Anulado: true,
+            Entidad: {
+              select: {
+                NombreCompleto: true,
+              },
+            },
           },
         },
       },
@@ -343,8 +362,12 @@ export async function updateProduct(id: number, input: UpdateProductInput) {
       Proveedor: {
         select: {
           Id: true,
-          Nombre: true,
           Anulado: true,
+          Entidad: {
+            select: {
+              NombreCompleto: true,
+            },
+          },
         },
       },
     },
@@ -427,8 +450,12 @@ export async function restoreProduct(id: number, idUsuarioModificador?: number) 
         Proveedor: {
           select: {
             Id: true,
-            Nombre: true,
             Anulado: true,
+            Entidad: {
+              select: {
+                NombreCompleto: true,
+              },
+            },
           },
         },
       },

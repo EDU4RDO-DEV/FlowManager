@@ -77,7 +77,6 @@ export default function ProvidersPage() {
     return activeProviders.filter((provider) => {
       if (normalizedQuery.length === 0) return true;
       return (
-        provider.nombre.toLowerCase().includes(normalizedQuery) ||
         provider.entidad.nombreCompleto.toLowerCase().includes(normalizedQuery) ||
         (provider.entidad.correoElectronico ?? "").toLowerCase().includes(normalizedQuery)
       );
@@ -90,7 +89,6 @@ export default function ProvidersPage() {
     return anulatedProviders.filter((provider) => {
       if (normalizedQuery.length === 0) return true;
       return (
-        provider.nombre.toLowerCase().includes(normalizedQuery) ||
         provider.entidad.nombreCompleto.toLowerCase().includes(normalizedQuery) ||
         (provider.entidad.correoElectronico ?? "").toLowerCase().includes(normalizedQuery)
       );
@@ -227,7 +225,7 @@ export default function ProvidersPage() {
                   <Label htmlFor="search-providers">Busqueda</Label>
                   <Input
                     id="search-providers"
-                    placeholder="Nombre comercial, contacto o correo"
+                    placeholder="Nombre o correo"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     className="bg-background"
@@ -253,8 +251,7 @@ export default function ProvidersPage() {
                           <TableHeader className="bg-muted/50">
                             <TableRow>
                               <TableHead>ID</TableHead>
-                              <TableHead>Nombre comercial</TableHead>
-                              <TableHead>Contacto</TableHead>
+                              <TableHead>Nombre</TableHead>
                               <TableHead>Telefono</TableHead>
                               <TableHead>Registro</TableHead>
                               <TableHead className="text-right">Acciones</TableHead>
@@ -264,8 +261,7 @@ export default function ProvidersPage() {
                             {filteredProviders.map((provider) => (
                               <TableRow key={provider.id}>
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{provider.id}</TableCell>
-                                <TableCell className="font-medium">{provider.nombre}</TableCell>
-                                <TableCell>{provider.entidad.nombreCompleto}</TableCell>
+                                <TableCell className="font-medium">{provider.entidad.nombreCompleto}</TableCell>
                                 <TableCell>{provider.entidad.telefono1?.trim() || "-"}</TableCell>
                                 <TableCell>{formatDate(provider.fechaRegistro)}</TableCell>
                                 <TableCell className="text-right">
@@ -312,8 +308,7 @@ export default function ProvidersPage() {
                           <TableHeader className="bg-muted/50">
                             <TableRow>
                               <TableHead>ID</TableHead>
-                              <TableHead>Nombre comercial</TableHead>
-                              <TableHead>Contacto</TableHead>
+                              <TableHead>Nombre</TableHead>
                               <TableHead>Telefono</TableHead>
                               <TableHead>Anulacion</TableHead>
                               <TableHead className="text-right">Acciones</TableHead>
@@ -323,8 +318,7 @@ export default function ProvidersPage() {
                             {filteredAnulatedProviders.map((provider) => (
                               <TableRow key={provider.id}>
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{provider.id}</TableCell>
-                                <TableCell className="font-medium">{provider.nombre}</TableCell>
-                                <TableCell>{provider.entidad.nombreCompleto}</TableCell>
+                                <TableCell className="font-medium">{provider.entidad.nombreCompleto}</TableCell>
                                 <TableCell>{provider.entidad.telefono1?.trim() || "-"}</TableCell>
                                 <TableCell>{formatDate(provider.fechaAnulacion)}</TableCell>
                                 <TableCell className="text-right">
@@ -356,7 +350,7 @@ export default function ProvidersPage() {
               <CardHeader>
                 <CardTitle className="text-xl font-bold tracking-tight">Confirmar eliminacion</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Esta accion anulara al proveedor <span className="font-medium text-foreground">{deleteCandidate.nombre}</span>.
+                  Esta accion anulara al proveedor <span className="font-medium text-foreground">{deleteCandidate.entidad.nombreCompleto}</span>.
                 </p>
               </CardHeader>
               <CardContent className="flex justify-end gap-2">

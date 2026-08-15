@@ -32,7 +32,6 @@ export type ProvidersListResponse = ApiResponse<ProviderDto[]>;
 
 export interface CreateProviderPayload {
   idUsuario: number;
-  nombre: string;
   entidad: {
     nombreCompleto: string;
     sexo?: string;
@@ -48,7 +47,6 @@ export interface CreateProviderPayload {
 
 export interface UpdateProviderPayload {
   idUsuario?: number;
-  nombre?: string;
   idUsuarioModificador?: number;
   entidad?: {
     nombreCompleto?: string;

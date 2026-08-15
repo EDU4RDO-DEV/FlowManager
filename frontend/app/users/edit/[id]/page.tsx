@@ -20,7 +20,6 @@ const EMPTY_FORM: UserFormValues = {
   correo: "",
   clave: "",
   idRol: "",
-  entidadNombreCompleto: "",
   entidadSexo: "",
   entidadFechaNacimiento: "",
   entidadTelefono1: "",
@@ -57,14 +56,13 @@ export default function EditUserPage() {
           correo: userData.correo,
           clave: "",
           idRol: userData.idRol ? String(userData.idRol) : "",
-          entidadNombreCompleto: "",
-          entidadSexo: "",
-          entidadFechaNacimiento: "",
-          entidadTelefono1: "",
-          entidadTelefono2: "",
-          entidadCorreoElectronico: "",
-          entidadNit: "",
-          entidadDpi: "",
+          entidadSexo: userData.entidad?.sexo ?? "",
+          entidadFechaNacimiento: userData.entidad?.fechaNacimiento?.slice(0, 10) ?? "",
+          entidadTelefono1: userData.entidad?.telefono1 ?? "",
+          entidadTelefono2: userData.entidad?.telefono2 ?? "",
+          entidadCorreoElectronico: userData.entidad?.correoElectronico ?? "",
+          entidadNit: userData.entidad?.nit ?? "",
+          entidadDpi: userData.entidad?.dpi ?? "",
         });
       } catch (error) {
         toast.error(getApiErrorMessage(error, "No se pudo cargar el usuario."));
@@ -97,6 +95,16 @@ export default function EditUserPage() {
         correo: form.correo.trim(),
         idRol: selectedRoleId,
         ...(user?.id ? { idUsuarioModificador: user.id } : {}),
+        entidad: {
+          nombreCompleto: form.nombre.trim(),
+          sexo: form.entidadSexo.trim() || undefined,
+          fechaNacimiento: form.entidadFechaNacimiento.trim() || undefined,
+          telefono1: form.entidadTelefono1.trim() || undefined,
+          telefono2: form.entidadTelefono2.trim() || undefined,
+          correoElectronico: form.entidadCorreoElectronico.trim() || undefined,
+          nit: form.entidadNit.trim() || undefined,
+          dpi: form.entidadDpi.trim() || undefined,
+        },
       });
 
       toast.success("Usuario actualizado correctamente.");

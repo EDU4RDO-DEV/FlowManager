@@ -15,7 +15,6 @@ import { getApiErrorMessage } from "@/lib/api";
 import { createProvider } from "@/services/providers.service";
 
 const EMPTY_FORM: ProviderFormValues = {
-  nombre: "",
   nombreCompleto: "",
   correoElectronico: "",
   telefono1: "",
@@ -35,13 +34,8 @@ export default function CreateProviderPage() {
       return;
     }
 
-    if (!form.nombre.trim()) {
-      toast.error("El nombre comercial es obligatorio.");
-      return;
-    }
-
     if (!form.nombreCompleto.trim()) {
-      toast.error("El nombre de contacto es obligatorio.");
+      toast.error("El nombre del proveedor es obligatorio.");
       return;
     }
 
@@ -49,7 +43,6 @@ export default function CreateProviderPage() {
     try {
       await createProvider({
         idUsuario: user.id,
-        nombre: form.nombre.trim(),
         entidad: {
           nombreCompleto: form.nombreCompleto.trim(),
           correoElectronico: form.correoElectronico.trim() || undefined,

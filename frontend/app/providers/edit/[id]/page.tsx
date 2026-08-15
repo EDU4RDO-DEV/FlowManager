@@ -15,7 +15,6 @@ import { getApiErrorMessage } from "@/lib/api";
 import { getProviderById, updateProvider } from "@/services/providers.service";
 
 const EMPTY_FORM: ProviderFormValues = {
-  nombre: "",
   nombreCompleto: "",
   correoElectronico: "",
   telefono1: "",
@@ -44,7 +43,6 @@ export default function EditProviderPage() {
       try {
         const providerData = await getProviderById(providerId);
         setForm({
-          nombre: providerData.nombre,
           nombreCompleto: providerData.entidad.nombreCompleto,
           correoElectronico: providerData.entidad.correoElectronico ?? "",
           telefono1: providerData.entidad.telefono1 ?? "",
@@ -74,20 +72,14 @@ export default function EditProviderPage() {
       return;
     }
 
-    if (!form.nombre.trim()) {
-      toast.error("El nombre comercial es obligatorio.");
-      return;
-    }
-
     if (!form.nombreCompleto.trim()) {
-      toast.error("El nombre de contacto es obligatorio.");
+      toast.error("El nombre del proveedor es obligatorio.");
       return;
     }
 
     setSaving(true);
     try {
       await updateProvider(providerId, {
-        nombre: form.nombre.trim(),
         idUsuarioModificador: user.id,
         entidad: {
           nombreCompleto: form.nombreCompleto.trim(),

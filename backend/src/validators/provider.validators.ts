@@ -37,14 +37,12 @@ export const providerIdParamsSchema = z.object({
 
 export const createProviderSchema = z.object({
   idUsuario: positiveInt,
-  nombre: z.string().trim().min(1, 'nombre es obligatorio').max(255, 'nombre demasiado largo'),
   entidad: entityCreateSchema,
 });
 
 export const updateProviderSchema = z
   .object({
     idUsuario: positiveInt.optional(),
-    nombre: z.string().trim().min(1, 'nombre no puede ir vacío').max(255, 'nombre demasiado largo').optional(),
     idUsuarioModificador: positiveInt.optional(),
     entidad: entityUpdateSchema.optional(),
   })

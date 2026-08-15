@@ -159,7 +159,7 @@ export async function updateUserController(req: Request, res: Response) {
       return res.status(400).json({ ok: false, message: 'id debe ser un entero positivo' });
     }
 
-    const { nombre, correo, clave, idUsuario, idEntidad, idRol, idUsuarioModificador } =
+    const { nombre, correo, clave, idUsuario, idEntidad, idRol, idUsuarioModificador, entidad } =
       req.body as {
         nombre?: string;
         correo?: string;
@@ -168,6 +168,17 @@ export async function updateUserController(req: Request, res: Response) {
         idEntidad?: number | null;
         idRol?: number | null;
         idUsuarioModificador?: number;
+        entidad?: {
+          nombreCompleto?: string;
+          sexo?: string;
+          fechaNacimiento?: string;
+          telefono1?: string;
+          telefono2?: string;
+          correoElectronico?: string;
+          rutaImagen?: string;
+          nit?: string;
+          dpi?: string;
+        };
       };
 
     if (nombre !== undefined && !nombre.trim()) {
@@ -209,6 +220,16 @@ export async function updateUserController(req: Request, res: Response) {
       });
     }
 
+    if (entidad?.fechaNacimiento !== undefined) {
+      const parsedDate = new Date(entidad.fechaNacimiento);
+      if (Number.isNaN(parsedDate.getTime())) {
+        return res.status(400).json({
+          ok: false,
+          message: 'entidad.fechaNacimiento inválida',
+        });
+      }
+    }
+
     const data = await updateUser(id, {
       ...(nombre !== undefined ? { nombre: nombre.trim() } : {}),
       ...(correo !== undefined ? { correo: correo.trim() } : {}),
@@ -217,6 +238,7 @@ export async function updateUserController(req: Request, res: Response) {
       ...(idEntidad !== undefined ? { idEntidad } : {}),
       ...(idRol !== undefined ? { idRol } : {}),
       ...(idUsuarioModificador !== undefined ? { idUsuarioModificador } : {}),
+      ...(entidad !== undefined ? { entidad } : {}),
     });
 
     return res.status(200).json({ ok: true, data });
@@ -233,6 +255,10 @@ export async function updateUserController(req: Request, res: Response) {
       message === 'Entidad no existe'
     ) {
       return res.status(404).json({ ok: false, message });
+    }
+
+    if (message === 'fechaNacimiento inválida') {
+      return res.status(400).json({ ok: false, message: 'entidad.fechaNacimiento inválida' });
     }
 
     if (message === 'idUsuario padre no puede ser el mismo usuario') {

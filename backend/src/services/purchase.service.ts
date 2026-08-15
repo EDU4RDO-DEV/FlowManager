@@ -116,8 +116,11 @@ function toPurchaseDto(purchase: {
   FechaAnulacion: Date | null;
   Proveedor: {
     Id: number;
-    Nombre: string;
+    Nombre?: string;
     Anulado: boolean;
+    Entidad?: {
+      NombreCompleto: string;
+    };
   };
   Usuario: {
     Id: number;
@@ -207,7 +210,7 @@ function toPurchaseDto(purchase: {
     fechaAnulacion: purchase.FechaAnulacion,
     proveedor: {
       id: purchase.Proveedor.Id,
-      nombre: purchase.Proveedor.Nombre,
+      nombre: purchase.Proveedor.Entidad?.NombreCompleto ?? purchase.Proveedor.Nombre ?? '',
       anulado: purchase.Proveedor.Anulado,
     },
     usuario: {
@@ -250,8 +253,10 @@ export async function listPurchases(input: ListPurchasesInput) {
             },
             {
               Proveedor: {
-                Nombre: {
-                  contains: input.busqueda,
+                Entidad: {
+                  NombreCompleto: {
+                    contains: input.busqueda,
+                  },
                 },
               },
             },
@@ -271,8 +276,12 @@ export async function listPurchases(input: ListPurchasesInput) {
         Proveedor: {
           select: {
             Id: true,
-            Nombre: true,
             Anulado: true,
+            Entidad: {
+              select: {
+                NombreCompleto: true,
+              },
+            },
           },
         },
         Usuario: {
@@ -318,8 +327,12 @@ export async function getPurchaseById(id: number) {
       Proveedor: {
         select: {
           Id: true,
-          Nombre: true,
           Anulado: true,
+          Entidad: {
+            select: {
+              NombreCompleto: true,
+            },
+          },
         },
       },
       Usuario: {
@@ -461,8 +474,12 @@ export async function createPurchase(input: CreatePurchaseInput) {
         Proveedor: {
           select: {
             Id: true,
-            Nombre: true,
             Anulado: true,
+            Entidad: {
+              select: {
+                NombreCompleto: true,
+              },
+            },
           },
         },
         Usuario: {
@@ -725,8 +742,12 @@ export async function restorePurchase(id: number, idUsuarioModificador?: number)
         Proveedor: {
           select: {
             Id: true,
-            Nombre: true,
             Anulado: true,
+            Entidad: {
+              select: {
+                NombreCompleto: true,
+              },
+            },
           },
         },
         Usuario: {
