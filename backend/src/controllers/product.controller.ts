@@ -208,14 +208,6 @@ export async function deleteProductController(req: Request, res: Response) {
       return res.status(409).json({ ok: false, message });
     }
 
-    if (
-      message === 'No se puede anular un producto con existencia mayor a 0' ||
-      message === 'No se puede anular porque tiene movimientos registrados en bitácora' ||
-      message === 'No se puede anular porque participa en una estructura de producto activa'
-    ) {
-      return res.status(400).json({ ok: false, message });
-    }
-
     return res.status(500).json({ ok: false, message });
   }
 }

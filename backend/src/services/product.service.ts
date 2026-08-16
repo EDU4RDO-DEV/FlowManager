@@ -151,31 +151,6 @@ async function validateUniqueNameInCategory(nombre: string, categoria: string, e
   }
 }
 
-async function validateProductCanBeAnulated(id: number) {
-  const [movementCount, structureCount] = await Promise.all([
-    prisma.bitacoraInventario.count({
-      where: {
-        IdInventarioItem: id,
-        Anulado: false,
-      },
-    }),
-    prisma.estructuraProducto.count({
-      where: {
-        Anulado: false,
-        OR: [{ IdProductoTerminado: id }, { IdMateriaPrima: id }],
-      },
-    }),
-  ]);
-
-  if (movementCount > 0) {
-    throw new Error('No se puede anular porque tiene movimientos registrados en bitácora');
-  }
-
-  if (structureCount > 0) {
-    throw new Error('No se puede anular porque participa en una estructura de producto activa');
-  }
-}
-
 export async function listProducts(input: ListProductsInput) {
   const page = input.page ?? 1;
   const limit = input.limit ?? 20;
@@ -411,7 +386,6 @@ export async function deleteProduct(id: number, idUsuarioAnulador?: number) {
     where: { Id: id, Anulado: false },
     select: {
       Id: true,
-      Existencia: true,
     },
   });
 
@@ -422,12 +396,6 @@ export async function deleteProduct(id: number, idUsuarioAnulador?: number) {
   if (idUsuarioAnulador !== undefined) {
     await validateUsuarioExists(idUsuarioAnulador);
   }
-
-  if (existing.Existencia > 0) {
-    throw new Error('No se puede anular un producto con existencia mayor a 0');
-  }
-
-  await validateProductCanBeAnulated(id);
 
   await prisma.$transaction(async (tx) => {
     await tx.inventarioItem.update({
