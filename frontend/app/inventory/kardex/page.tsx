@@ -127,7 +127,7 @@ export default function InventoryKardexPage() {
         description="Historial de entradas y salidas de inventario"
       >
         <div className="space-y-4">
-          <Card>
+          <Card className="module-page-card">
             <CardHeader className="flex flex-row items-center justify-between gap-4">
               <div>
                 <CardTitle>Movimientos de Inventario</CardTitle>

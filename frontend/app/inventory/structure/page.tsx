@@ -78,7 +78,7 @@ export default function InventoryStructureIndexPage() {
         description="Selecciona un producto terminado para gestionar su estructura"
       >
         <div className="space-y-4">
-          <Card>
+          <Card className="module-page-card">
             <CardHeader className="flex flex-row items-center justify-between gap-4">
               <div>
                 <CardTitle>Productos Terminados</CardTitle>

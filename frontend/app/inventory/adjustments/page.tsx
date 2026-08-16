@@ -234,7 +234,7 @@ export default function AdjustmentsPage() {
                 hasFilters={query.trim() !== "" || tipoFilter !== ""}
               />
             ) : (
-              <Card>
+              <Card className="module-page-card">
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
                     <Table>
@@ -327,7 +327,7 @@ export default function AdjustmentsPage() {
                 isTrash
               />
             ) : (
-              <Card>
+              <Card className="module-page-card">
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
                     <Table>

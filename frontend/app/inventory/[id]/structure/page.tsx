@@ -335,7 +335,7 @@ export default function ProductStructurePage() {
       ) : null}
 
       {isFormOpen ? (
-        <Card>
+        <Card className="module-page-card">
           <CardHeader className="pb-3">
             <CardTitle>
               {formMode === "create" ? "Agregar componente" : "Editar componente"}
@@ -513,7 +513,7 @@ export default function ProductStructurePage() {
               />
             ) : (
               <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
-                <Card>
+                <Card className="module-page-card">
                   <CardContent className="p-0">
                     <Table>
                       <TableHeader>
@@ -592,7 +592,7 @@ export default function ProductStructurePage() {
               />
             ) : (
               <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
-                <Card>
+                <Card className="module-page-card">
                   <CardContent className="p-0">
                     <Table>
                       <TableHeader>
@@ -651,7 +651,7 @@ export default function ProductStructurePage() {
       )}
 
       {activeStructure.length > 0 && (
-        <Card>
+        <Card className="module-page-card">
           <CardHeader>
             <CardTitle>Resumen de Costos</CardTitle>
           </CardHeader>

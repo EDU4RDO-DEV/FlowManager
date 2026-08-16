@@ -193,30 +193,30 @@ export default function SessionsPage() {
                 loading ? "opacity-75" : "opacity-100",
               )}
             >
-              <Card className="rounded-xl border border-border bg-background">
+              <Card className="metric-card metric-card-primary rounded-xl bg-background">
                 <CardContent className="p-4">
                   <p className="text-sm text-muted-foreground">Sesiones totales</p>
-                  <p className="text-2xl font-bold tracking-tight">{metrics.total}</p>
+                  <p className="metric-number-primary text-2xl font-bold tracking-tight">{metrics.total}</p>
                 </CardContent>
               </Card>
 
-              <Card className="rounded-xl border border-border bg-background">
+              <Card className="metric-card metric-card-success rounded-xl bg-background">
                 <CardContent className="p-4">
                   <p className="text-sm text-muted-foreground">Sesiones activas</p>
-                  <p className="text-2xl font-bold tracking-tight">{metrics.activas}</p>
+                  <p className="metric-number-success text-2xl font-bold tracking-tight">{metrics.activas}</p>
                 </CardContent>
               </Card>
 
-              <Card className="rounded-xl border border-border bg-muted/50">
+              <Card className="metric-card metric-card-danger rounded-xl bg-muted/50">
                 <CardContent className="p-4">
                   <p className="text-sm text-muted-foreground">Sesiones anuladas</p>
-                  <p className="mt-1 text-2xl font-bold tracking-tight">{metrics.anuladas}</p>
+                  <p className="metric-number-danger mt-1 text-2xl font-bold tracking-tight">{metrics.anuladas}</p>
                 </CardContent>
               </Card>
             </section>
           )}
 
-          <Card className="rounded-xl border border-border bg-background">
+          <Card className="module-page-card rounded-xl bg-background">
             <CardHeader className="flex flex-row items-center justify-between gap-4">
               <div>
                 <CardTitle className="text-2xl font-bold tracking-tight">Catalogo de sesiones</CardTitle>

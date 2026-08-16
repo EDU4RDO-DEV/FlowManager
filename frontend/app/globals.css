@@ -188,3 +188,55 @@
     background: color-mix(in oklch, var(--muted-foreground) 60%, transparent);
   }
 }
+
+@layer components {
+  .module-page-card {
+    border-width: 1px;
+    border-style: solid;
+    border-color: color-mix(in oklch, var(--primary) 24%, var(--border));
+    box-shadow: none;
+    transition: border-color 200ms ease;
+  }
+
+  .module-page-card:hover {
+    border-color: color-mix(in oklch, var(--primary) 36%, var(--border));
+  }
+
+  .metric-card {
+    border-width: 1px;
+    border-style: solid;
+    box-shadow: none;
+  }
+
+  .metric-card-primary {
+    border-color: color-mix(in oklch, var(--primary) 48%, var(--border));
+  }
+
+  .metric-card-success {
+    border-color: color-mix(in oklch, oklch(0.68 0.12 172) 58%, var(--border));
+  }
+
+  .metric-card-warning {
+    border-color: color-mix(in oklch, oklch(0.78 0.14 84) 62%, var(--border));
+  }
+
+  .metric-card-danger {
+    border-color: color-mix(in oklch, var(--destructive) 55%, var(--border));
+  }
+
+  .metric-number-primary {
+    color: color-mix(in oklch, var(--primary) 85%, var(--foreground));
+  }
+
+  .metric-number-success {
+    color: color-mix(in oklch, oklch(0.68 0.12 172) 86%, var(--foreground));
+  }
+
+  .metric-number-warning {
+    color: color-mix(in oklch, oklch(0.78 0.14 84) 88%, var(--foreground));
+  }
+
+  .metric-number-danger {
+    color: color-mix(in oklch, var(--destructive) 88%, var(--foreground));
+  }
+}

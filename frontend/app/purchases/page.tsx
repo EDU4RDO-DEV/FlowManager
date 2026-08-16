@@ -275,7 +275,7 @@ export default function PurchasesPage() {
                   entityLabel={isGastosView ? "gastos" : "compras"}
               />
             ) : (
-              <Card>
+              <Card className="module-page-card">
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
                     <Table>
@@ -357,7 +357,7 @@ export default function PurchasesPage() {
                 entityLabel={isGastosView ? "gastos" : "compras"}
               />
             ) : (
-              <Card>
+              <Card className="module-page-card">
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
                     <Table>

@@ -203,40 +203,40 @@ export default function UsersPage() {
       >
         <div className="space-y-6">
           <section className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-4">
-            <Card className="rounded-xl border border-border bg-background">
+            <Card className="metric-card metric-card-primary rounded-xl bg-background">
               <CardContent className="flex items-center justify-between p-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Usuarios totales</p>
-                  <p className="text-2xl font-bold tracking-tight">{metrics.total}</p>
+                  <p className="metric-number-primary text-2xl font-bold tracking-tight">{metrics.total}</p>
                 </div>
                 <Users className="size-5 text-sky-600" />
               </CardContent>
             </Card>
 
-            <Card className="rounded-xl border border-border bg-background">
+            <Card className="metric-card metric-card-success rounded-xl bg-background">
               <CardContent className="flex items-center justify-between p-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Activos</p>
-                  <p className="text-2xl font-bold tracking-tight">{metrics.activos}</p>
+                  <p className="metric-number-success text-2xl font-bold tracking-tight">{metrics.activos}</p>
                 </div>
                 <UserCheck className="size-5 text-sky-600" />
               </CardContent>
             </Card>
 
-            <Card className="rounded-xl border border-border bg-background">
+            <Card className="metric-card metric-card-warning rounded-xl bg-background">
               <CardContent className="flex items-center justify-between p-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Con rol asignado</p>
-                  <p className="text-2xl font-bold tracking-tight">{metrics.conRol}</p>
+                  <p className="metric-number-warning text-2xl font-bold tracking-tight">{metrics.conRol}</p>
                 </div>
                 <ShieldCheck className="size-5 text-sky-600" />
               </CardContent>
             </Card>
 
-            <Card className="rounded-xl border border-border bg-muted/50">
+            <Card className="metric-card metric-card-danger rounded-xl bg-muted/50">
               <CardContent className="p-4">
                 <p className="text-sm text-muted-foreground">Inactivos</p>
-                <p className="mt-1 text-2xl font-bold tracking-tight">{metrics.inactivos}</p>
+                <p className="metric-number-danger mt-1 text-2xl font-bold tracking-tight">{metrics.inactivos}</p>
               </CardContent>
             </Card>
           </section>
@@ -314,7 +314,7 @@ export default function UsersPage() {
             </TabsContent>
 
             <TabsContent value="seguridad" className="mt-4">
-              <Card className="rounded-xl border border-border bg-background">
+              <Card className="module-page-card rounded-xl bg-background">
                 <CardHeader>
                   <CardTitle className="text-2xl font-bold tracking-tight">Seguridad personal</CardTitle>
                   <p className="text-sm text-muted-foreground">
