@@ -1,9 +1,19 @@
-import { ImagePlus, Loader2, RefreshCcw } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ImagePlus, Loader2, RefreshCcw, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { ProviderDto } from "@/types/providers";
 import type { ProductDto } from "@/types/products";
 
@@ -67,6 +77,12 @@ export function ProductFormCard({
   onSubmit,
 }: ProductFormCardProps) {
   const isFinishedProduct = form.categoria === "PRODUCTO_TERMINADO";
+  const [providersOpen, setProvidersOpen] = useState(false);
+
+  const selectedProvider = useMemo(
+    () => providers.find((provider) => String(provider.id) === form.idProveedor),
+    [providers, form.idProveedor],
+  );
 
   return (
     <Card className="rounded-xl border border-border bg-background">
@@ -111,19 +127,54 @@ export function ProductFormCard({
 
           <div className="space-y-1.5">
             <Label htmlFor="product-provider">Proveedor</Label>
-            <select
-              id="product-provider"
-              value={form.idProveedor}
-              onChange={(event) => onChange({ ...form, idProveedor: event.target.value })}
-              className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
-            >
-              <option value="">Selecciona un proveedor</option>
-              {providers.map((provider) => (
-                <option key={provider.id} value={String(provider.id)}>
-                  {provider.nombre}
-                </option>
-              ))}
-            </select>
+            <Popover open={providersOpen} onOpenChange={setProvidersOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  id="product-provider"
+                  type="button"
+                  variant="outline"
+                  className="h-10 w-full justify-between bg-background px-3 font-normal"
+                >
+                  <span className="truncate text-left">
+                    {selectedProvider?.nombre ?? "Selecciona un proveedor"}
+                  </span>
+                  <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Buscar proveedor..." />
+                  <CommandList>
+                    <CommandEmpty>No se encontraron proveedores</CommandEmpty>
+                    <CommandGroup>
+                      {providers.map((provider) => {
+                        const comercial = provider.nombre.trim();
+                        const entidad = provider.entidad.nombreCompleto.trim();
+                        const showEntidad = comercial.toLowerCase() !== entidad.toLowerCase();
+
+                        return (
+                          <CommandItem
+                            key={provider.id}
+                            value={showEntidad ? `${comercial} ${entidad}` : comercial}
+                            onSelect={() => {
+                              onChange({ ...form, idProveedor: String(provider.id) });
+                              setProvidersOpen(false);
+                            }}
+                          >
+                            <div className="flex w-full flex-col">
+                              <span>{provider.nombre}</span>
+                              {showEntidad ? (
+                                <span className="text-xs text-muted-foreground">{provider.entidad.nombreCompleto}</span>
+                              ) : null}
+                            </div>
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           <div className="space-y-1.5">

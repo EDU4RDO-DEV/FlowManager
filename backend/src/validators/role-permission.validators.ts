@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const rbacModuleKeys = [
+  'resumen',
   'usuarios',
   'roles',
   'clientes',
@@ -10,6 +11,7 @@ export const rbacModuleKeys = [
   'inventario',
   'planilla',
   'sesiones',
+  'produccion',
 ] as const;
 
 export const rbacActionKeys = ['read', 'create', 'update', 'delete'] as const;

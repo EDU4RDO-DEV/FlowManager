@@ -43,6 +43,7 @@ export interface RolePermissionActionDto {
 
 export interface RolePermissionModuleDto {
   moduleKey:
+    | "resumen"
     | "usuarios"
     | "roles"
     | "clientes"
@@ -51,7 +52,8 @@ export interface RolePermissionModuleDto {
     | "compras"
     | "inventario"
     | "planilla"
-    | "sesiones";
+    | "sesiones"
+    | "produccion";
   moduleName: string;
   actions: RolePermissionActionDto[];
 }

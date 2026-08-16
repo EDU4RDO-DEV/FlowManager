@@ -39,6 +39,16 @@ Migrar la autorizacion por modulo/accion de una matriz estatica en codigo a una 
   - Seed inicial de catalogos y permisos base equivalentes a matriz actual
   - Auditoria en EstructuraProducto
 
+4. Eliminacion de hardcode RBAC
+- Archivos:
+  - backend/src/middlewares/auth.middleware.ts
+  - backend/src/services/auth.service.ts
+  - frontend/lib/rbac.ts
+- Cambios:
+  - Se elimina fallback por nombre de rol y matriz estatica en backend y frontend
+  - La autorizacion queda basada unicamente en permisos persistidos (ModuloSistema, AccionSistema, RolPermiso)
+  - Se extiende catalogo persistido para incluir modulos resumen y produccion
+
 ## Validacion tecnica
 
 1. Pruebas backend

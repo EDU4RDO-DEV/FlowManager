@@ -14,6 +14,7 @@ type PermissionInput = {
 };
 
 const MODULE_LABELS: Record<BackendModuleKey, string> = {
+  resumen: 'Resumen',
   usuarios: 'Usuarios',
   roles: 'Roles',
   clientes: 'Clientes',
@@ -23,6 +24,7 @@ const MODULE_LABELS: Record<BackendModuleKey, string> = {
   inventario: 'Inventario',
   planilla: 'Planilla',
   sesiones: 'Sesiones',
+  produccion: 'Produccion',
 };
 
 const ACTION_LABELS: Record<CrudAction, string> = {

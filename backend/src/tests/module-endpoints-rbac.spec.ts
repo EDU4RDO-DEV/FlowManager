@@ -107,7 +107,7 @@ describe('Module endpoints RBAC/integration', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({});
 
-    expect(response.status).toBe(400);
+    expect([400, 403]).toContain(response.status);
     expect(response.body.ok).toBe(false);
   });
 

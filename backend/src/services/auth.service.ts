@@ -40,17 +40,9 @@ type FrontendModuleKey =
   | 'produccion'
   | 'inventario';
 
-type BackendModuleKey = Exclude<FrontendModuleKey, 'resumen' | 'produccion'>;
+type BackendModuleKey = FrontendModuleKey;
 
 type UserPermissionsMap = Partial<Record<FrontendModuleKey, CrudAction[]>>;
-
-type RoleGroupKey =
-  | 'adminGerencia'
-  | 'produccion'
-  | 'logistica'
-  | 'cajeroVendedor'
-  | 'inventario'
-  | 'sinRol';
 
 type RegisterInput = {
   nombre: string;
@@ -91,7 +83,6 @@ const REFRESH_TOKEN_EXPIRES_IN_DAYS = Number(process.env.JWT_REFRESH_EXPIRES_IN_
 const JWT_ISSUER = process.env.JWT_ISSUER ?? 'flowmanager.api';
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE ?? 'flowmanager.web';
 const BCRYPT_SALT_ROUNDS = Number(process.env.BCRYPT_SALT_ROUNDS ?? '12');
-const RBAC_PERSISTED_MODE = process.env.RBAC_PERSISTED_MODE ?? 'fallback';
 
 const CRUD_ACTIONS: CrudAction[] = ['read', 'create', 'update', 'delete'];
 const FRONTEND_MODULES: FrontendModuleKey[] = [
@@ -108,6 +99,7 @@ const FRONTEND_MODULES: FrontendModuleKey[] = [
 ];
 
 const BACKEND_MODULES: BackendModuleKey[] = [
+  'resumen',
   'usuarios',
   'roles',
   'empleados',
@@ -115,91 +107,9 @@ const BACKEND_MODULES: BackendModuleKey[] = [
   'proveedores',
   'compras',
   'sesiones',
+  'produccion',
   'inventario',
 ];
-
-function normalizeRoleName(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toUpperCase();
-}
-
-function parseRoleNamesFromEnv(envVarName: string, defaults: string[]): string[] {
-  const configured = process.env[envVarName];
-  if (!configured) {
-    return defaults.map(normalizeRoleName);
-  }
-
-  return configured
-    .split(',')
-    .map(normalizeRoleName)
-    .filter((name) => name.length > 0);
-}
-
-const ROLE_GROUPS: Record<Exclude<RoleGroupKey, 'sinRol'>, string[]> = {
-  adminGerencia: parseRoleNamesFromEnv('RBAC_ADMIN_ROLE_NAMES', [
-    'ADMINISTRADOR / GERENTE',
-    'ADMINISTRADOR',
-    'GERENTE',
-  ]),
-  produccion: parseRoleNamesFromEnv('RBAC_PRODUCCION_ROLE_NAMES', [
-    'PERSONAL DE PRODUCCION',
-  ]),
-  logistica: parseRoleNamesFromEnv('RBAC_LOGISTICA_ROLE_NAMES', [
-    'PERSONAL DE LOGISTICA / REPARTIDOR',
-  ]),
-  cajeroVendedor: parseRoleNamesFromEnv('RBAC_CAJERO_ROLE_NAMES', [
-    'CAJERO / VENDEDOR (PUNTO DE VENTA)',
-  ]),
-  inventario: parseRoleNamesFromEnv('RBAC_INVENTARIO_ROLE_NAMES', [
-    'ENCARGADO DE INVENTARIO',
-  ]),
-};
-
-const FALLBACK_MATRIX: Record<RoleGroupKey, Partial<Record<FrontendModuleKey, readonly CrudAction[]>>> = {
-  adminGerencia: {
-    resumen: ['read'],
-    usuarios: ['read', 'create', 'update', 'delete'],
-    roles: ['read', 'create', 'update', 'delete'],
-    empleados: ['read', 'create', 'update', 'delete'],
-    clientes: ['read', 'create', 'update', 'delete'],
-    proveedores: ['read', 'create', 'update', 'delete'],
-    compras: ['read', 'create', 'update', 'delete'],
-    sesiones: ['read', 'create', 'update', 'delete'],
-    produccion: ['read'],
-    inventario: ['read', 'create', 'update', 'delete'],
-  },
-  produccion: {
-    resumen: ['read'],
-    empleados: ['read'],
-    produccion: ['read'],
-    inventario: ['read'],
-  },
-  logistica: {
-    resumen: ['read'],
-    clientes: ['read'],
-    sesiones: ['read'],
-    inventario: ['read'],
-  },
-  cajeroVendedor: {
-    resumen: ['read'],
-    clientes: ['read', 'create', 'update'],
-    sesiones: ['read'],
-    inventario: ['read'],
-  },
-  inventario: {
-    resumen: ['read'],
-    proveedores: ['read', 'create', 'update'],
-    compras: ['read', 'create', 'update', 'delete'],
-    inventario: ['read', 'create', 'update', 'delete'],
-  },
-  sinRol: {
-    resumen: ['read'],
-  },
-};
 
 function parseCountValue(row: Record<string, unknown> | undefined): number {
   if (!row) {
@@ -231,22 +141,6 @@ async function persistedPermissionsConfigured(): Promise<boolean> {
   return parseCountValue(rows[0]) > 0;
 }
 
-function getRoleGroup(nombreRol: string | null): RoleGroupKey {
-  if (!nombreRol) {
-    return 'sinRol';
-  }
-
-  const normalized = normalizeRoleName(nombreRol);
-
-  for (const [group, names] of Object.entries(ROLE_GROUPS) as [Exclude<RoleGroupKey, 'sinRol'>, string[]][]) {
-    if (names.includes(normalized)) {
-      return group;
-    }
-  }
-
-  return 'sinRol';
-}
-
 function buildDefaultPermissions(): UserPermissionsMap {
   const map: UserPermissionsMap = {};
   for (const moduleKey of FRONTEND_MODULES) {
@@ -254,33 +148,19 @@ function buildDefaultPermissions(): UserPermissionsMap {
   }
   return map;
 }
-
-function buildFallbackPermissions(nombreRol: string | null): UserPermissionsMap {
-  const map = buildDefaultPermissions();
-  const group = getRoleGroup(nombreRol);
-  const rules = FALLBACK_MATRIX[group];
-
-  for (const [moduleKey, actions] of Object.entries(rules) as [FrontendModuleKey, readonly CrudAction[]][]) {
-    map[moduleKey] = [...actions];
-  }
-
-  return map;
-}
-
-async function resolveEffectivePermissions(idRol: number | null, nombreRol: string | null): Promise<UserPermissionsMap> {
-  const fallback = buildFallbackPermissions(nombreRol);
+async function resolveEffectivePermissions(idRol: number | null): Promise<UserPermissionsMap> {
   if (!idRol) {
-    return fallback;
+    return buildDefaultPermissions();
   }
 
   const tablesExist = await persistedTablesExist();
   if (!tablesExist) {
-    return fallback;
+    return buildDefaultPermissions();
   }
 
   const configured = await persistedPermissionsConfigured();
   if (!configured) {
-    return RBAC_PERSISTED_MODE === 'strict' ? buildDefaultPermissions() : fallback;
+    return buildDefaultPermissions();
   }
 
   const rows = await prisma.rolPermiso.findMany({
@@ -304,8 +184,6 @@ async function resolveEffectivePermissions(idRol: number | null, nombreRol: stri
   });
 
   const map = buildDefaultPermissions();
-  map.resumen = fallback.resumen ?? [];
-  map.produccion = fallback.produccion ?? [];
 
   for (const row of rows) {
     const moduleKey = row.ModuloSistema.Clave as BackendModuleKey;
@@ -379,10 +257,7 @@ async function buildUserDto(usuario: {
   IdRol: number | null;
   Rol_Usuario_IdRolToRol: { Nombre: string } | null;
 }) {
-  const permisos = await resolveEffectivePermissions(
-    usuario.IdRol,
-    usuario.Rol_Usuario_IdRolToRol?.Nombre ?? null,
-  );
+  const permisos = await resolveEffectivePermissions(usuario.IdRol);
 
   return {
     id: usuario.Id,
