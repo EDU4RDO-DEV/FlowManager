@@ -51,16 +51,27 @@ export const listAdjustmentsQuerySchema = z.object({
 
 export const createAdjustmentSchema = z.object({
   idUsuario: positiveInt,
-  idInventarioItem: positiveInt,
-  tipoAjuste: z.enum(['ENTRADA', 'SALIDA'], {
-    message: 'tipoAjuste debe ser ENTRADA o SALIDA',
-  }),
-  cantidadAjustada: finitePositiveNumber,
+  nombreAjuste: z
+    .string()
+    .trim()
+    .min(3, 'nombreAjuste debe tener al menos 3 caracteres')
+    .max(100, 'nombreAjuste demasiado largo'),
   observacion: z
     .string()
     .trim()
     .min(10, 'observacion debe tener al menos 10 caracteres para justificar el ajuste')
     .max(255, 'observacion demasiado larga'),
+  items: z
+    .array(
+      z.object({
+        idInventarioItem: positiveInt,
+        tipoAjuste: z.enum(['ENTRADA', 'SALIDA'], {
+          message: 'tipoAjuste debe ser ENTRADA o SALIDA',
+        }),
+        cantidadAjustada: finitePositiveNumber,
+      }),
+    )
+    .min(1, 'Debes agregar al menos un item al ajuste'),
 });
 
 export const deleteAdjustmentBodySchema = z.object({

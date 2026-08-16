@@ -16,10 +16,13 @@ type ListAdjustmentsInput = {
 
 type CreateAdjustmentInput = {
   idUsuario: number;
-  idInventarioItem: number;
-  tipoAjuste: 'ENTRADA' | 'SALIDA';
-  cantidadAjustada: number;
+  nombreAjuste: string;
   observacion: string;
+  items: Array<{
+    idInventarioItem: number;
+    tipoAjuste: 'ENTRADA' | 'SALIDA';
+    cantidadAjustada: number;
+  }>;
 };
 
 function toAdjustmentDto(adjustment: {
@@ -73,19 +76,6 @@ async function validateUsuarioExists(idUsuario: number) {
   if (!usuario) {
     throw new Error('Usuario no existe');
   }
-}
-
-async function validateInventarioItemExists(idInventarioItem: number) {
-  const item = await prisma.inventarioItem.findFirst({
-    where: { Id: idInventarioItem, Anulado: false },
-    select: { Id: true, Existencia: true },
-  });
-
-  if (!item) {
-    throw new Error('Item de inventario no existe');
-  }
-
-  return item.Existencia;
 }
 
 async function getNextNumeroAjuste(): Promise<number> {
@@ -196,76 +186,122 @@ export async function getAdjustmentById(id: number) {
 
 export async function createAdjustment(input: CreateAdjustmentInput) {
   await validateUsuarioExists(input.idUsuario);
-  const existenciaActual = await validateInventarioItemExists(input.idInventarioItem);
 
-  // Validar que ajuste negativo no deje stock negativo
-  if (input.tipoAjuste === 'SALIDA') {
-    if (existenciaActual < input.cantidadAjustada) {
+  if (input.items.length === 0) {
+    throw new Error('Debes agregar al menos un item al ajuste');
+  }
+
+  const productIds = Array.from(new Set(input.items.map((item) => item.idInventarioItem)));
+  const itemsInventario = await prisma.inventarioItem.findMany({
+    where: {
+      Id: { in: productIds },
+      Anulado: false,
+    },
+    select: {
+      Id: true,
+      Existencia: true,
+    },
+  });
+
+  if (itemsInventario.length !== productIds.length) {
+    throw new Error('Item de inventario no existe');
+  }
+
+  const stockMap = new Map(itemsInventario.map((item) => [item.Id, item.Existencia]));
+
+  for (const item of input.items) {
+    const current = stockMap.get(item.idInventarioItem);
+    if (current === undefined) {
+      throw new Error('Item de inventario no existe');
+    }
+
+    const next =
+      item.tipoAjuste === 'ENTRADA' ? current + item.cantidadAjustada : current - item.cantidadAjustada;
+
+    if (next < 0) {
       throw new Error(
-        `Stock insuficiente. Existencia actual: ${existenciaActual}, Cantidad a descontar: ${input.cantidadAjustada}`,
+        `Stock insuficiente. Existencia actual: ${current}, Cantidad a descontar: ${item.cantidadAjustada}`,
       );
     }
+
+    stockMap.set(item.idInventarioItem, next);
   }
 
   const numeroAjuste = await getNextNumeroAjuste();
 
-  // Calcular nueva existencia
-  const nuevaExistencia =
-    input.tipoAjuste === 'ENTRADA'
-      ? existenciaActual + input.cantidadAjustada
-      : existenciaActual - input.cantidadAjustada;
+  const observacionCompuesta = `${input.nombreAjuste}: ${input.observacion}`;
 
   // Transacción atómica: Ajuste + Stock + Bitácora
   const result = await prisma.$transaction(async (tx) => {
-    // 1. Crear el ajuste
-    const ajuste = await tx.ajusteInventario.create({
-      data: {
-        IdInventarioItem: input.idInventarioItem,
-        IdUsuario: input.idUsuario,
-        TipoAjuste: input.tipoAjuste,
-        NumeroAjuste: numeroAjuste,
-        CantidadAjustada: input.cantidadAjustada,
-        Observacion: input.observacion,
-        Anulado: false,
-      },
-      include: {
-        InventarioItem: {
-          select: {
-            Id: true,
-            Nombre: true,
-            Categoria: true,
-            Existencia: true,
-            Anulado: true,
+    const createdAdjustments = [] as Awaited<ReturnType<typeof tx.ajusteInventario.create>>[];
+    const txStockMap = new Map(itemsInventario.map((item) => [item.Id, item.Existencia]));
+
+    for (const item of input.items) {
+      const existenciaAnterior = txStockMap.get(item.idInventarioItem);
+      if (existenciaAnterior === undefined) {
+        throw new Error('Item de inventario no existe');
+      }
+
+      const nuevaExistencia =
+        item.tipoAjuste === 'ENTRADA'
+          ? existenciaAnterior + item.cantidadAjustada
+          : existenciaAnterior - item.cantidadAjustada;
+
+      const ajuste = await tx.ajusteInventario.create({
+        data: {
+          IdInventarioItem: item.idInventarioItem,
+          IdUsuario: input.idUsuario,
+          TipoAjuste: item.tipoAjuste,
+          NumeroAjuste: numeroAjuste,
+          CantidadAjustada: item.cantidadAjustada,
+          Observacion: observacionCompuesta,
+          Anulado: false,
+        },
+        include: {
+          InventarioItem: {
+            select: {
+              Id: true,
+              Nombre: true,
+              Categoria: true,
+              Existencia: true,
+              Anulado: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    // 2. Actualizar existencia del item
-    await tx.inventarioItem.update({
-      where: { Id: input.idInventarioItem },
-      data: {
-        Existencia: nuevaExistencia,
-      },
-    });
+      await tx.inventarioItem.update({
+        where: { Id: item.idInventarioItem },
+        data: {
+          Existencia: nuevaExistencia,
+        },
+      });
 
-    // 3. Registrar en bitácora
-    await registerInventoryMovement(tx, {
-      idInventarioItem: input.idInventarioItem,
-      idUsuario: input.idUsuario,
-      tipoDocumento: 'AJ',
-      documento: ajuste.Id.toString(),
-      nombre: `Ajuste ${input.tipoAjuste.toLowerCase()} #${numeroAjuste}`,
-      tipoMovimiento: input.tipoAjuste === 'ENTRADA',
-      existenciaAnterior: existenciaActual,
-      cantidad: input.cantidadAjustada,
-      nuevaExistencia: nuevaExistencia,
-    });
+      await registerInventoryMovement(tx, {
+        idInventarioItem: item.idInventarioItem,
+        idUsuario: input.idUsuario,
+        tipoDocumento: 'AJ',
+        documento: ajuste.Id.toString(),
+        nombre: `${input.nombreAjuste} #${numeroAjuste}`,
+        tipoMovimiento: item.tipoAjuste === 'ENTRADA',
+        existenciaAnterior,
+        cantidad: item.cantidadAjustada,
+        nuevaExistencia,
+      });
 
-    return ajuste;
+      txStockMap.set(item.idInventarioItem, nuevaExistencia);
+      createdAdjustments.push(ajuste);
+    }
+
+    return createdAdjustments;
   });
 
-  return toAdjustmentDto(result);
+  return {
+    numeroAjuste,
+    nombreAjuste: input.nombreAjuste,
+    totalItems: result.length,
+    items: result.map(toAdjustmentDto),
+  };
 }
 
 export async function deleteAdjustment(id: number, idUsuarioAnulador?: number) {

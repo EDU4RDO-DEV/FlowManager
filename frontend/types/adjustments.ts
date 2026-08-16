@@ -49,10 +49,20 @@ export interface AdjustmentFilters {
 
 export interface CreateAdjustmentPayload {
   idUsuario: number;
-  idInventarioItem: number;
-  tipoAjuste: "ENTRADA" | "SALIDA";
-  cantidadAjustada: number;
+  nombreAjuste: string;
   observacion: string;
+  items: Array<{
+    idInventarioItem: number;
+    tipoAjuste: "ENTRADA" | "SALIDA";
+    cantidadAjustada: number;
+  }>;
+}
+
+export interface CreateAdjustmentResult {
+  numeroAjuste: number;
+  nombreAjuste: string;
+  totalItems: number;
+  items: AdjustmentDto[];
 }
 
 export interface DeleteAdjustmentPayload {

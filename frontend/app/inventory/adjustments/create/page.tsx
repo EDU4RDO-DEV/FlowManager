@@ -1,8 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Search, TrendingDown, TrendingUp } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronsUpDown,
+  Loader2,
+  Plus,
+  Trash2,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
@@ -29,21 +38,36 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { getApiErrorMessage } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { createAdjustment } from "@/services/adjustments.service";
 import { listProducts } from "@/services/products.service";
 import type { ProductDto } from "@/types/products";
+
+type AdjustmentLine = {
+  id: number;
+  idInventarioItem: number | "";
+  tipoAjuste: "ENTRADA" | "SALIDA";
+  cantidad: string;
+};
 
 export default function CreateAdjustmentPage() {
   const router = useRouter();
   const { user } = useAuth();
   const [products, setProducts] = useState<ProductDto[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
-  const [selectedProduct, setSelectedProduct] = useState<ProductDto | null>(null);
-  const [productsOpen, setProductsOpen] = useState(false);
-  const [tipoAjuste, setTipoAjuste] = useState<"ENTRADA" | "SALIDA">("ENTRADA");
-  const [cantidad, setCantidad] = useState("");
+  const [nombreAjuste, setNombreAjuste] = useState("");
   const [observacion, setObservacion] = useState("");
+  const [lines, setLines] = useState<AdjustmentLine[]>([
+    {
+      id: Date.now(),
+      idInventarioItem: "",
+      tipoAjuste: "ENTRADA",
+      cantidad: "",
+    },
+  ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [openProductLineId, setOpenProductLineId] = useState<number | null>(null);
+  const [productSearch, setProductSearch] = useState("");
 
   useEffect(() => {
     async function loadProducts() {
@@ -76,28 +100,104 @@ export default function CreateAdjustmentPage() {
     void loadProducts();
   }, []);
 
-  const cantidadNum = parseFloat(cantidad) || 0;
-  const stockActual = selectedProduct?.existencia ?? 0;
-  const nuevoStock = tipoAjuste === "ENTRADA" ? stockActual + cantidadNum : stockActual - cantidadNum;
-  const isStockNegative = nuevoStock < 0;
-  const isFormValid = selectedProduct && cantidadNum > 0 && observacion.trim().length >= 10 && !isStockNegative;
+  const productById = useMemo(() => {
+    return new Map(products.map((product) => [product.id, product]));
+  }, [products]);
+
+  const stockWarnings = useMemo(() => {
+    const currentStock = new Map<number, number>(
+      products.map((product) => [product.id, product.existencia]),
+    );
+    const warnings = new Map<number, string>();
+
+    for (const line of lines) {
+      if (line.idInventarioItem === "") continue;
+
+      const itemId = line.idInventarioItem;
+      const cantidadNum = Number(line.cantidad);
+      if (!Number.isFinite(cantidadNum) || cantidadNum <= 0) continue;
+
+      const stock = currentStock.get(itemId);
+      if (stock === undefined) continue;
+
+      const nextStock =
+        line.tipoAjuste === "ENTRADA" ? stock + cantidadNum : stock - cantidadNum;
+
+      if (nextStock < 0) {
+        warnings.set(
+          line.id,
+          `Stock insuficiente para ${productById.get(itemId)?.nombre ?? "item"}. Disponible: ${stock.toFixed(2)}`,
+        );
+      }
+
+      currentStock.set(itemId, nextStock);
+    }
+
+    return warnings;
+  }, [lines, productById, products]);
+
+  const isFormValid = useMemo(() => {
+    if (!user) return false;
+    if (nombreAjuste.trim().length < 3) return false;
+    if (observacion.trim().length < 10) return false;
+    if (lines.length === 0) return false;
+    if (stockWarnings.size > 0) return false;
+
+    for (const line of lines) {
+      if (line.idInventarioItem === "") return false;
+      const cantidadNum = Number(line.cantidad);
+      if (!Number.isFinite(cantidadNum) || cantidadNum <= 0) return false;
+    }
+
+    return true;
+  }, [lines, nombreAjuste, observacion, stockWarnings.size, user]);
+
+  function updateLine(lineId: number, patch: Partial<AdjustmentLine>) {
+    setLines((prev) => prev.map((line) => (line.id === lineId ? { ...line, ...patch } : line)));
+  }
+
+  function addLine() {
+    setLines((prev) => [
+      ...prev,
+      {
+        id: Date.now() + prev.length,
+        idInventarioItem: "",
+        tipoAjuste: "ENTRADA",
+        cantidad: "",
+      },
+    ]);
+  }
+
+  function removeLine(lineId: number) {
+    setLines((prev) => {
+      if (prev.length <= 1) {
+        return prev;
+      }
+      return prev.filter((line) => line.id !== lineId);
+    });
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!user || !selectedProduct || !isFormValid) return;
+    if (!user || !isFormValid) return;
+
+    const payloadItems = lines.map((line) => ({
+      idInventarioItem: line.idInventarioItem as number,
+      tipoAjuste: line.tipoAjuste,
+      cantidadAjustada: Number(line.cantidad),
+    }));
 
     setIsSubmitting(true);
     try {
-      await createAdjustment({
+      const result = await createAdjustment({
         idUsuario: user.id,
-        idInventarioItem: selectedProduct.id,
-        tipoAjuste,
-        cantidadAjustada: cantidadNum,
+        nombreAjuste: nombreAjuste.trim(),
         observacion: observacion.trim(),
+        items: payloadItems,
       });
 
-      toast.success("Ajuste registrado exitosamente");
+      toast.success(`Ajuste #${result.numeroAjuste} registrado con ${result.totalItems} item(s).`);
       router.push("/inventory/adjustments");
       router.refresh();
     } catch (error) {
@@ -121,108 +221,185 @@ export default function CreateAdjustmentPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border p-5">
             <div className="space-y-2">
-              <Label htmlFor="producto">Producto *</Label>
-              <Popover open={productsOpen} onOpenChange={setProductsOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    className="w-full justify-between"
-                    disabled={loadingProducts}
-                  >
-                    {selectedProduct ? selectedProduct.nombre : "Seleccionar producto..."}
-                    <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-full p-0" align="start">
-                  <Command>
-                    <CommandInput placeholder="Buscar producto..." />
-                    <CommandList>
-                      <CommandEmpty>No se encontraron productos</CommandEmpty>
-                      <CommandGroup>
-                        {products.map((prod) => (
-                          <CommandItem
-                            key={prod.id}
-                            value={prod.nombre}
-                            onSelect={() => {
-                              setSelectedProduct(prod);
-                              setProductsOpen(false);
-                            }}
-                          >
-                            <div className="flex w-full items-center justify-between">
-                              <span>{prod.nombre}</span>
-                              <span className="text-xs text-muted-foreground">
-                                Stock: {prod.existencia.toFixed(2)}
-                              </span>
-                            </div>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="tipoAjuste">Tipo de Ajuste *</Label>
-              <Select value={tipoAjuste} onValueChange={(val) => setTipoAjuste(val as "ENTRADA" | "SALIDA")}>
-                <SelectTrigger id="tipoAjuste">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ENTRADA">
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="h-4 w-4 text-green-600" />
-                      <span>Entrada (Agregar existencias)</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="SALIDA">
-                    <div className="flex items-center gap-2">
-                      <TrendingDown className="h-4 w-4 text-red-600" />
-                      <span>Salida (Descontar existencias / Merma)</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="cantidad">Cantidad *</Label>
+              <Label htmlFor="nombre-ajuste">Nombre del ajuste *</Label>
               <Input
-                id="cantidad"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                value={cantidad}
-                onChange={(e) => setCantidad(e.target.value)}
+                id="nombre-ajuste"
+                placeholder="Ej. Merma por limpieza semanal"
+                value={nombreAjuste}
+                onChange={(event) => setNombreAjuste(event.target.value)}
+                  className="h-10"
               />
             </div>
 
-            {selectedProduct && cantidadNum > 0 ? (
-              <div className="rounded-md border bg-muted/50 p-4">
-                <p className="text-sm font-medium">Cálculo de Stock:</p>
-                <div className="mt-2 flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Stock actual:</span>
-                  <span className="font-mono font-medium">{stockActual.toFixed(2)}</span>
-                </div>
-                <div className="mt-1 flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{tipoAjuste === "ENTRADA" ? "Suma:" : "Resta:"}</span>
-                  <span className="font-mono font-medium">
-                    {tipoAjuste === "ENTRADA" ? "+" : "-"}
-                    {cantidadNum.toFixed(2)}
-                  </span>
-                </div>
-                <div className="mt-2 flex items-center justify-between border-t pt-2">
-                  <span className="font-medium">Nuevo stock:</span>
-                  <span className={`font-mono text-lg font-bold ${isStockNegative ? "text-red-600" : "text-green-600"}`}>
-                    {nuevoStock.toFixed(2)}
-                  </span>
-                </div>
-                {isStockNegative ? <p className="mt-2 text-xs text-red-600">El stock no puede ser negativo.</p> : null}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Items del ajuste *</Label>
+                <Button type="button" variant="outline" onClick={addLine} className="h-10 px-4 text-sm">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Agregar item
+                </Button>
               </div>
-            ) : null}
+
+              {lines.map((line, index) => {
+                const product =
+                  line.idInventarioItem !== "" ? productById.get(line.idInventarioItem) ?? null : null;
+                const selectedProductName = product?.nombre ?? "Seleccionar producto";
+                const cantidadNum = Number(line.cantidad);
+                const currentStock = product?.existencia ?? 0;
+                const nextStock =
+                  line.tipoAjuste === "ENTRADA"
+                    ? currentStock + (Number.isFinite(cantidadNum) ? cantidadNum : 0)
+                    : currentStock - (Number.isFinite(cantidadNum) ? cantidadNum : 0);
+                const warning = stockWarnings.get(line.id);
+
+                return (
+                  <div key={line.id} className="rounded-lg border p-3">
+                    <div className="grid gap-3 md:grid-cols-[2fr_1fr_0.8fr_1fr_1fr_auto] md:items-end">
+                      <div className="space-y-1">
+                        <Label htmlFor={`item-product-${line.id}`}>Producto #{index + 1}</Label>
+                        <Popover
+                          open={openProductLineId === line.id}
+                          onOpenChange={(open) => {
+                            setOpenProductLineId(open ? line.id : null);
+                            if (!open) {
+                              setProductSearch("");
+                            }
+                          }}
+                        >
+                          <PopoverTrigger asChild>
+                            <Button
+                              id={`item-product-${line.id}`}
+                              type="button"
+                              variant="outline"
+                              role="combobox"
+                              aria-expanded={openProductLineId === line.id}
+                              className="h-10 w-full justify-between"
+                              disabled={loadingProducts}
+                            >
+                              <span className="truncate">{selectedProductName}</span>
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[460px] max-w-[95vw] p-0" align="start">
+                            <Command>
+                              <CommandInput
+                                placeholder="Buscar producto..."
+                                value={productSearch}
+                                onValueChange={setProductSearch}
+                              />
+                              <CommandList>
+                                <CommandEmpty>No se encontraron productos</CommandEmpty>
+                                <CommandGroup>
+                                  {products.map((prod) => (
+                                    <CommandItem
+                                      key={prod.id}
+                                      value={`${prod.nombre} ${prod.id} ${prod.existencia}`}
+                                      onSelect={() => {
+                                        updateLine(line.id, { idInventarioItem: prod.id });
+                                        setOpenProductLineId(null);
+                                        setProductSearch("");
+                                      }}
+                                      data-checked={line.idInventarioItem === prod.id}
+                                    >
+                                      <div className="flex w-full items-center justify-between gap-2">
+                                        <span className="truncate">{prod.nombre}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                          Stock: {prod.existencia.toFixed(2)}
+                                        </span>
+                                      </div>
+                                      <Check
+                                        className={cn(
+                                          "ml-2 h-4 w-4",
+                                          line.idInventarioItem === prod.id ? "opacity-100" : "opacity-0",
+                                        )}
+                                      />
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label htmlFor={`item-tipo-${line.id}`}>Tipo</Label>
+                        <Select
+                          value={line.tipoAjuste}
+                          onValueChange={(value) =>
+                            updateLine(line.id, { tipoAjuste: value as "ENTRADA" | "SALIDA" })
+                          }
+                        >
+                          <SelectTrigger id={`item-tipo-${line.id}`} className="h-10">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="ENTRADA">
+                              <div className="flex items-center gap-2">
+                                <TrendingUp className="h-4 w-4 text-green-600" />
+                                <span>Entrada</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="SALIDA">
+                              <div className="flex items-center gap-2">
+                                <TrendingDown className="h-4 w-4 text-red-600" />
+                                <span>Salida</span>
+                              </div>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label htmlFor={`item-cantidad-${line.id}`}>Cantidad</Label>
+                        <Input
+                          id={`item-cantidad-${line.id}`}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="0.00"
+                          value={line.cantidad}
+                          onChange={(event) => updateLine(line.id, { cantidad: event.target.value })}
+                          className="h-10"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label>Stock actual</Label>
+                        <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm">
+                          <span className="font-mono font-semibold">{currentStock.toFixed(2)}</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label>Nuevo stock</Label>
+                        <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm">
+                          <span
+                            className={`font-mono font-semibold ${warning ? "text-red-600" : "text-emerald-700"}`}
+                          >
+                            {nextStock.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeLine(line.id)}
+                        disabled={lines.length === 1}
+                        className="h-10"
+                      >
+                        <Trash2 className="mr-1 h-4 w-4" />
+                        Quitar
+                      </Button>
+                    </div>
+
+                    {warning ? <p className="mt-2 text-xs text-red-600">{warning}</p> : null}
+                  </div>
+                );
+              })}
+            </div>
 
             <div className="space-y-2">
               <Label htmlFor="observacion">Motivo / Observación * (mínimo 10 caracteres)</Label>
@@ -243,7 +420,7 @@ export default function CreateAdjustmentPage() {
               </Button>
               <Button type="submit" disabled={!isFormValid || isSubmitting}>
                 {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Registrar ajuste
+                Registrar ajuste por lote
               </Button>
             </div>
           </form>

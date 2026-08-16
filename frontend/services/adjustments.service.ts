@@ -7,6 +7,7 @@ import type {
   AdjustmentsListResponse,
   AnulatedAdjustmentsListResponse,
   CreateAdjustmentPayload,
+  CreateAdjustmentResult,
   DeleteAdjustmentPayload,
   RestoreAdjustmentPayload,
 } from "@/types/adjustments";
@@ -53,8 +54,8 @@ export async function getAdjustmentById(id: number): Promise<AdjustmentDto> {
   return data.data;
 }
 
-export async function createAdjustment(payload: CreateAdjustmentPayload): Promise<AdjustmentDto> {
-  const { data } = await api.post<ApiResponse<AdjustmentDto>>("/api/adjustments", payload);
+export async function createAdjustment(payload: CreateAdjustmentPayload): Promise<CreateAdjustmentResult> {
+  const { data } = await api.post<ApiResponse<CreateAdjustmentResult>>("/api/adjustments", payload);
   if (!data.data) {
     throw new Error(data.message || "Respuesta invalida al crear ajuste");
   }

@@ -79,10 +79,11 @@ export async function createAdjustmentController(req: Request, res: Response) {
 
     const data = await createAdjustment({
       ...dataInput,
+      nombreAjuste: dataInput.nombreAjuste.trim(),
       observacion: dataInput.observacion.trim(),
     });
 
-    return res.status(201).json({ ok: true, data, message: 'Ajuste registrado correctamente' });
+    return res.status(201).json({ ok: true, data, message: 'Ajuste por lote registrado correctamente' });
   } catch (error) {
     if (error instanceof ZodError) {
       return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
