@@ -449,14 +449,16 @@ export default function InventoryPage() {
                                 <TableCell>{formatMoney(product.costoPromedio)}</TableCell>
                                 <TableCell>{formatDate(product.fechaAnulacion)}</TableCell>
                                 <TableCell className="text-right">
-                                  <Button
-                                    size="xs"
-                                    variant="secondary"
-                                    onClick={() => restoreProductFromTrash(product)}
-                                  >
-                                    <RotateCcw className="size-3.5" />
-                                    Restaurar
-                                  </Button>
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      size="xs"
+                                      variant="secondary"
+                                      onClick={() => restoreProductFromTrash(product)}
+                                    >
+                                      <RotateCcw className="size-3.5" />
+                                      Restaurar
+                                    </Button>
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             ))}

@@ -365,14 +365,16 @@ export default function EmployeesPage() {
                                 <TableCell>{formatCurrency(employee.sueldoBase)}</TableCell>
                                 <TableCell>{formatDate(employee.fechaAnulacion)}</TableCell>
                                 <TableCell className="text-right">
-                                  <Button
-                                    size="xs"
-                                    variant="secondary"
-                                    onClick={() => restoreEmployeeFromTrash(employee)}
-                                  >
-                                    <RotateCcw className="size-3.5" />
-                                    Restaurar
-                                  </Button>
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      size="xs"
+                                      variant="secondary"
+                                      onClick={() => restoreEmployeeFromTrash(employee)}
+                                    >
+                                      <RotateCcw className="size-3.5" />
+                                      Restaurar
+                                    </Button>
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             ))}

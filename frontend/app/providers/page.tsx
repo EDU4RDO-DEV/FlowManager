@@ -351,14 +351,16 @@ export default function ProvidersPage() {
                                 <TableCell>{provider.entidad.telefono1?.trim() || "-"}</TableCell>
                                 <TableCell>{formatDate(provider.fechaAnulacion)}</TableCell>
                                 <TableCell className="text-right">
-                                  <Button
-                                    size="xs"
-                                    variant="secondary"
-                                    onClick={() => restoreProviderFromTrash(provider)}
-                                  >
-                                    <RotateCcw className="size-3.5" />
-                                    Restaurar
-                                  </Button>
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      size="xs"
+                                      variant="secondary"
+                                      onClick={() => restoreProviderFromTrash(provider)}
+                                    >
+                                      <RotateCcw className="size-3.5" />
+                                      Restaurar
+                                    </Button>
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             ))}

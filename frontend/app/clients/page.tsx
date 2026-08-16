@@ -357,14 +357,16 @@ export default function ClientsPage() {
                                 <TableCell>{client.entidad.telefono1?.trim() || "-"}</TableCell>
                                 <TableCell>{formatDate(client.fechaAnulacion)}</TableCell>
                                 <TableCell className="text-right">
-                                  <Button
-                                    size="xs"
-                                    variant="secondary"
-                                    onClick={() => restoreClientFromTrash(client)}
-                                  >
-                                    <RotateCcw className="size-3.5" />
-                                    Restaurar
-                                  </Button>
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      size="xs"
+                                      variant="secondary"
+                                      onClick={() => restoreClientFromTrash(client)}
+                                    >
+                                      <RotateCcw className="size-3.5" />
+                                      Restaurar
+                                    </Button>
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             ))}
