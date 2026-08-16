@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, BadgeCheck, Loader2, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
@@ -112,6 +112,14 @@ export default function AdjustmentsPage() {
     return filteredAnulatedAdjustments.slice(start, start + PAGE_SIZE);
   }, [filteredAnulatedAdjustments, trashPage]);
 
+  const metrics = useMemo(() => {
+    const total = activeAdjustments.length + anulatedAdjustments.length;
+    const entradas = activeAdjustments.filter((item) => item.tipoAjuste === "ENTRADA").length;
+    const salidas = activeAdjustments.filter((item) => item.tipoAjuste === "SALIDA").length;
+    const anulados = anulatedAdjustments.length;
+    return { total, entradas, salidas, anulados };
+  }, [activeAdjustments, anulatedAdjustments]);
+
   useEffect(() => {
     setActivePage(1);
     setTrashPage(1);
@@ -173,7 +181,47 @@ export default function AdjustmentsPage() {
         title="Ajustes de Inventario"
         description="Gestiona entradas y salidas por ajustes de existencias"
       >
-        <Tabs defaultValue="activos">
+        <div className="space-y-6">
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Card className="metric-card metric-card-primary rounded-xl bg-background">
+              <CardContent className="flex items-center justify-between p-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Ajustes totales</p>
+                  <p className="metric-number-primary text-2xl font-bold tracking-tight">{metrics.total}</p>
+                </div>
+                <BadgeCheck className="size-5 text-sky-600" />
+              </CardContent>
+            </Card>
+
+            <Card className="metric-card metric-card-success rounded-xl bg-background">
+              <CardContent className="flex items-center justify-between p-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Entradas</p>
+                  <p className="metric-number-success text-2xl font-bold tracking-tight">{metrics.entradas}</p>
+                </div>
+                <ArrowUpCircle className="size-5 text-emerald-600" />
+              </CardContent>
+            </Card>
+
+            <Card className="metric-card metric-card-warning rounded-xl bg-muted/50">
+              <CardContent className="flex items-center justify-between p-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Salidas</p>
+                  <p className="metric-number-warning text-2xl font-bold tracking-tight">{metrics.salidas}</p>
+                </div>
+                <ArrowDownCircle className="size-5 text-amber-600" />
+              </CardContent>
+            </Card>
+
+            <Card className="metric-card metric-card-danger rounded-xl bg-muted/50">
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground">Anulados</p>
+                <p className="metric-number-danger mt-1 text-2xl font-bold tracking-tight">{metrics.anulados}</p>
+              </CardContent>
+            </Card>
+          </section>
+
+          <Tabs defaultValue="activos">
           <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <TabsList>
               <TabsTrigger value="activos">
@@ -390,7 +438,8 @@ export default function AdjustmentsPage() {
               </Card>
             )}
           </TabsContent>
-        </Tabs>
+          </Tabs>
+        </div>
 
         <ConfirmActionDialog
           open={deleteCandidate !== null}

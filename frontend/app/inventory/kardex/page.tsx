@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownLeft, ArrowUpRight, RefreshCw } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, BadgeCheck, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { DashboardShell } from "@/components/dashboard-shell";
@@ -115,6 +115,14 @@ export default function InventoryKardexPage() {
     return filteredAnulated.slice(start, start + PAGE_SIZE);
   }, [filteredAnulated, trashPage]);
 
+  const metrics = useMemo(() => {
+    const total = activeMovements.length + anulatedMovements.length;
+    const entradas = activeMovements.filter((movement) => movement.tipoMovimiento).length;
+    const salidas = activeMovements.filter((movement) => !movement.tipoMovimiento).length;
+    const anulados = anulatedMovements.length;
+    return { total, entradas, salidas, anulados };
+  }, [activeMovements, anulatedMovements]);
+
   useEffect(() => {
     setActivePage(1);
     setTrashPage(1);
@@ -127,6 +135,45 @@ export default function InventoryKardexPage() {
         description="Historial de entradas y salidas de inventario"
       >
         <div className="space-y-4">
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Card className="metric-card metric-card-primary rounded-xl bg-background">
+              <CardContent className="flex items-center justify-between p-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Movimientos totales</p>
+                  <p className="metric-number-primary text-2xl font-bold tracking-tight">{metrics.total}</p>
+                </div>
+                <BadgeCheck className="size-5 text-sky-600" />
+              </CardContent>
+            </Card>
+
+            <Card className="metric-card metric-card-success rounded-xl bg-background">
+              <CardContent className="flex items-center justify-between p-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Entradas</p>
+                  <p className="metric-number-success text-2xl font-bold tracking-tight">{metrics.entradas}</p>
+                </div>
+                <ArrowUpRight className="size-5 text-emerald-600" />
+              </CardContent>
+            </Card>
+
+            <Card className="metric-card metric-card-warning rounded-xl bg-muted/50">
+              <CardContent className="flex items-center justify-between p-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Salidas</p>
+                  <p className="metric-number-warning text-2xl font-bold tracking-tight">{metrics.salidas}</p>
+                </div>
+                <ArrowDownLeft className="size-5 text-amber-600" />
+              </CardContent>
+            </Card>
+
+            <Card className="metric-card metric-card-danger rounded-xl bg-muted/50">
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground">Anulados</p>
+                <p className="metric-number-danger mt-1 text-2xl font-bold tracking-tight">{metrics.anulados}</p>
+              </CardContent>
+            </Card>
+          </section>
+
           <Card className="module-page-card">
             <CardHeader className="flex flex-row items-center justify-end gap-4">
               <Button variant="outline" size="sm" onClick={() => void loadData()} disabled={isLoading}>

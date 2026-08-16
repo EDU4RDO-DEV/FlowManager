@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowRight, BadgeCheck, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import { DashboardShell } from "@/components/dashboard-shell";
@@ -67,6 +67,14 @@ export default function InventoryStructureIndexPage() {
     return filtered.slice(start, start + PAGE_SIZE);
   }, [filtered, page]);
 
+  const metrics = useMemo(() => {
+    const total = items.length;
+    const conExistencia = items.filter((item) => item.existencia > 0).length;
+    const sinExistencia = items.filter((item) => item.existencia <= 0).length;
+    const coincidencias = filtered.length;
+    return { total, conExistencia, sinExistencia, coincidencias };
+  }, [filtered.length, items]);
+
   useEffect(() => {
     setPage(1);
   }, [query]);
@@ -78,6 +86,45 @@ export default function InventoryStructureIndexPage() {
         description="Selecciona un producto terminado para gestionar su estructura"
       >
         <div className="space-y-4">
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Card className="metric-card metric-card-primary rounded-xl bg-background">
+              <CardContent className="flex items-center justify-between p-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Productos terminados</p>
+                  <p className="metric-number-primary text-2xl font-bold tracking-tight">{metrics.total}</p>
+                </div>
+                <BadgeCheck className="size-5 text-sky-600" />
+              </CardContent>
+            </Card>
+
+            <Card className="metric-card metric-card-success rounded-xl bg-background">
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground">Con existencia</p>
+                <p className="metric-number-success mt-1 text-2xl font-bold tracking-tight">{metrics.conExistencia}</p>
+              </CardContent>
+            </Card>
+
+            <Card className="metric-card metric-card-warning rounded-xl bg-muted/50">
+              <CardContent className="flex items-center justify-between p-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Sin existencia</p>
+                  <p className="metric-number-warning text-2xl font-bold tracking-tight">{metrics.sinExistencia}</p>
+                </div>
+                <AlertTriangle className="size-5 text-amber-600" />
+              </CardContent>
+            </Card>
+
+            <Card className="metric-card metric-card-primary rounded-xl bg-muted/50">
+              <CardContent className="flex items-center justify-between p-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Coincidencias</p>
+                  <p className="metric-number-primary text-2xl font-bold tracking-tight">{metrics.coincidencias}</p>
+                </div>
+                <Search className="size-5 text-sky-600" />
+              </CardContent>
+            </Card>
+          </section>
+
           <Card className="module-page-card">
             <CardHeader className="flex flex-row items-center justify-end gap-4">
               <Button variant="outline" size="sm" onClick={() => void loadData()} disabled={isLoading}>

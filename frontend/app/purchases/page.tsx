@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Eye, Loader2, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { BadgeCheck, Eye, Loader2, Plus, RefreshCw, RotateCcw, Trash2, Wallet } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -135,6 +135,14 @@ export default function PurchasesPage() {
     return sortedAnulatedPurchases.slice(start, start + PAGE_SIZE);
   }, [sortedAnulatedPurchases, trashPage]);
 
+  const metrics = useMemo(() => {
+    const total = sortedActivePurchases.length + sortedAnulatedPurchases.length;
+    const activos = sortedActivePurchases.length;
+    const anulados = sortedAnulatedPurchases.length;
+    const montoActivo = sortedActivePurchases.reduce((sum, purchase) => sum + purchase.totalGeneral, 0);
+    return { total, activos, anulados, montoActivo };
+  }, [sortedActivePurchases, sortedAnulatedPurchases]);
+
   useEffect(() => {
     setActivePage(1);
     setTrashPage(1);
@@ -202,7 +210,44 @@ export default function PurchasesPage() {
             : "Controla compras de inventario y su estado de anulación"
         }
       >
-        <Tabs defaultValue="activos">
+        <div className="space-y-6">
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Card className="metric-card metric-card-primary rounded-xl bg-background">
+              <CardContent className="flex items-center justify-between p-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">{isGastosView ? "Gastos totales" : "Compras totales"}</p>
+                  <p className="metric-number-primary text-2xl font-bold tracking-tight">{metrics.total}</p>
+                </div>
+                <Wallet className="size-5 text-sky-600" />
+              </CardContent>
+            </Card>
+
+            <Card className="metric-card metric-card-success rounded-xl bg-background">
+              <CardContent className="flex items-center justify-between p-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Activos</p>
+                  <p className="metric-number-success text-2xl font-bold tracking-tight">{metrics.activos}</p>
+                </div>
+                <BadgeCheck className="size-5 text-emerald-600" />
+              </CardContent>
+            </Card>
+
+            <Card className="metric-card metric-card-warning rounded-xl bg-muted/50">
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground">Monto activo total</p>
+                <p className="metric-number-warning mt-1 text-2xl font-bold tracking-tight">{formatMoney(metrics.montoActivo)}</p>
+              </CardContent>
+            </Card>
+
+            <Card className="metric-card metric-card-danger rounded-xl bg-muted/50">
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground">Anulados</p>
+                <p className="metric-number-danger mt-1 text-2xl font-bold tracking-tight">{metrics.anulados}</p>
+              </CardContent>
+            </Card>
+          </section>
+
+          <Tabs defaultValue="activos">
           <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <TabsList>
               <TabsTrigger value="activos">Activos ({sortedActivePurchases.length})</TabsTrigger>
@@ -429,7 +474,8 @@ export default function PurchasesPage() {
               </Card>
             )}
           </TabsContent>
-        </Tabs>
+          </Tabs>
+        </div>
 
         <ConfirmActionDialog
           open={deleteCandidate !== null}
