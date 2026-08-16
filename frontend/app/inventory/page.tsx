@@ -37,7 +37,6 @@ import { InventoryEmptyState } from "@/app/inventory/_components/inventory-empty
 import { CardSkeleton, TableSkeleton } from "@/app/inventory/_components/inventory-skeletons";
 import { getApiErrorMessage } from "@/lib/api";
 import {
-  deleteProduct,
   listAnulatedProducts,
   listProducts,
   restoreProduct,
@@ -70,7 +69,6 @@ export default function InventoryPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<CategoryFilter>("");
-  const [deleteCandidate, setDeleteCandidate] = useState<ProductDto | null>(null);
 
   useEffect(() => {
     void loadData();
@@ -121,31 +119,6 @@ export default function InventoryPage() {
     const finales = activeProducts.filter((item) => item.categoria === "PRODUCTO_TERMINADO").length;
     return { total, activos, sinExistencia, finales };
   }, [activeProducts, anulatedProducts]);
-
-  async function confirmDeleteProduct() {
-    if (!deleteCandidate) return;
-
-    try {
-      await deleteProduct(
-        deleteCandidate.id,
-        user?.id ? { idUsuarioAnulador: user.id } : undefined,
-      );
-
-      const movedToTrash: ProductDto = {
-        ...deleteCandidate,
-        anulado: true,
-        idUsuarioAnulador: user?.id ?? deleteCandidate.idUsuarioAnulador,
-        fechaAnulacion: new Date().toISOString(),
-      };
-
-      setActiveProducts((prev) => prev.filter((item) => item.id !== deleteCandidate.id));
-      setAnulatedProducts((prev) => [movedToTrash, ...prev]);
-      toast.success("Producto anulado correctamente.");
-      setDeleteCandidate(null);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "No se pudo anular el producto."));
-    }
-  }
 
   async function restoreProductFromTrash(candidate: ProductDto) {
     try {
@@ -376,10 +349,12 @@ export default function InventoryPage() {
                                     <Button
                                       size="xs"
                                       variant="destructive"
-                                      onClick={() => setDeleteCandidate(product)}
+                                      asChild
                                     >
-                                      <Trash2 className="size-3.5" />
-                                      Anular
+                                      <Link href={`/inventory/delete/${product.id}`}>
+                                        <Trash2 className="size-3.5" />
+                                        Anular
+                                      </Link>
                                     </Button>
                                   </div>
                                 </TableCell>
@@ -451,26 +426,6 @@ export default function InventoryPage() {
           </Card>
         </div>
 
-        {deleteCandidate ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <Card className="w-full max-w-md rounded-xl border border-border bg-background">
-              <CardHeader>
-                <CardTitle className="text-xl font-bold tracking-tight">Confirmar anulacion</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Esta accion anulara el producto <span className="font-medium text-foreground">{deleteCandidate.nombre}</span>.
-                </p>
-              </CardHeader>
-              <CardContent className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setDeleteCandidate(null)}>
-                  Cancelar
-                </Button>
-                <Button variant="destructive" onClick={confirmDeleteProduct}>
-                  Confirmar
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        ) : null}
       </DashboardShell>
     </RequireAuth>
   );
