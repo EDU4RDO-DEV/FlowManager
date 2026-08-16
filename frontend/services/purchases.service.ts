@@ -1,5 +1,4 @@
 import { api } from "@/lib/api";
-import type { ApiResponse } from "@/types/auth";
 import type {
   AnulatePurchasePayload,
   CreatePurchaseExpensePayload,

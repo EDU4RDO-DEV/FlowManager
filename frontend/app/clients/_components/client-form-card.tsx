@@ -7,8 +7,6 @@ import { Label } from "@/components/ui/label";
 
 export type ClientFormValues = {
   nombreCompleto: string;
-  sexo: string;
-  fechaNacimiento: string;
   correoElectronico: string;
   telefono1: string;
   telefono2: string;
@@ -76,31 +74,6 @@ export function ClientFormCard({
                   value={form.nombreCompleto}
                   onChange={(event) => onChange({ ...form, nombreCompleto: event.target.value })}
                   placeholder="Nombre del cliente"
-                  className="h-10 bg-background"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="client-sex">Sexo</Label>
-                <select
-                  id="client-sex"
-                  className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm transition-colors hover:bg-muted/50"
-                  value={form.sexo}
-                  onChange={(event) => onChange({ ...form, sexo: event.target.value })}
-                >
-                  <option value="">Sin especificar</option>
-                  <option value="M">Masculino</option>
-                  <option value="F">Femenino</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="client-birth-date">Fecha de nacimiento</Label>
-                <Input
-                  id="client-birth-date"
-                  type="date"
-                  value={form.fechaNacimiento}
-                  onChange={(event) => onChange({ ...form, fechaNacimiento: event.target.value })}
                   className="h-10 bg-background"
                 />
               </div>

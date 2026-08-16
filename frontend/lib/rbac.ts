@@ -56,15 +56,6 @@ const roleMap: Record<RoleGroup, string[]> = {
   sinRol: [],
 };
 
-const moduleByRole: Record<RoleGroup, AppModuleKey[]> = {
-  adminGerencia: ['resumen', 'usuarios', 'roles', 'empleados', 'clientes', 'proveedores', 'compras', 'sesiones', 'produccion', 'inventario'],
-  produccion: ['resumen', 'empleados', 'produccion'],
-  logistica: ['resumen', 'clientes', 'sesiones'],
-  cajeroVendedor: ['resumen', 'clientes', 'sesiones'],
-  inventario: ['resumen', 'proveedores', 'compras', 'inventario'],
-  sinRol: ['resumen'],
-};
-
 const actionMatrix: Record<RoleGroup, Partial<Record<AppModuleKey, readonly CrudAction[]>>> = {
   adminGerencia: {
     usuarios: ['read', 'create', 'update', 'delete'],
