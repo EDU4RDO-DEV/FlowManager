@@ -28,7 +28,7 @@ const MODULE_LABELS: Record<BackendModuleKey, string> = {
 };
 
 const ACTION_LABELS: Record<CrudAction, string> = {
-  read: 'Leer',
+  read: 'Ver',
   create: 'Crear',
   update: 'Actualizar',
   delete: 'Anular',

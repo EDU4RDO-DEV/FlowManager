@@ -28,13 +28,9 @@ const ALL_MODULES: AppModuleKey[] = [
 ];
 
 export const RBAC_PREVIEW_MODE =
-  process.env.NEXT_PUBLIC_RBAC_PREVIEW_MODE === 'true';
+  false;
 
 export function getAllowedModulesByRole(user: AuthUser | null | undefined): AppModuleKey[] {
-  if (RBAC_PREVIEW_MODE) {
-    return ALL_MODULES;
-  }
-
   return ALL_MODULES.filter((moduleKey) => hasModulePermission(user, moduleKey, 'read'));
 }
 
@@ -43,10 +39,6 @@ export function hasModulePermission(
   moduleKey: AppModuleKey,
   action: CrudAction,
 ): boolean {
-  if (RBAC_PREVIEW_MODE) {
-    return true;
-  }
-
   if (!user) {
     return false;
   }
