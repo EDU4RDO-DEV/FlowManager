@@ -74,23 +74,23 @@ export function ProductStructureForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      <div className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
-        <div className="space-y-2">
+    <form onSubmit={handleSubmit} className="space-y-2">
+      <div className="grid gap-3 lg:grid-cols-[1.4fr_0.9fr]">
+        <div className="space-y-1.5">
           <Label htmlFor="search-component">Buscar componente</Label>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               id="search-component"
-              placeholder="Buscar por nombre, categoría o ID"
+              placeholder="Buscar por nombre o ID"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               disabled={isLoading || availableProducts.length === 0}
-              className="h-10 pl-9"
+              className="h-9 pl-9"
             />
           </div>
 
-          <div className="h-80 overflow-y-auto rounded-lg border border-border bg-background">
+          <div className="h-44 overflow-y-auto rounded-lg border border-border bg-background">
             {filteredProducts.length === 0 ? (
               <div className="p-4 text-sm text-muted-foreground">
                 No hay resultados para la búsqueda actual.
@@ -104,7 +104,7 @@ export function ProductStructureForm({
                       key={product.id}
                       type="button"
                       onClick={() => setIdMateriaPrima(product.id)}
-                      className={`w-full px-3 py-2.5 text-left transition-colors ${
+                      className={`w-full px-3 py-2 text-left transition-colors ${
                         selected
                           ? "bg-sky-100/70 text-sky-900 dark:bg-sky-500/15 dark:text-sky-200"
                           : "hover:bg-muted/50"
@@ -112,37 +112,29 @@ export function ProductStructureForm({
                       disabled={isLoading}
                     >
                       <p className="truncate text-sm font-medium">{product.nombre}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        #{product.id} · {product.categoria} · Stock: {product.existencia}
-                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">#{product.id}</p>
                     </button>
                   );
                 })}
               </div>
             )}
           </div>
-
-          <p className="text-xs text-muted-foreground">
-            Solo se muestran componentes INSUMO o MATERIA_PRIMA.
-          </p>
         </div>
 
-        <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3 sm:p-4">
+        <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
           <div>
             <p className="text-sm font-semibold">Componente seleccionado</p>
             {selectedProduct ? (
-              <div className="mt-2 space-y-1 text-sm">
+              <div className="mt-1.5 space-y-0.5 text-sm">
                 <p className="font-medium">{selectedProduct.nombre}</p>
-                <p className="text-muted-foreground">Categoría: {selectedProduct.categoria}</p>
                 <p className="text-muted-foreground">Stock disponible: {selectedProduct.existencia}</p>
-                <p className="text-muted-foreground">Costo promedio: Q{selectedProduct.costoPromedio.toFixed(2)}</p>
               </div>
             ) : (
               <p className="mt-2 text-sm text-muted-foreground">Seleccione un componente de la lista.</p>
             )}
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             <Label htmlFor="cantidadRequerida">Cantidad requerida</Label>
             <Input
               id="cantidadRequerida"
@@ -153,13 +145,10 @@ export function ProductStructureForm({
               value={cantidadRequerida}
               onChange={(e) => setCantidadRequerida(e.target.value)}
               disabled={isLoading}
-              className="h-10"
+              className="h-9"
             />
           </div>
 
-          <div className="rounded-md border border-border bg-background p-2.5 text-xs text-muted-foreground">
-            Tip: usa cantidades con decimales para componentes por volumen o peso.
-          </div>
         </div>
       </div>
 

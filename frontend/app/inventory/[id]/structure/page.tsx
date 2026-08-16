@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronsUpDown, Loader2, Plus, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/auth-provider";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
@@ -10,6 +10,17 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Table,
   TableBody,
@@ -27,12 +38,14 @@ import {
 import { InventoryEmptyState } from "@/app/inventory/_components/inventory-empty-state";
 import { getApiErrorMessage } from "@/lib/api";
 import { hasModulePermission } from "@/lib/rbac";
-import { getProductById } from "@/services/products.service";
+import { getProductById, listProducts } from "@/services/products.service";
 import {
+  createProductStructure,
   listStructureByProduct,
   listAnulatedStructureByProduct,
   deleteProductStructure,
   restoreProductStructure,
+  updateProductStructure,
 } from "@/services/product-structure.service";
 import type { ProductDto } from "@/types/products";
 import type { ProductStructureDto } from "@/types/product-structure";
@@ -54,9 +67,18 @@ export default function ProductStructurePage() {
   const [error, setError] = useState("");
   const [deleteCandidate, setDeleteCandidate] = useState<ProductStructureDto | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [allProducts, setAllProducts] = useState<ProductDto[]>([]);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [formMode, setFormMode] = useState<"create" | "edit">("create");
+  const [editCandidate, setEditCandidate] = useState<ProductStructureDto | null>(null);
+  const [editCantidad, setEditCantidad] = useState("");
+  const [createMateriaPrimaId, setCreateMateriaPrimaId] = useState<number | null>(null);
+  const [createCantidad, setCreateCantidad] = useState("");
+  const [createComponentOpen, setCreateComponentOpen] = useState(false);
+  const [isSavingForm, setIsSavingForm] = useState(false);
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [productId]);
 
   async function loadData() {
@@ -70,15 +92,120 @@ export default function ProductStructurePage() {
         listAnulatedStructureByProduct(productId),
       ]);
 
+      const firstProductsPage = await listProducts({ page: 1, limit: 100, anulado: false });
+      let products = firstProductsPage.items;
+
+      if (firstProductsPage.pagination.totalPages > 1) {
+        const otherPages = await Promise.all(
+          Array.from({ length: firstProductsPage.pagination.totalPages - 1 }, (_, idx) =>
+            listProducts({ page: idx + 2, limit: 100, anulado: false }),
+          ),
+        );
+
+        products = [
+          ...products,
+          ...otherPages.flatMap((pageResult) => pageResult.items),
+        ];
+      }
+
       setProduct(productData);
       setActiveStructure(activeItems);
       setAnulatedStructure(anulatedItems);
+      setAllProducts(products);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al cargar datos");
       toast.error(getApiErrorMessage(err, "No se pudo cargar la estructura de producto."));
     } finally {
       setIsLoading(false);
       setHasLoadedOnce(true);
+    }
+  }
+
+  const availableProductsForCreate = useMemo(() => {
+    const activeComponentIds = new Set(activeStructure.map((item) => item.idMateriaPrima));
+    return allProducts.filter(
+      (p) =>
+        p.id !== productId &&
+        ["MATERIA_PRIMA", "INSUMO"].includes(p.categoria) &&
+        !activeComponentIds.has(p.id),
+    );
+  }, [activeStructure, allProducts, productId]);
+
+  async function handleCreateComponent(data: { idMateriaPrima: number; cantidadRequerida: number }) {
+    if (!canCreateStructure) {
+      toast.error("No tienes permisos para agregar componentes.");
+      return;
+    }
+
+    try {
+      setIsSavingForm(true);
+      await createProductStructure({
+        idProductoTerminado: productId,
+        idMateriaPrima: data.idMateriaPrima,
+        cantidadRequerida: data.cantidadRequerida,
+      });
+      toast.success("Componente agregado correctamente.");
+      setIsFormOpen(false);
+      await loadData();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "No se pudo agregar el componente."));
+      throw err;
+    } finally {
+      setIsSavingForm(false);
+    }
+  }
+
+  async function handleCreateInlineComponent() {
+    if (!createMateriaPrimaId) {
+      toast.error("Selecciona un componente.");
+      return;
+    }
+
+    const cantidad = Number(createCantidad);
+    if (!Number.isFinite(cantidad) || cantidad <= 0) {
+      toast.error("Cantidad requerida debe ser mayor a 0.");
+      return;
+    }
+
+    await handleCreateComponent({
+      idMateriaPrima: createMateriaPrimaId,
+      cantidadRequerida: cantidad,
+    });
+
+    setCreateMateriaPrimaId(null);
+    setCreateCantidad("");
+  }
+
+  async function handleUpdateComponent() {
+    if (!editCandidate) {
+      return;
+    }
+
+    if (!canUpdateStructure) {
+      toast.error("No tienes permisos para editar componentes.");
+      return;
+    }
+
+    const cantidad = Number(editCantidad);
+    if (!Number.isFinite(cantidad) || cantidad <= 0) {
+      toast.error("Cantidad requerida debe ser mayor a 0.");
+      return;
+    }
+
+    try {
+      setIsSavingForm(true);
+      await updateProductStructure(editCandidate.id, {
+        cantidadRequerida: cantidad,
+      });
+      toast.success("Componente actualizado correctamente.");
+      setIsFormOpen(false);
+      setEditCandidate(null);
+      setEditCantidad("");
+      await loadData();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "No se pudo actualizar el componente."));
+    } finally {
+      setIsSavingForm(false);
     }
   }
 
@@ -144,40 +271,11 @@ export default function ProductStructurePage() {
         description="Configura componentes y costos BOM por producto terminado"
       >
     <div className="space-y-6">
-      <div className="rounded-xl border border-border bg-muted/40 p-3 sm:p-4">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:text-sm">
-          <button
-            type="button"
-            onClick={() => router.push("/inventory")}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-background"
-          >
-            Inventario
-          </button>
-          <span>/</span>
-          <button
-            type="button"
-            onClick={() => router.push("/inventory/structure")}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-background"
-          >
-            Estructuras
-          </button>
-          <span>/</span>
-          <span className="font-medium text-foreground">{product?.nombre ?? "Producto"}</span>
-        </div>
-
-        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <h1 className="truncate text-2xl font-bold sm:text-3xl">Estructura de Producto</h1>
-            <p className="mt-1 truncate text-sm text-muted-foreground sm:text-base">
-              {product?.nombre} - {product?.categoria}
-            </p>
-          </div>
-
-          <Button variant="outline" onClick={() => router.back()} className="w-full sm:w-auto">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Volver
-          </Button>
-        </div>
+      <div className="flex justify-start">
+        <Button variant="outline" size="sm" onClick={() => router.back()}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Volver
+        </Button>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -185,12 +283,17 @@ export default function ProductStructurePage() {
           <h2 className="text-xl font-semibold">
             Componentes ({activeStructure.length + anulatedStructure.length})
           </h2>
-          <p className="text-sm text-muted-foreground">
-            Lista de materias primas y componentes necesarios
-          </p>
         </div>
         <Button
-          onClick={() => router.push(`/inventory/${productId}/structure/create`)}
+          onClick={() => {
+            setFormMode("create");
+            setEditCandidate(null);
+            setEditCantidad("");
+            setCreateMateriaPrimaId(null);
+            setCreateCantidad("");
+            setCreateComponentOpen(false);
+            setIsFormOpen(true);
+          }}
           disabled={isLoading || !canCreateStructure}
           className="w-full sm:w-auto"
         >
@@ -211,13 +314,170 @@ export default function ProductStructurePage() {
         <p className="text-xs text-muted-foreground">Actualizando estructura...</p>
       ) : null}
 
+      {isFormOpen ? (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle>
+              {formMode === "create" ? "Agregar componente" : "Editar componente"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {formMode === "create" ? (
+              <div className="grid gap-2 md:grid-cols-[1.5fr_0.7fr_auto]">
+                <div className="space-y-1">
+                  <Label htmlFor="create-materia-prima">Componente</Label>
+                  <Popover open={createComponentOpen} onOpenChange={setCreateComponentOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        id="create-materia-prima"
+                        variant="outline"
+                        role="combobox"
+                        className="h-9 w-full justify-between"
+                        disabled={isSavingForm || availableProductsForCreate.length === 0}
+                      >
+                        {createMateriaPrimaId
+                          ? availableProductsForCreate.find((component) => component.id === createMateriaPrimaId)?.nombre ?? "Selecciona componente"
+                          : "Selecciona componente"}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[420px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Buscar por nombre, categoría o ID..." />
+                        <CommandList>
+                          <CommandEmpty>No hay componentes disponibles.</CommandEmpty>
+                          <CommandGroup>
+                            {availableProductsForCreate.map((component) => (
+                              <CommandItem
+                                key={component.id}
+                                value={`${component.nombre} ${component.categoria} ${component.id}`}
+                                onSelect={() => {
+                                  setCreateMateriaPrimaId(component.id);
+                                  setCreateComponentOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    createMateriaPrimaId === component.id ? "opacity-100" : "opacity-0",
+                                  )}
+                                />
+                                <span className="truncate">
+                                  {component.nombre} (#{component.id})
+                                </span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="create-cantidad-requerida">Cantidad</Label>
+                  <Input
+                    id="create-cantidad-requerida"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={createCantidad}
+                    onChange={(event) => setCreateCantidad(event.target.value)}
+                    disabled={isSavingForm}
+                    className="h-9"
+                  />
+                </div>
+
+                <div className="flex items-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setIsFormOpen(false);
+                      setCreateComponentOpen(false);
+                    }}
+                    disabled={isSavingForm}
+                    className="h-9"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleCreateInlineComponent}
+                    disabled={isSavingForm || availableProductsForCreate.length === 0}
+                    className="h-9"
+                  >
+                    {isSavingForm ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Agregar
+                  </Button>
+                </div>
+              </div>
+            ) : editCandidate ? (
+              <div className="grid gap-2 md:grid-cols-[1.5fr_0.7fr_auto]">
+                <div className="space-y-1">
+                  <Label htmlFor="edit-materia-prima">Componente</Label>
+                  <Button
+                    id="edit-materia-prima"
+                    type="button"
+                    variant="outline"
+                    className="h-9 w-full justify-start"
+                    disabled
+                  >
+                    {editCandidate.materiaPrima.nombre} (#{editCandidate.materiaPrima.id})
+                  </Button>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="edit-cantidad-requerida">Cantidad</Label>
+                  <Input
+                    id="edit-cantidad-requerida"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={editCantidad}
+                    onChange={(event) => setEditCantidad(event.target.value)}
+                    disabled={isSavingForm}
+                    className="h-9"
+                  />
+                </div>
+
+                <div className="flex items-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setIsFormOpen(false);
+                      setEditCandidate(null);
+                      setEditCantidad("");
+                    }}
+                    disabled={isSavingForm}
+                    className="h-9"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleUpdateComponent}
+                    disabled={isSavingForm}
+                    className="h-9"
+                  >
+                    {isSavingForm ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Guardar
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       {isLoading && !product ? (
         <>
           <FormSkeleton />
-          <TableSkeleton rows={6} columns={8} />
+          <TableSkeleton rows={6} columns={7} />
         </>
       ) : isLoading && !hasLoadedOnce ? (
-        <TableSkeleton rows={6} columns={8} />
+        <TableSkeleton rows={6} columns={7} />
       ) : (
         <Tabs defaultValue="activos">
           <TabsList>
@@ -241,7 +501,6 @@ export default function ProductStructurePage() {
                           <TableHead>ID</TableHead>
                           <TableHead>Componente</TableHead>
                           <TableHead>Categoría</TableHead>
-                          <TableHead className="text-right">Stock Disponible</TableHead>
                           <TableHead className="text-right">Cantidad Requerida</TableHead>
                           <TableHead className="text-right">Costo Unitario</TableHead>
                           <TableHead className="text-right">Costo Total</TableHead>
@@ -254,7 +513,6 @@ export default function ProductStructurePage() {
                             <TableCell className="font-medium">{item.materiaPrima.id}</TableCell>
                             <TableCell>{item.materiaPrima.nombre}</TableCell>
                             <TableCell>{item.materiaPrima.categoria}</TableCell>
-                            <TableCell className="text-right">{item.materiaPrima.existencia}</TableCell>
                             <TableCell className="text-right">{item.cantidadRequerida}</TableCell>
                             <TableCell className="text-right">
                               Q{item.materiaPrima.costoPromedio.toFixed(2)}
@@ -268,11 +526,12 @@ export default function ProductStructurePage() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    onClick={() =>
-                                      router.push(
-                                        `/inventory/${productId}/structure/edit/${item.id}`,
-                                      )
-                                    }
+                                    onClick={() => {
+                                      setFormMode("edit");
+                                      setEditCandidate(item);
+                                      setEditCantidad(item.cantidadRequerida.toString());
+                                      setIsFormOpen(true);
+                                    }}
                                   >
                                     <Pencil className="h-4 w-4" />
                                   </Button>
@@ -314,7 +573,6 @@ export default function ProductStructurePage() {
                           <TableHead>ID</TableHead>
                           <TableHead>Componente</TableHead>
                           <TableHead>Categoría</TableHead>
-                          <TableHead className="text-right">Stock Disponible</TableHead>
                           <TableHead className="text-right">Cantidad Requerida</TableHead>
                           <TableHead className="text-right">Costo Unitario</TableHead>
                           <TableHead className="text-right">Costo Total</TableHead>
@@ -327,7 +585,6 @@ export default function ProductStructurePage() {
                             <TableCell className="font-medium">{item.materiaPrima.id}</TableCell>
                             <TableCell>{item.materiaPrima.nombre}</TableCell>
                             <TableCell>{item.materiaPrima.categoria}</TableCell>
-                            <TableCell className="text-right">{item.materiaPrima.existencia}</TableCell>
                             <TableCell className="text-right">{item.cantidadRequerida}</TableCell>
                             <TableCell className="text-right">
                               Q{item.materiaPrima.costoPromedio.toFixed(2)}
