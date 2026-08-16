@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { ImagePlus, Loader2, RefreshCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -127,30 +127,57 @@ export function ProductFormCard({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="product-image">Ruta imagen</Label>
-            <Input
-              id="product-image"
-              value={form.rutaImagen}
-              onChange={(event) => onChange({ ...form, rutaImagen: event.target.value })}
-              placeholder="/uploads/products/imagen.jpg"
-              className="bg-background"
-            />
-            <div className="space-y-2">
-              <Input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                onChange={async (event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  await onUploadImage(file);
-                  event.target.value = "";
-                }}
-                className="bg-background"
-                disabled={uploadingImage || saving}
-              />
-              <p className="text-xs text-muted-foreground">
-                Formatos: JPG, PNG, WEBP. Tamaño máximo: 5MB.
-              </p>
+            <Label>Imagen del producto</Label>
+            <div className="flex flex-col gap-3 rounded-lg border bg-background/70 p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg border bg-background">
+                  {form.rutaImagen.trim() ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={resolveImagePreviewUrl(form.rutaImagen)}
+                      alt="Vista previa del producto"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <ImagePlus className="h-6 w-6 text-muted-foreground" />
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-medium">
+                    {form.rutaImagen.trim() ? "Imagen cargada" : "Sin imagen"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">JPG, PNG o WEBP. Maximo 5MB.</p>
+                </div>
+              </div>
+
+              <div>
+                <Label
+                  htmlFor="product-image-upload"
+                  className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium transition-colors hover:bg-muted/60"
+                >
+                  {uploadingImage ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : form.rutaImagen.trim() ? (
+                    <RefreshCcw className="h-4 w-4" />
+                  ) : (
+                    <ImagePlus className="h-4 w-4" />
+                  )}
+                  {form.rutaImagen.trim() ? "Reemplazar imagen" : "Agregar imagen"}
+                </Label>
+                <Input
+                  id="product-image-upload"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  disabled={uploadingImage || saving}
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    await onUploadImage(file);
+                    event.target.value = "";
+                  }}
+                />
+              </div>
             </div>
           </div>
 
@@ -191,19 +218,6 @@ export function ProductFormCard({
             </div>
           )}
 
-          <div className="md:col-span-2">
-            {form.rutaImagen.trim() ? (
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">Vista previa de imagen</p>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={resolveImagePreviewUrl(form.rutaImagen)}
-                  alt="Vista previa del producto"
-                  className="h-32 w-32 rounded-lg border border-border object-cover"
-                />
-              </div>
-            ) : null}
-          </div>
         </div>
 
         <div className="flex justify-end gap-2">
