@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
   Loader2,
@@ -74,11 +74,7 @@ export default function InventoryPage() {
   const [deleteCandidate, setDeleteCandidate] = useState<ProductDto | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  useEffect(() => {
-    void loadData();
-  }, []);
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       const filters = {
@@ -114,7 +110,15 @@ export default function InventoryPage() {
       setIsLoading(false);
       setHasLoadedOnce(true);
     }
-  }
+  }, [category, query]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void loadData();
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [loadData]);
 
   const metrics = useMemo(() => {
     const total = activeProducts.length + anulatedProducts.length;
@@ -279,17 +283,8 @@ export default function InventoryPage() {
 
                 <div className="md:col-span-2">
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={loadData}
-                      disabled={isLoading}
-                      className="hover:bg-muted/50 transition-colors"
-                    >
-                      Aplicar filtros
-                    </Button>
                     <p className="self-center text-xs text-muted-foreground">
-                      Usa Recargar o Aplicar filtros para consultar productos.
+                      La búsqueda y categoría se aplican automáticamente.
                     </p>
                   </div>
                 </div>

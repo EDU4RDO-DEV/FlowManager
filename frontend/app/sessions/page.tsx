@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
+import { Loader2, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -190,14 +189,9 @@ export default function SessionsPage() {
 
               <Card className="rounded-xl border border-border bg-muted/50 md:col-span-1 lg:col-span-2">
                 <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground">Cobertura de auditoria</p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <Badge variant="secondary">Anuladas: {metrics.anuladas}</Badge>
-                    <Badge variant="outline">
-                      <ShieldCheck className="mr-1 size-3.5" />
-                      Borrado logico
-                    </Badge>
-                  </div>
+                  <p className="text-sm text-muted-foreground">Control de anulaciones</p>
+                  <p className="mt-1 text-lg font-semibold tracking-tight">Sesiones anuladas: {metrics.anuladas}</p>
+                  <p className="text-sm text-muted-foreground">Todas las anulaciones son lógicas y restaurables.</p>
                 </CardContent>
               </Card>
             </section>

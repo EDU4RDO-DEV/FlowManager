@@ -9,7 +9,6 @@ import { useAuth } from "@/components/auth-provider";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -110,8 +109,9 @@ export default function EmployeesPage() {
   const metrics = useMemo(() => {
     const total = activeEmployees.length + anulatedEmployees.length;
     const activos = activeEmployees.length;
+    const anulados = anulatedEmployees.length;
     const nominaBase = activeEmployees.reduce((sum, item) => sum + item.sueldoBase, 0);
-    return { total, activos, nominaBase };
+    return { total, activos, anulados, nominaBase };
   }, [activeEmployees, anulatedEmployees]);
 
   async function confirmDeleteEmployee() {
@@ -189,11 +189,9 @@ export default function EmployeesPage() {
 
               <Card className="rounded-xl border border-border bg-muted/50 md:col-span-1 lg:col-span-2">
                 <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground">Nomina base estimada</p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <Badge variant="secondary">{formatCurrency(metrics.nominaBase)}</Badge>
-                    <Badge variant="outline">RRHH Basan</Badge>
-                  </div>
+                  <p className="text-sm text-muted-foreground">Nómina base estimada</p>
+                  <p className="mt-1 text-lg font-semibold tracking-tight">{formatCurrency(metrics.nominaBase)}</p>
+                  <p className="text-sm text-muted-foreground">Anulados: {metrics.anulados}</p>
                 </CardContent>
               </Card>
             </section>

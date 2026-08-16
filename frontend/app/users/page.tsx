@@ -11,7 +11,6 @@ import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -218,10 +217,8 @@ export default function UsersPage() {
             <Card className="rounded-xl border border-border bg-muted/50">
               <CardContent className="p-4">
                 <p className="text-sm text-muted-foreground">Estado operativo</p>
-                <div className="mt-2 flex items-center gap-2">
-                  <Badge variant="destructive">Inactivos: {metrics.inactivos}</Badge>
-                  <Badge variant="secondary">Basan IAM</Badge>
-                </div>
+                <p className="mt-1 text-lg font-semibold tracking-tight">Inactivos: {metrics.inactivos}</p>
+                <p className="text-sm text-muted-foreground">Usuarios anulados pendientes de restauración.</p>
               </CardContent>
             </Card>
           </section>

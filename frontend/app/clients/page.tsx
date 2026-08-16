@@ -9,7 +9,6 @@ import { useAuth } from "@/components/auth-provider";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -102,8 +101,9 @@ export default function ClientsPage() {
   const metrics = useMemo(() => {
     const total = activeClients.length + anulatedClients.length;
     const activos = activeClients.length;
+    const anulados = anulatedClients.length;
     const conCorreo = activeClients.filter((item) => (item.entidad.correoElectronico ?? "").trim().length > 0).length;
-    return { total, activos, conCorreo };
+    return { total, activos, anulados, conCorreo };
   }, [activeClients, anulatedClients]);
 
   async function confirmDeleteClient() {
@@ -181,11 +181,9 @@ export default function ClientsPage() {
 
               <Card className="rounded-xl border border-border bg-muted/50 md:col-span-1 lg:col-span-2">
                 <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground">Cobertura de contacto</p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <Badge variant="secondary">Con correo: {metrics.conCorreo}</Badge>
-                    <Badge variant="outline">CRM Basan</Badge>
-                  </div>
+                  <p className="text-sm text-muted-foreground">Resumen de cartera</p>
+                  <p className="mt-1 text-lg font-semibold tracking-tight">Con correo: {metrics.conCorreo}</p>
+                  <p className="text-sm text-muted-foreground">Anulados: {metrics.anulados}</p>
                 </CardContent>
               </Card>
             </section>

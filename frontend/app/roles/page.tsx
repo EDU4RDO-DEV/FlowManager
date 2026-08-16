@@ -18,7 +18,6 @@ import { useAuth } from "@/components/auth-provider";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -113,10 +112,11 @@ export default function RolesPage() {
   const metrics = useMemo(() => {
     const total = rolesActivos.length + rolesAnulados.length;
     const activos = rolesActivos.length;
+    const anulados = rolesAnulados.length;
     const conDescripcion = rolesActivos.filter(
       (item) => (item.descripcion ?? "").trim().length > 0,
     ).length;
-    return { total, activos, conDescripcion };
+    return { total, activos, anulados, conDescripcion };
   }, [rolesActivos, rolesAnulados]);
 
   async function confirmDeleteRole() {
@@ -208,11 +208,9 @@ export default function RolesPage() {
 
             <Card className="rounded-xl border border-border bg-muted/50 md:col-span-1 lg:col-span-2">
               <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground">Cobertura</p>
-                <div className="mt-2 flex items-center gap-2">
-                  <Badge variant="secondary">Con descripcion: {metrics.conDescripcion}</Badge>
-                  <Badge variant="outline">Basan RBAC</Badge>
-                </div>
+                <p className="text-sm text-muted-foreground">Cobertura de definición</p>
+                <p className="mt-1 text-lg font-semibold tracking-tight">Con descripción: {metrics.conDescripcion}</p>
+                <p className="text-sm text-muted-foreground">Anulados: {metrics.anulados}</p>
               </CardContent>
             </Card>
             </section>

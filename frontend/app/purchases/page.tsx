@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Eye, Loader2, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -73,11 +73,7 @@ export default function PurchasesPage() {
   const [deleteCandidate, setDeleteCandidate] = useState<PurchaseDto | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  useEffect(() => {
-    void loadData();
-  }, [isGastosView]);
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       const baseFilters = {
@@ -102,7 +98,15 @@ export default function PurchasesPage() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [idProveedor, isGastosView, query]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void loadData();
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [loadData]);
 
   const hasFilters = query.trim().length > 0 || idProveedor !== "";
 
