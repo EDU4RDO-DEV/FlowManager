@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ListPagination } from "@/components/ui/list-pagination";
 import { Label } from "@/components/ui/label";
@@ -79,13 +79,7 @@ export default function InventoryStructureIndexPage() {
       >
         <div className="space-y-4">
           <Card className="module-page-card">
-            <CardHeader className="flex flex-row items-center justify-between gap-4">
-              <div>
-                <CardTitle>Productos Terminados</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Accede a la estructura BOM de cada producto.
-                </p>
-              </div>
+            <CardHeader className="flex flex-row items-center justify-end gap-4">
               <Button variant="outline" size="sm" onClick={() => void loadData()} disabled={isLoading}>
                 <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
                 Recargar

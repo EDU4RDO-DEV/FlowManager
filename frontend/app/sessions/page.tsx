@@ -9,7 +9,7 @@ import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ListPagination } from "@/components/ui/list-pagination";
@@ -217,13 +217,7 @@ export default function SessionsPage() {
           )}
 
           <Card className="module-page-card rounded-xl bg-background">
-            <CardHeader className="flex flex-row items-center justify-between gap-4">
-              <div>
-                <CardTitle className="text-2xl font-bold tracking-tight">Catalogo de sesiones</CardTitle>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Visualiza sesiones activas, anuladas y restauraciones por usuario.
-                </p>
-              </div>
+            <CardHeader className="flex flex-row items-center justify-end gap-4">
               <Button
                 variant="outline"
                 size="sm"
