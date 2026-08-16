@@ -17,18 +17,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { ProductStructureForm } from "@/app/inventory/_components/product-structure-form";
 import {
   FormSkeleton,
   TableSkeleton,
@@ -36,13 +26,10 @@ import {
 import { InventoryEmptyState } from "@/app/inventory/_components/inventory-empty-state";
 import { getApiErrorMessage } from "@/lib/api";
 import { hasModulePermission } from "@/lib/rbac";
-import { getProductById, listProducts } from "@/services/products.service";
+import { getProductById } from "@/services/products.service";
 import {
   listStructureByProduct,
   listAnulatedStructureByProduct,
-  createProductStructure,
-  updateProductStructure,
-  deleteProductStructure,
   restoreProductStructure,
 } from "@/services/product-structure.service";
 import type { ProductDto } from "@/types/products";
@@ -60,15 +47,8 @@ export default function ProductStructurePage() {
   const [product, setProduct] = useState<ProductDto | null>(null);
   const [activeStructure, setActiveStructure] = useState<ProductStructureDto[]>([]);
   const [anulatedStructure, setAnulatedStructure] = useState<ProductStructureDto[]>([]);
-  const [availableProducts, setAvailableProducts] = useState<ProductDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [selectedComponent, setSelectedComponent] = useState<ProductStructureDto | null>(null);
-  const [editQuantity, setEditQuantity] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -80,124 +60,21 @@ export default function ProductStructurePage() {
       setIsLoading(true);
       setError("");
 
-      const [productData, activeItems, anulatedItems, productsData] = await Promise.all([
+      const [productData, activeItems, anulatedItems] = await Promise.all([
         getProductById(productId),
         listStructureByProduct(productId),
         listAnulatedStructureByProduct(productId),
-        listProducts({ limit: 100, anulado: false }),
       ]);
-
-      const existingComponentIds = new Set(
-        activeItems.filter((item) => !item.anulado).map((item) => item.idMateriaPrima),
-      );
 
       setProduct(productData);
       setActiveStructure(activeItems);
       setAnulatedStructure(anulatedItems);
-      setAvailableProducts(
-        productsData.items.filter(
-          (p) =>
-            p.id !== productId &&
-            ["MATERIA_PRIMA", "INSUMO"].includes(p.categoria) &&
-            !existingComponentIds.has(p.id),
-        ),
-      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al cargar datos");
       toast.error(getApiErrorMessage(err, "No se pudo cargar la estructura de producto."));
     } finally {
       setIsLoading(false);
       setHasLoadedOnce(true);
-    }
-  }
-
-  async function handleCreate(data: { idMateriaPrima: number; cantidadRequerida: number }) {
-    if (!canCreateStructure) {
-      toast.error("No tienes permisos para crear componentes.");
-      return;
-    }
-
-    try {
-      setIsCreating(true);
-      await createProductStructure({
-        idProductoTerminado: productId,
-        idMateriaPrima: data.idMateriaPrima,
-        cantidadRequerida: data.cantidadRequerida,
-      });
-
-      toast.success("Componente agregado correctamente.");
-      setIsFormOpen(false);
-      await loadData();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "No se pudo agregar el componente."));
-    } finally {
-      setIsCreating(false);
-    }
-  }
-
-  async function handleEdit() {
-    if (!selectedComponent) return;
-
-    if (!canUpdateStructure) {
-      toast.error("No tienes permisos para editar componentes.");
-      return;
-    }
-
-    try {
-      await updateProductStructure(selectedComponent.id, {
-        cantidadRequerida: Number(editQuantity),
-      });
-
-      setActiveStructure((prev) =>
-        prev.map((item) =>
-          item.id === selectedComponent.id
-            ? {
-                ...item,
-                cantidadRequerida: Number(editQuantity),
-              }
-            : item,
-        ),
-      );
-
-      toast.success("Cantidad actualizada correctamente.");
-      setIsEditModalOpen(false);
-      setSelectedComponent(null);
-      await loadData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al actualizar");
-      toast.error(getApiErrorMessage(err, "No se pudo actualizar el componente."));
-    }
-  }
-
-  async function handleDelete() {
-    if (!selectedComponent) return;
-
-    if (!canDeleteStructure) {
-      toast.error("No tienes permisos para anular componentes.");
-      return;
-    }
-
-    try {
-      await deleteProductStructure(
-        selectedComponent.id,
-        user?.id ? { idUsuarioAnulador: user.id } : undefined,
-      );
-
-      const movedToTrash: ProductStructureDto = {
-        ...selectedComponent,
-        anulado: true,
-      };
-
-      setActiveStructure((prev) => prev.filter((item) => item.id !== selectedComponent.id));
-      setAnulatedStructure((prev) => [movedToTrash, ...prev]);
-
-      toast.success("Componente anulado correctamente.");
-      setIsDeleteModalOpen(false);
-      setSelectedComponent(null);
-      await loadData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al eliminar");
-      toast.error(getApiErrorMessage(err, "No se pudo eliminar el componente."));
     }
   }
 
@@ -221,17 +98,6 @@ export default function ProductStructurePage() {
     } catch (err) {
       toast.error(getApiErrorMessage(err, "No se pudo restaurar el componente."));
     }
-  }
-
-  function openEditModal(component: ProductStructureDto) {
-    setSelectedComponent(component);
-    setEditQuantity(component.cantidadRequerida.toString());
-    setIsEditModalOpen(true);
-  }
-
-  function openDeleteModal(component: ProductStructureDto) {
-    setSelectedComponent(component);
-    setIsDeleteModalOpen(true);
   }
 
   return (
@@ -287,7 +153,7 @@ export default function ProductStructurePage() {
           </p>
         </div>
         <Button
-          onClick={() => setIsFormOpen(true)}
+          onClick={() => router.push(`/inventory/${productId}/structure/create`)}
           disabled={isLoading || !canCreateStructure}
           className="w-full sm:w-auto"
         >
@@ -365,7 +231,11 @@ export default function ProductStructurePage() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    onClick={() => openEditModal(item)}
+                                    onClick={() =>
+                                      router.push(
+                                        `/inventory/${productId}/structure/edit/${item.id}`,
+                                      )
+                                    }
                                   >
                                     <Pencil className="h-4 w-4" />
                                   </Button>
@@ -374,7 +244,11 @@ export default function ProductStructurePage() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    onClick={() => openDeleteModal(item)}
+                                    onClick={() =>
+                                      router.push(
+                                        `/inventory/${productId}/structure/delete/${item.id}`,
+                                      )
+                                    }
                                   >
                                     <Trash2 className="h-4 w-4 text-red-600" />
                                   </Button>
@@ -475,72 +349,6 @@ export default function ProductStructurePage() {
         </Card>
       )}
 
-      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Editar Cantidad</DialogTitle>
-            <DialogDescription>
-              Modificar cantidad requerida de {selectedComponent?.materiaPrima.nombre}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="edit-quantity">Cantidad Requerida</Label>
-              <Input
-                id="edit-quantity"
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={editQuantity}
-                onChange={(e) => setEditQuantity(e.target.value)}
-              />
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>
-                Cancelar
-              </Button>
-              <Button onClick={handleEdit}>Guardar</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirmar Eliminación</DialogTitle>
-            <DialogDescription>
-              ¿Está seguro que desea anular {selectedComponent?.materiaPrima.nombre} de la
-              estructura? Podrá restaurarlo posteriormente desde la pestaña de anulados.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)}>
-              Cancelar
-            </Button>
-            <Button variant="destructive" onClick={handleDelete}>
-              Anular
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] sm:max-w-4xl max-h-[90vh] overflow-y-auto p-5 sm:p-6">
-          <DialogHeader className="space-y-2">
-            <DialogTitle>Agregar Componente</DialogTitle>
-            <DialogDescription>
-              Selecciona materia prima o insumo para integrarlo en la estructura del producto.
-            </DialogDescription>
-          </DialogHeader>
-          <ProductStructureForm
-            availableProducts={availableProducts}
-            onSubmit={handleCreate}
-            onCancel={() => setIsFormOpen(false)}
-            isLoading={isCreating}
-          />
-        </DialogContent>
-      </Dialog>
     </div>
       </DashboardShell>
     </RequireAuth>
