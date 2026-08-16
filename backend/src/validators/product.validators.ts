@@ -74,12 +74,30 @@ export const createProductSchema = z
     nombre: z.string().trim().min(1, 'nombre es obligatorio').max(255, 'nombre demasiado largo'),
     categoria: categorySchema,
     costoPromedio: finitePositiveNumber,
-    precioVenta: finitePositiveNumber,
+    precioVenta: finitePositiveNumber.optional(),
     rutaImagen: z.string().trim().max(255, 'rutaImagen demasiado larga').optional(),
   })
-  .refine((data) => data.precioVenta >= data.costoPromedio, {
-    message: 'precioVenta debe ser mayor o igual a costoPromedio',
-    path: ['precioVenta'],
+  .superRefine((data, ctx) => {
+    if (data.categoria !== 'PRODUCTO_TERMINADO') {
+      return;
+    }
+
+    if (data.precioVenta === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'precioVenta es obligatorio para PRODUCTO_TERMINADO',
+        path: ['precioVenta'],
+      });
+      return;
+    }
+
+    if (data.precioVenta < data.costoPromedio) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'precioVenta debe ser mayor o igual a costoPromedio para PRODUCTO_TERMINADO',
+        path: ['precioVenta'],
+      });
+    }
   });
 
 export const updateProductSchema = z
@@ -95,20 +113,7 @@ export const updateProductSchema = z
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: 'Debe enviar al menos un campo para actualizar',
-  })
-  .refine(
-    (data) => {
-      if (data.costoPromedio === undefined || data.precioVenta === undefined) {
-        return true;
-      }
-
-      return data.precioVenta >= data.costoPromedio;
-    },
-    {
-      message: 'precioVenta debe ser mayor o igual a costoPromedio',
-      path: ['precioVenta'],
-    },
-  );
+  });
 
 export const deleteProductBodySchema = z.object({
   idUsuarioAnulador: positiveInt.optional(),

@@ -32,7 +32,6 @@ const CATEGORY_OPTIONS: ProductDto["categoria"][] = [
   "PRODUCTO_TERMINADO",
   "MATERIA_PRIMA",
   "INSUMO",
-  "ENVASE",
 ];
 
 function resolveImagePreviewUrl(rutaImagen: string): string {
@@ -67,6 +66,8 @@ export function ProductFormCard({
   onCancel,
   onSubmit,
 }: ProductFormCardProps) {
+  const isFinishedProduct = form.categoria === "PRODUCTO_TERMINADO";
+
   return (
     <Card className="rounded-xl border border-border bg-background">
       <CardHeader>
@@ -94,6 +95,8 @@ export function ProductFormCard({
                 onChange({
                   ...form,
                   categoria: event.target.value as ProductDto["categoria"],
+                  precioVenta:
+                    event.target.value === "PRODUCTO_TERMINADO" ? form.precioVenta : "",
                 })
               }
               className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
@@ -165,19 +168,28 @@ export function ProductFormCard({
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="product-price">Precio venta</Label>
-            <Input
-              id="product-price"
-              type="number"
-              min={0}
-              step="0.01"
-              value={form.precioVenta}
-              onChange={(event) => onChange({ ...form, precioVenta: event.target.value })}
-              placeholder="0.00"
-              className="bg-background"
-            />
-          </div>
+          {isFinishedProduct ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="product-price">Precio venta</Label>
+              <Input
+                id="product-price"
+                type="number"
+                min={0}
+                step="0.01"
+                value={form.precioVenta}
+                onChange={(event) => onChange({ ...form, precioVenta: event.target.value })}
+                placeholder="0.00"
+                className="bg-background"
+              />
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label>Precio venta</Label>
+              <div className="rounded-lg border border-dashed border-border bg-background px-3 py-2 text-sm text-muted-foreground">
+                Solo aplica para PRODUCTO_TERMINADO.
+              </div>
+            </div>
+          )}
 
           <div className="md:col-span-2">
             {form.rutaImagen.trim() ? (

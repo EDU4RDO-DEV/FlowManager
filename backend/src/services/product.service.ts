@@ -20,7 +20,7 @@ type CreateProductInput = {
   nombre: string;
   categoria: string;
   costoPromedio: number;
-  precioVenta: number;
+  precioVenta?: number;
   rutaImagen?: string;
 };
 
@@ -34,6 +34,30 @@ type UpdateProductInput = {
   precioVenta?: number;
   rutaImagen?: string;
 };
+
+function resolvePrecioVentaForCategoria(
+  categoria: string,
+  costoPromedio: number,
+  precioVenta?: number,
+): number {
+  if (categoria !== 'PRODUCTO_TERMINADO') {
+    return 0;
+  }
+
+  if (precioVenta === undefined) {
+    throw new Error('precioVenta es obligatorio para PRODUCTO_TERMINADO');
+  }
+
+  if (precioVenta <= 0) {
+    throw new Error('precioVenta debe ser mayor a 0 para PRODUCTO_TERMINADO');
+  }
+
+  if (precioVenta < costoPromedio) {
+    throw new Error('precioVenta debe ser mayor o igual a costoPromedio para PRODUCTO_TERMINADO');
+  }
+
+  return precioVenta;
+}
 
 function toProductDto(product: {
   Id: number;
@@ -258,6 +282,12 @@ export async function createProduct(input: CreateProductInput) {
   await validateProveedorExists(input.idProveedor);
   await validateUniqueNameInCategory(input.nombre, input.categoria);
 
+  const precioVenta = resolvePrecioVentaForCategoria(
+    input.categoria,
+    input.costoPromedio,
+    input.precioVenta,
+  );
+
   const created = await prisma.$transaction(async (tx) => {
     const product = await tx.inventarioItem.create({
       data: {
@@ -267,7 +297,7 @@ export async function createProduct(input: CreateProductInput) {
         Categoria: input.categoria,
         Existencia: 0,
         CostoPromedio: input.costoPromedio,
-        PrecioVenta: input.precioVenta,
+        PrecioVenta: precioVenta,
         RutaImagen: input.rutaImagen,
         Anulado: false,
       },
@@ -337,11 +367,11 @@ export async function updateProduct(id: number, input: UpdateProductInput) {
   await validateUniqueNameInCategory(nextNombre, nextCategoria, id);
 
   const costoPromedio = input.costoPromedio ?? Number(existing.CostoPromedio);
-  const precioVenta = input.precioVenta ?? Number(existing.PrecioVenta);
-
-  if (precioVenta < costoPromedio) {
-    throw new Error('precioVenta debe ser mayor o igual a costoPromedio');
-  }
+  const precioVenta = resolvePrecioVentaForCategoria(
+    nextCategoria,
+    costoPromedio,
+    input.precioVenta ?? Number(existing.PrecioVenta),
+  );
 
   const updated = await prisma.inventarioItem.update({
     where: { Id: id },
@@ -354,7 +384,7 @@ export async function updateProduct(id: number, input: UpdateProductInput) {
       ...(input.nombre !== undefined ? { Nombre: input.nombre } : {}),
       ...(input.categoria !== undefined ? { Categoria: input.categoria } : {}),
       ...(input.costoPromedio !== undefined ? { CostoPromedio: input.costoPromedio } : {}),
-      ...(input.precioVenta !== undefined ? { PrecioVenta: input.precioVenta } : {}),
+      PrecioVenta: precioVenta,
       ...(input.rutaImagen !== undefined ? { RutaImagen: input.rutaImagen } : {}),
       FechaModificacion: new Date(),
     },

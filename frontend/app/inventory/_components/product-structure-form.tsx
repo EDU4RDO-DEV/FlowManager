@@ -123,7 +123,7 @@ export function ProductStructureForm({
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Solo se muestran componentes INSUMO, ENVASE o MATERIA_PRIMA.
+            Solo se muestran componentes INSUMO o MATERIA_PRIMA.
           </p>
         </div>
 

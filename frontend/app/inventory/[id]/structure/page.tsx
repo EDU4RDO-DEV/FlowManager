@@ -98,7 +98,7 @@ export default function ProductStructurePage() {
         productsData.items.filter(
           (p) =>
             p.id !== productId &&
-            ["MATERIA_PRIMA", "INSUMO", "ENVASE"].includes(p.categoria) &&
+            ["MATERIA_PRIMA", "INSUMO"].includes(p.categoria) &&
             !existingComponentIds.has(p.id),
         ),
       );
@@ -326,7 +326,7 @@ export default function ProductStructurePage() {
             {activeStructure.length === 0 ? (
               <InventoryEmptyState
                 title="No hay componentes registrados"
-                description="Agregue materias primas, insumos o envases para construir la estructura BOM de este producto terminado."
+                description="Agregue materias primas o insumos para construir la estructura BOM de este producto terminado."
               />
             ) : (
               <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
@@ -530,7 +530,7 @@ export default function ProductStructurePage() {
           <DialogHeader className="space-y-2">
             <DialogTitle>Agregar Componente</DialogTitle>
             <DialogDescription>
-              Selecciona materia prima, insumo o envase para integrarlo en la estructura del producto.
+              Selecciona materia prima o insumo para integrarlo en la estructura del producto.
             </DialogDescription>
           </DialogHeader>
           <ProductStructureForm

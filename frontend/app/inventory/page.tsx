@@ -60,7 +60,7 @@ function formatMoney(value: number): string {
   });
 }
 
-type CategoryFilter = "" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA" | "INSUMO" | "ENVASE";
+type CategoryFilter = "" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA" | "INSUMO";
 
 export default function InventoryPage() {
   const { user } = useAuth();
@@ -269,7 +269,6 @@ export default function InventoryPage() {
                     <option value="PRODUCTO_TERMINADO">PRODUCTO_TERMINADO</option>
                     <option value="MATERIA_PRIMA">MATERIA_PRIMA</option>
                     <option value="INSUMO">INSUMO</option>
-                    <option value="ENVASE">ENVASE</option>
                   </select>
                 </div>
 
@@ -342,7 +341,11 @@ export default function InventoryPage() {
                                 <TableCell>{product.proveedor.nombre}</TableCell>
                                 <TableCell>{product.existencia}</TableCell>
                                 <TableCell>{formatMoney(product.costoPromedio)}</TableCell>
-                                <TableCell>{formatMoney(product.precioVenta)}</TableCell>
+                                <TableCell>
+                                  {product.categoria === "PRODUCTO_TERMINADO"
+                                    ? formatMoney(product.precioVenta)
+                                    : "-"}
+                                </TableCell>
                                 <TableCell>{formatDate(product.fechaRegistro)}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-2">

@@ -55,7 +55,7 @@ export interface CreateProductPayload {
   nombre: string;
   categoria: ProductDto["categoria"];
   costoPromedio: number;
-  precioVenta: number;
+  precioVenta?: number;
   rutaImagen?: string;
 }
 

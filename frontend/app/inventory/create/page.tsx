@@ -68,6 +68,7 @@ export default function CreateProductPage() {
     }
 
     const costoPromedio = Number(form.costoPromedio);
+    const isFinishedProduct = form.categoria === "PRODUCTO_TERMINADO";
     const precioVenta = Number(form.precioVenta);
 
     if (!Number.isFinite(costoPromedio) || costoPromedio <= 0) {
@@ -75,14 +76,16 @@ export default function CreateProductPage() {
       return;
     }
 
-    if (!Number.isFinite(precioVenta) || precioVenta <= 0) {
-      toast.error("El precio de venta debe ser mayor a 0.");
-      return;
-    }
+    if (isFinishedProduct) {
+      if (!Number.isFinite(precioVenta) || precioVenta <= 0) {
+        toast.error("El precio de venta debe ser mayor a 0 para producto terminado.");
+        return;
+      }
 
-    if (precioVenta < costoPromedio) {
-      toast.error("El precio de venta no puede ser menor al costo promedio.");
-      return;
+      if (precioVenta < costoPromedio) {
+        toast.error("El precio de venta no puede ser menor al costo promedio.");
+        return;
+      }
     }
 
     setSaving(true);
@@ -93,7 +96,7 @@ export default function CreateProductPage() {
         nombre: form.nombre.trim(),
         categoria: form.categoria,
         costoPromedio,
-        precioVenta,
+        precioVenta: isFinishedProduct ? precioVenta : undefined,
         rutaImagen: form.rutaImagen.trim() || undefined,
       });
 

@@ -128,6 +128,14 @@ export async function createProductController(req: Request, res: Response) {
       return res.status(409).json({ ok: false, message });
     }
 
+    if (
+      message === 'precioVenta es obligatorio para PRODUCTO_TERMINADO' ||
+      message === 'precioVenta debe ser mayor a 0 para PRODUCTO_TERMINADO' ||
+      message === 'precioVenta debe ser mayor o igual a costoPromedio para PRODUCTO_TERMINADO'
+    ) {
+      return res.status(400).json({ ok: false, message });
+    }
+
     return res.status(500).json({ ok: false, message });
   }
 }
@@ -165,7 +173,11 @@ export async function updateProductController(req: Request, res: Response) {
       return res.status(409).json({ ok: false, message });
     }
 
-    if (message === 'precioVenta debe ser mayor o igual a costoPromedio') {
+    if (
+      message === 'precioVenta es obligatorio para PRODUCTO_TERMINADO' ||
+      message === 'precioVenta debe ser mayor a 0 para PRODUCTO_TERMINADO' ||
+      message === 'precioVenta debe ser mayor o igual a costoPromedio para PRODUCTO_TERMINADO'
+    ) {
       return res.status(400).json({ ok: false, message });
     }
 

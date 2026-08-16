@@ -74,14 +74,14 @@ async function validateMateriaPrimaExists(id: number) {
       Id: id,
       Anulado: false,
       Categoria: {
-        in: ['MATERIA_PRIMA', 'INSUMO', 'ENVASE'],
+        in: ['MATERIA_PRIMA', 'INSUMO'],
       },
     },
     select: { Id: true },
   });
 
   if (!product) {
-    throw new Error('El componente debe ser una materia prima, insumo o envase activo');
+    throw new Error('El componente debe ser una materia prima o insumo activo');
   }
 }
 
