@@ -87,3 +87,13 @@ export interface DeleteEmployeePayload {
 export interface RestoreEmployeePayload {
   idUsuarioModificador?: number;
 }
+
+export interface UploadEmployeeImageResult {
+  rutaImagen: string;
+  url: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+}
+
+export type UploadEmployeeImageResponse = ApiResponse<UploadEmployeeImageResult>;

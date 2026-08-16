@@ -6,6 +6,8 @@ import type {
   CreateClientPayload,
   DeleteClientPayload,
   RestoreClientPayload,
+  UploadClientImageResponse,
+  UploadClientImageResult,
   UpdateClientPayload,
 } from "@/types/clients";
 
@@ -55,5 +57,26 @@ export async function restoreClient(
   if (!data.data) {
     throw new Error(data.message || "Respuesta invalida al restaurar cliente");
   }
+  return data.data;
+}
+
+export async function uploadClientImage(file: File): Promise<UploadClientImageResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const { data } = await api.post<UploadClientImageResponse>(
+    "/api/clients/upload-image",
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    },
+  );
+
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al subir imagen");
+  }
+
   return data.data;
 }

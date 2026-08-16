@@ -6,6 +6,8 @@ import type {
   ProviderDto,
   ProvidersListResponse,
   RestoreProviderPayload,
+  UploadProviderImageResponse,
+  UploadProviderImageResult,
   UpdateProviderPayload,
 } from "@/types/providers";
 
@@ -55,5 +57,26 @@ export async function restoreProvider(
   if (!data.data) {
     throw new Error(data.message || "Respuesta invalida al restaurar proveedor");
   }
+  return data.data;
+}
+
+export async function uploadProviderImage(file: File): Promise<UploadProviderImageResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const { data } = await api.post<UploadProviderImageResponse>(
+    "/api/providers/upload-image",
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    },
+  );
+
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al subir imagen");
+  }
+
   return data.data;
 }

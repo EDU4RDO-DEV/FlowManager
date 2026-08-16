@@ -19,6 +19,33 @@ import {
 } from '../validators/client.validators';
 import { getZodErrorMessage } from '../validators/validation';
 
+export async function uploadClientImageController(req: Request, res: Response) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ ok: false, message: 'Debe adjuntar una imagen en el campo file' });
+    }
+
+    const rutaImagen = `/uploads/clients/${req.file.filename}`;
+    const host = req.get('host');
+    const url = host ? `${req.protocol}://${host}${rutaImagen}` : rutaImagen;
+
+    return res.status(201).json({
+      ok: true,
+      message: 'Imagen cargada correctamente',
+      data: {
+        rutaImagen,
+        url,
+        fileName: req.file.filename,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
 export async function listClientsController(_req: Request, res: Response) {
   try {
     const data = await listClients();

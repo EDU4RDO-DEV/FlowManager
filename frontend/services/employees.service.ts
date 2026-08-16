@@ -6,6 +6,8 @@ import type {
   EmployeeDto,
   EmployeesListResponse,
   RestoreEmployeePayload,
+  UploadEmployeeImageResponse,
+  UploadEmployeeImageResult,
   UpdateEmployeePayload,
 } from "@/types/employees";
 
@@ -55,5 +57,26 @@ export async function restoreEmployee(
   if (!data.data) {
     throw new Error(data.message || "Respuesta invalida al restaurar empleado");
   }
+  return data.data;
+}
+
+export async function uploadEmployeeImage(file: File): Promise<UploadEmployeeImageResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const { data } = await api.post<UploadEmployeeImageResponse>(
+    "/api/employees/upload-image",
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    },
+  );
+
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al subir imagen");
+  }
+
   return data.data;
 }

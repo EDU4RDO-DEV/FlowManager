@@ -67,3 +67,13 @@ export interface DeleteClientPayload {
 export interface RestoreClientPayload {
   idUsuarioModificador?: number;
 }
+
+export interface UploadClientImageResult {
+  rutaImagen: string;
+  url: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+}
+
+export type UploadClientImageResponse = ApiResponse<UploadClientImageResult>;

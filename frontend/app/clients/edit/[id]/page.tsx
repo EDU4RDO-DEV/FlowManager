@@ -12,7 +12,7 @@ import { useAuth } from "@/components/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
-import { getClientById, updateClient } from "@/services/clients.service";
+import { getClientById, updateClient, uploadClientImage } from "@/services/clients.service";
 
 const EMPTY_FORM: ClientFormValues = {
   nombreCompleto: "",
@@ -39,7 +39,21 @@ export default function EditClientPage() {
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [form, setForm] = useState<ClientFormValues>(EMPTY_FORM);
+
+  async function handleUploadImage(file: File) {
+    setUploadingImage(true);
+    try {
+      const uploaded = await uploadClientImage(file);
+      setForm((prev) => ({ ...prev, rutaImagen: uploaded.rutaImagen }));
+      toast.success("Imagen subida correctamente.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo subir la imagen."));
+    } finally {
+      setUploadingImage(false);
+    }
+  }
 
   useEffect(() => {
     async function loadData() {
@@ -135,7 +149,9 @@ export default function EditClientPage() {
               title={`Editar cliente #${params.id}`}
               form={form}
               saving={saving}
+              uploadingImage={uploadingImage}
               onChange={setForm}
+              onUploadImage={handleUploadImage}
               onCancel={() => router.push("/clients")}
               onSubmit={handleSubmit}
             />

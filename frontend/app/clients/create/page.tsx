@@ -12,7 +12,7 @@ import { useAuth } from "@/components/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
-import { createClient } from "@/services/clients.service";
+import { createClient, uploadClientImage } from "@/services/clients.service";
 
 const EMPTY_FORM: ClientFormValues = {
   nombreCompleto: "",
@@ -30,7 +30,21 @@ export default function CreateClientPage() {
   const router = useRouter();
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [form, setForm] = useState<ClientFormValues>(EMPTY_FORM);
+
+  async function handleUploadImage(file: File) {
+    setUploadingImage(true);
+    try {
+      const uploaded = await uploadClientImage(file);
+      setForm((prev) => ({ ...prev, rutaImagen: uploaded.rutaImagen }));
+      toast.success("Imagen subida correctamente.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo subir la imagen."));
+    } finally {
+      setUploadingImage(false);
+    }
+  }
 
   async function handleSubmit() {
     if (!user?.id) {
@@ -81,7 +95,9 @@ export default function CreateClientPage() {
             title="Nuevo cliente"
             form={form}
             saving={saving}
+            uploadingImage={uploadingImage}
             onChange={setForm}
+            onUploadImage={handleUploadImage}
             onCancel={() => router.push("/clients")}
             onSubmit={handleSubmit}
           />

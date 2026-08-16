@@ -32,6 +32,7 @@ function toAdjustmentDto(adjustment: {
   TipoAjuste: string;
   NumeroAjuste: number;
   CantidadAjustada: number;
+  NombreAjuste: string | null;
   Observacion: string | null;
   FechaRegistro: Date | null;
   Anulado: boolean;
@@ -52,6 +53,7 @@ function toAdjustmentDto(adjustment: {
     tipoAjuste: adjustment.TipoAjuste,
     numeroAjuste: adjustment.NumeroAjuste,
     cantidadAjustada: adjustment.CantidadAjustada,
+    nombreAjuste: adjustment.NombreAjuste,
     observacion: adjustment.Observacion,
     fechaRegistro: adjustment.FechaRegistro,
     anulado: adjustment.Anulado,
@@ -98,11 +100,20 @@ export async function listAdjustments(input: ListAdjustmentsInput) {
     ...(input.idInventarioItem !== undefined ? { IdInventarioItem: input.idInventarioItem } : {}),
     ...(input.busqueda
       ? {
-          InventarioItem: {
-            Nombre: {
-              contains: input.busqueda,
+          OR: [
+            {
+              InventarioItem: {
+                Nombre: {
+                  contains: input.busqueda,
+                },
+              },
             },
-          },
+            {
+              NombreAjuste: {
+                contains: input.busqueda,
+              },
+            },
+          ],
         }
       : {}),
   };
@@ -229,11 +240,19 @@ export async function createAdjustment(input: CreateAdjustmentInput) {
 
   const numeroAjuste = await getNextNumeroAjuste();
 
-  const observacionCompuesta = `${input.nombreAjuste}: ${input.observacion}`;
-
   // Transacción atómica: Ajuste + Stock + Bitácora
   const result = await prisma.$transaction(async (tx) => {
-    const createdAdjustments = [] as Awaited<ReturnType<typeof tx.ajusteInventario.create>>[];
+    const createdAdjustments = [] as Array<
+      Awaited<ReturnType<typeof tx.ajusteInventario.create>> & {
+        InventarioItem: {
+          Id: number;
+          Nombre: string;
+          Categoria: string;
+          Existencia: number;
+          Anulado: boolean;
+        };
+      }
+    >;
     const txStockMap = new Map(itemsInventario.map((item) => [item.Id, item.Existencia]));
 
     for (const item of input.items) {
@@ -254,7 +273,8 @@ export async function createAdjustment(input: CreateAdjustmentInput) {
           TipoAjuste: item.tipoAjuste,
           NumeroAjuste: numeroAjuste,
           CantidadAjustada: item.cantidadAjustada,
-          Observacion: observacionCompuesta,
+          NombreAjuste: input.nombreAjuste,
+          Observacion: input.observacion,
           Anulado: false,
         },
         include: {

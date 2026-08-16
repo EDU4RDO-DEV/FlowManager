@@ -84,6 +84,7 @@ export default function AdjustmentsPage() {
     return activeAdjustments.filter((adj) => {
       const matchesQuery =
         query.trim() === "" ||
+        (adj.nombreAjuste ?? "").toLowerCase().includes(query.toLowerCase()) ||
         adj.inventarioItem.nombre.toLowerCase().includes(query.toLowerCase()) ||
         adj.numeroAjuste.toString().includes(query);
       const matchesTipo = tipoFilter === "" || adj.tipoAjuste === tipoFilter;
@@ -95,6 +96,7 @@ export default function AdjustmentsPage() {
     return anulatedAdjustments.filter((adj) => {
       const matchesQuery =
         query.trim() === "" ||
+        (adj.nombreAjuste ?? "").toLowerCase().includes(query.toLowerCase()) ||
         adj.inventarioItem.nombre.toLowerCase().includes(query.toLowerCase()) ||
         adj.numeroAjuste.toString().includes(query);
       const matchesTipo = tipoFilter === "" || adj.tipoAjuste === tipoFilter;
@@ -239,7 +241,7 @@ export default function AdjustmentsPage() {
                 </Label>
                 <Input
                   id="busqueda"
-                  placeholder="Producto o número"
+                  placeholder="Nombre ajuste, producto o número"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   className="max-w-xs"
@@ -295,6 +297,7 @@ export default function AdjustmentsPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead className="whitespace-nowrap">Número</TableHead>
+                          <TableHead className="whitespace-nowrap">Nombre ajuste</TableHead>
                           <TableHead className="whitespace-nowrap">Producto</TableHead>
                           <TableHead className="whitespace-nowrap">Tipo</TableHead>
                           <TableHead className="whitespace-nowrap">Cantidad</TableHead>
@@ -307,6 +310,7 @@ export default function AdjustmentsPage() {
                         {paginatedActiveAdjustments.map((adj) => (
                           <TableRow key={adj.id}>
                             <TableCell className="font-mono font-medium">#{adj.numeroAjuste}</TableCell>
+                            <TableCell className="max-w-xs truncate">{adj.nombreAjuste || "-"}</TableCell>
                             <TableCell>{adj.inventarioItem.nombre}</TableCell>
                             <TableCell>
                               <Badge
@@ -388,6 +392,7 @@ export default function AdjustmentsPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead className="whitespace-nowrap">Número</TableHead>
+                          <TableHead className="whitespace-nowrap">Nombre ajuste</TableHead>
                           <TableHead className="whitespace-nowrap">Producto</TableHead>
                           <TableHead className="whitespace-nowrap">Tipo</TableHead>
                           <TableHead className="whitespace-nowrap">Cantidad</TableHead>
@@ -400,6 +405,7 @@ export default function AdjustmentsPage() {
                         {paginatedTrashAdjustments.map((adj) => (
                           <TableRow key={adj.id} className="opacity-60">
                             <TableCell className="font-mono font-medium">#{adj.numeroAjuste}</TableCell>
+                            <TableCell className="max-w-xs truncate">{adj.nombreAjuste || "-"}</TableCell>
                             <TableCell>{adj.inventarioItem.nombre}</TableCell>
                             <TableCell>
                               <Badge

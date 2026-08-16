@@ -36,6 +36,15 @@ const optionalLimitFromQuery = z
   .refine((value) => value >= 1 && value <= 100, 'limit debe estar entre 1 y 100')
   .optional();
 
+const allowedAdjustmentNames = [
+  'AJUSTE POR CONTEO',
+  'MERMA POR DANIO',
+  'MERMA POR VENCIMIENTO',
+  'DEVOLUCION A PROVEEDOR',
+  'CONSUMO INTERNO',
+  'RECLASIFICACION DE INVENTARIO',
+] as const;
+
 export const adjustmentIdParamsSchema = z.object({
   id: z.coerce.number().int('id debe ser entero').positive('id debe ser mayor a 0'),
 });
@@ -54,8 +63,10 @@ export const createAdjustmentSchema = z.object({
   nombreAjuste: z
     .string()
     .trim()
-    .min(3, 'nombreAjuste debe tener al menos 3 caracteres')
-    .max(100, 'nombreAjuste demasiado largo'),
+    .refine(
+      (value) => allowedAdjustmentNames.includes(value as (typeof allowedAdjustmentNames)[number]),
+      'nombreAjuste debe ser uno de los tipos permitidos',
+    ),
   observacion: z
     .string()
     .trim()

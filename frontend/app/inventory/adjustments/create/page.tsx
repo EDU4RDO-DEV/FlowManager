@@ -50,12 +50,23 @@ type AdjustmentLine = {
   cantidad: string;
 };
 
+const ADJUSTMENT_NAME_OPTIONS = [
+  "AJUSTE POR CONTEO",
+  "MERMA POR DANIO",
+  "MERMA POR VENCIMIENTO",
+  "DEVOLUCION A PROVEEDOR",
+  "CONSUMO INTERNO",
+  "RECLASIFICACION DE INVENTARIO",
+] as const;
+
+type AdjustmentNameOption = (typeof ADJUSTMENT_NAME_OPTIONS)[number];
+
 export default function CreateAdjustmentPage() {
   const router = useRouter();
   const { user } = useAuth();
   const [products, setProducts] = useState<ProductDto[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
-  const [nombreAjuste, setNombreAjuste] = useState("");
+  const [nombreAjuste, setNombreAjuste] = useState<AdjustmentNameOption | "">("");
   const [observacion, setObservacion] = useState("");
   const [lines, setLines] = useState<AdjustmentLine[]>([
     {
@@ -138,7 +149,7 @@ export default function CreateAdjustmentPage() {
 
   const isFormValid = useMemo(() => {
     if (!user) return false;
-    if (nombreAjuste.trim().length < 3) return false;
+    if (nombreAjuste === "") return false;
     if (observacion.trim().length < 10) return false;
     if (lines.length === 0) return false;
     if (stockWarnings.size > 0) return false;
@@ -181,6 +192,7 @@ export default function CreateAdjustmentPage() {
     e.preventDefault();
 
     if (!user || !isFormValid) return;
+    if (nombreAjuste === "") return;
 
     const payloadItems = lines.map((line) => ({
       idInventarioItem: line.idInventarioItem as number,
@@ -192,7 +204,7 @@ export default function CreateAdjustmentPage() {
     try {
       const result = await createAdjustment({
         idUsuario: user.id,
-        nombreAjuste: nombreAjuste.trim(),
+        nombreAjuste,
         observacion: observacion.trim(),
         items: payloadItems,
       });
@@ -222,13 +234,21 @@ export default function CreateAdjustmentPage() {
           <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border p-5">
             <div className="space-y-2">
               <Label htmlFor="nombre-ajuste">Nombre del ajuste *</Label>
-              <Input
-                id="nombre-ajuste"
-                placeholder="Ej. Merma por limpieza semanal"
+              <Select
                 value={nombreAjuste}
-                onChange={(event) => setNombreAjuste(event.target.value)}
-                  className="h-10"
-              />
+                onValueChange={(value) => setNombreAjuste(value as AdjustmentNameOption)}
+              >
+                <SelectTrigger id="nombre-ajuste" className="h-10">
+                  <SelectValue placeholder="Seleccionar tipo de ajuste" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ADJUSTMENT_NAME_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-3">

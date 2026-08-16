@@ -68,3 +68,13 @@ export interface DeleteProviderPayload {
 export interface RestoreProviderPayload {
   idUsuarioModificador?: number;
 }
+
+export interface UploadProviderImageResult {
+  rutaImagen: string;
+  url: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+}
+
+export type UploadProviderImageResponse = ApiResponse<UploadProviderImageResult>;

@@ -1,5 +1,13 @@
 import type { ApiResponse } from "./auth";
 
+export type AdjustmentNameOption =
+  | "AJUSTE POR CONTEO"
+  | "MERMA POR DANIO"
+  | "MERMA POR VENCIMIENTO"
+  | "DEVOLUCION A PROVEEDOR"
+  | "CONSUMO INTERNO"
+  | "RECLASIFICACION DE INVENTARIO";
+
 export interface AdjustmentInventarioItemDto {
   id: number;
   nombre: string;
@@ -15,6 +23,7 @@ export interface AdjustmentDto {
   tipoAjuste: "ENTRADA" | "SALIDA";
   numeroAjuste: number;
   cantidadAjustada: number;
+  nombreAjuste: string | null;
   observacion: string | null;
   fechaRegistro: string | null;
   anulado: boolean;
@@ -49,7 +58,7 @@ export interface AdjustmentFilters {
 
 export interface CreateAdjustmentPayload {
   idUsuario: number;
-  nombreAjuste: string;
+  nombreAjuste: AdjustmentNameOption;
   observacion: string;
   items: Array<{
     idInventarioItem: number;

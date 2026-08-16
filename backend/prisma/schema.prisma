@@ -14,6 +14,7 @@ model AjusteInventario {
   TipoAjuste        String         @db.VarChar(50)
   NumeroAjuste      Int
   CantidadAjustada  Float
+  NombreAjuste      String?        @db.VarChar(100)
   Observacion       String?        @db.VarChar(255)
   FechaRegistro     DateTime?      @default(now(), map: "DF__AjusteInv__Fecha__0D7A0286") @db.DateTime
   Anulado           Boolean        @default(false, map: "DF__AjusteInv__Anula__0E6E26BF")

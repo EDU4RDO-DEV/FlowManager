@@ -12,7 +12,7 @@ import { useAuth } from "@/components/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
-import { getEmployeeById, updateEmployee } from "@/services/employees.service";
+import { getEmployeeById, updateEmployee, uploadEmployeeImage } from "@/services/employees.service";
 import { listUsers } from "@/services/users.service";
 import type { UserDto } from "@/types/users";
 
@@ -47,8 +47,22 @@ export default function EditEmployeePage() {
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [form, setForm] = useState<EmployeeFormValues>(EMPTY_FORM);
   const [users, setUsers] = useState<UserDto[]>([]);
+
+  async function handleUploadImage(file: File) {
+    setUploadingImage(true);
+    try {
+      const uploaded = await uploadEmployeeImage(file);
+      setForm((prev) => ({ ...prev, rutaImagen: uploaded.rutaImagen }));
+      toast.success("Imagen subida correctamente.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo subir la imagen."));
+    } finally {
+      setUploadingImage(false);
+    }
+  }
 
   useEffect(() => {
     async function loadData() {
@@ -113,7 +127,7 @@ export default function EditEmployeePage() {
       correoElectronico: linkedUser.entidad?.correoElectronico ?? linkedUser.correo,
       telefono1: linkedUser.entidad?.telefono1 ?? "",
       telefono2: linkedUser.entidad?.telefono2 ?? "",
-      rutaImagen: linkedUser.entidad?.rutaImagen ?? "",
+      rutaImagen: linkedUser.entidad?.rutaImagen ?? prev.rutaImagen,
       nit: linkedUser.entidad?.nit ?? "",
       dpi: linkedUser.entidad?.dpi ?? "",
     }));
@@ -203,7 +217,9 @@ export default function EditEmployeePage() {
               users={users}
               form={form}
               saving={saving}
+              uploadingImage={uploadingImage}
               onChange={setForm}
+              onUploadImage={handleUploadImage}
               onCancel={() => router.push("/employees")}
               onSubmit={handleSubmit}
             />
