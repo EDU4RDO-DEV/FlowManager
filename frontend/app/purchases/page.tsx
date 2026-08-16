@@ -2,12 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Eye, Loader2, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { PurchaseDetailDialog } from "@/app/purchases/_components/purchase-detail-dialog";
-import { PurchaseExpenseFormDialog } from "@/app/purchases/_components/purchase-expense-form-dialog";
-import { PurchaseFormDialog } from "@/app/purchases/_components/purchase-form-dialog";
 import { PurchasesEmptyState } from "@/app/purchases/_components/purchases-empty-state";
 import { PurchasesTableSkeleton } from "@/app/purchases/_components/purchases-skeletons";
 import { useAuth } from "@/components/auth-provider";
@@ -60,6 +57,7 @@ function formatMoney(value: number): string {
 
 export default function PurchasesPage() {
   const pathname = usePathname();
+  const router = useRouter();
   const isGastosView = pathname === "/purchases/gastos";
   const { user } = useAuth();
   const canDeletePurchases = hasModulePermission(user, "compras", "delete");
@@ -72,9 +70,6 @@ export default function PurchasesPage() {
   const [query, setQuery] = useState("");
   const [idProveedor, setIdProveedor] = useState<number | "">("");
   const [deleteCandidate, setDeleteCandidate] = useState<PurchaseDto | null>(null);
-  const [detailCandidate, setDetailCandidate] = useState<PurchaseDto | null>(null);
-  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
-  const [formDialogOpen, setFormDialogOpen] = useState(false);
 
   useEffect(() => {
     void loadData();
@@ -168,17 +163,6 @@ export default function PurchasesPage() {
     }
   }
 
-  function handlePurchaseCreated(_: PurchaseDto) {
-    setFormDialogOpen(false);
-    void loadData();
-    toast.success(isGastosView ? "Gasto registrado correctamente" : "Compra registrada correctamente");
-  }
-
-  function openDetailDialog(purchase: PurchaseDto) {
-    setDetailCandidate(purchase);
-    setDetailDialogOpen(true);
-  }
-
   return (
     <RequireAuth moduleKey="compras" action="read">
       <DashboardShell
@@ -241,7 +225,11 @@ export default function PurchasesPage() {
                 Recargar
               </Button>
 
-              <Button onClick={() => setFormDialogOpen(true)}>
+              <Button
+                onClick={() =>
+                  router.push(isGastosView ? "/purchases/gastos/create" : "/purchases/create")
+                }
+              >
                 <Plus className="mr-2 h-4 w-4" />
                 {isGastosView ? "Nuevo Gasto" : "Nueva Compra"}
               </Button>
@@ -311,7 +299,7 @@ export default function PurchasesPage() {
                                   <Button
                                     size="icon"
                                     variant="ghost"
-                                    onClick={() => openDetailDialog(purchase)}
+                                    onClick={() => router.push(`/purchases/${purchase.id}`)}
                                     title="Ver detalle"
                                   >
                                     <Eye className="h-4 w-4" />
@@ -387,7 +375,7 @@ export default function PurchasesPage() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
-                                  onClick={() => openDetailDialog(purchase)}
+                                  onClick={() => router.push(`/purchases/${purchase.id}`)}
                                   title="Ver detalle"
                                 >
                                   <Eye className="h-4 w-4" />
@@ -415,25 +403,6 @@ export default function PurchasesPage() {
           </TabsContent>
         </Tabs>
 
-        {isGastosView ? (
-          <PurchaseExpenseFormDialog
-            open={formDialogOpen}
-            onOpenChange={setFormDialogOpen}
-            onSuccess={handlePurchaseCreated}
-          />
-        ) : (
-          <PurchaseFormDialog
-            open={formDialogOpen}
-            onOpenChange={setFormDialogOpen}
-            onSuccess={handlePurchaseCreated}
-          />
-        )}
-
-        <PurchaseDetailDialog
-          open={detailDialogOpen}
-          onOpenChange={setDetailDialogOpen}
-          purchase={detailCandidate}
-        />
       </DashboardShell>
     </RequireAuth>
   );
