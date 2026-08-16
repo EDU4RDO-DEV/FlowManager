@@ -169,7 +169,7 @@ export default function SessionsPage() {
           ) : (
             <section
               className={cn(
-                "grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-4 transition-opacity duration-300",
+                "grid grid-cols-1 gap-4 md:grid-cols-3 transition-opacity duration-300",
                 loading ? "opacity-75" : "opacity-100",
               )}
             >
@@ -187,11 +187,10 @@ export default function SessionsPage() {
                 </CardContent>
               </Card>
 
-              <Card className="rounded-xl border border-border bg-muted/50 md:col-span-1 lg:col-span-2">
+              <Card className="rounded-xl border border-border bg-muted/50">
                 <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground">Control de anulaciones</p>
-                  <p className="mt-1 text-lg font-semibold tracking-tight">Sesiones anuladas: {metrics.anuladas}</p>
-                  <p className="text-sm text-muted-foreground">Todas las anulaciones son lógicas y restaurables.</p>
+                  <p className="text-sm text-muted-foreground">Sesiones anuladas</p>
+                  <p className="mt-1 text-2xl font-bold tracking-tight">{metrics.anuladas}</p>
                 </CardContent>
               </Card>
             </section>

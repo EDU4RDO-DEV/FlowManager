@@ -216,9 +216,8 @@ export default function UsersPage() {
 
             <Card className="rounded-xl border border-border bg-muted/50">
               <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground">Estado operativo</p>
-                <p className="mt-1 text-lg font-semibold tracking-tight">Inactivos: {metrics.inactivos}</p>
-                <p className="text-sm text-muted-foreground">Usuarios anulados pendientes de restauración.</p>
+                <p className="text-sm text-muted-foreground">Inactivos</p>
+                <p className="mt-1 text-2xl font-bold tracking-tight">{metrics.inactivos}</p>
               </CardContent>
             </Card>
           </section>

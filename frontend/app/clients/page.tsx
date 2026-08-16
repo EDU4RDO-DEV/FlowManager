@@ -179,11 +179,17 @@ export default function ClientsPage() {
                 </CardContent>
               </Card>
 
-              <Card className="rounded-xl border border-border bg-muted/50 md:col-span-1 lg:col-span-2">
+              <Card className="rounded-xl border border-border bg-muted/50">
                 <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground">Resumen de cartera</p>
-                  <p className="mt-1 text-lg font-semibold tracking-tight">Con correo: {metrics.conCorreo}</p>
-                  <p className="text-sm text-muted-foreground">Anulados: {metrics.anulados}</p>
+                  <p className="text-sm text-muted-foreground">Con correo</p>
+                  <p className="mt-1 text-2xl font-bold tracking-tight">{metrics.conCorreo}</p>
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-xl border border-border bg-muted/50">
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Anulados</p>
+                  <p className="mt-1 text-2xl font-bold tracking-tight">{metrics.anulados}</p>
                 </CardContent>
               </Card>
             </section>

@@ -206,11 +206,17 @@ export default function RolesPage() {
               </CardContent>
             </Card>
 
-            <Card className="rounded-xl border border-border bg-muted/50 md:col-span-1 lg:col-span-2">
+            <Card className="rounded-xl border border-border bg-muted/50">
               <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground">Cobertura de definición</p>
-                <p className="mt-1 text-lg font-semibold tracking-tight">Con descripción: {metrics.conDescripcion}</p>
-                <p className="text-sm text-muted-foreground">Anulados: {metrics.anulados}</p>
+                <p className="text-sm text-muted-foreground">Con descripción</p>
+                <p className="mt-1 text-2xl font-bold tracking-tight">{metrics.conDescripcion}</p>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-xl border border-border bg-muted/50">
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground">Anulados</p>
+                <p className="mt-1 text-2xl font-bold tracking-tight">{metrics.anulados}</p>
               </CardContent>
             </Card>
             </section>
