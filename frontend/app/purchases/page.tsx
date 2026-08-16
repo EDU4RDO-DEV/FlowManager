@@ -290,7 +290,12 @@ export default function PurchasesPage() {
                 </select>
               </div>
 
-              <Button variant="outline" onClick={() => void loadData()} disabled={isLoading}>
+              <Button
+                variant="outline"
+                onClick={() => void loadData()}
+                disabled={isLoading}
+                className="h-10 px-4 text-sm"
+              >
                 {isLoading ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
@@ -300,6 +305,7 @@ export default function PurchasesPage() {
               </Button>
 
               <Button
+                className="h-10 px-4 text-sm"
                 onClick={() =>
                   router.push(isGastosView ? "/purchases/gastos/create" : "/purchases/create")
                 }

@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ListPagination } from "@/components/ui/list-pagination";
 import { Label } from "@/components/ui/label";
@@ -125,13 +125,19 @@ export default function InventoryStructureIndexPage() {
             </Card>
           </section>
 
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => void loadData()}
+              disabled={isLoading}
+              className="h-10 px-4 text-sm"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+              Recargar
+            </Button>
+          </div>
+
           <Card className="module-page-card">
-            <CardHeader className="flex flex-row items-center justify-end gap-4">
-              <Button variant="outline" size="sm" onClick={() => void loadData()} disabled={isLoading}>
-                <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-                Recargar
-              </Button>
-            </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="search">Buscar producto</Label>
@@ -162,7 +168,7 @@ export default function InventoryStructureIndexPage() {
                         <TableCell>{item.categoria}</TableCell>
                         <TableCell>{item.existencia}</TableCell>
                         <TableCell className="text-right">
-                          <Button asChild size="sm" variant="outline">
+                          <Button asChild variant="outline" className="h-10 px-4 text-sm">
                             <Link href={`/inventory/${item.id}/structure`}>
                               Gestionar BOM
                               <ArrowRight className="ml-2 h-4 w-4" />

@@ -8,7 +8,7 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ListPagination } from "@/components/ui/list-pagination";
 import { Label } from "@/components/ui/label";
@@ -174,13 +174,19 @@ export default function InventoryKardexPage() {
             </Card>
           </section>
 
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => void loadData()}
+              disabled={isLoading}
+              className="h-10 px-4 text-sm"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+              Recargar
+            </Button>
+          </div>
+
           <Card className="module-page-card">
-            <CardHeader className="flex flex-row items-center justify-end gap-4">
-              <Button variant="outline" size="sm" onClick={() => void loadData()} disabled={isLoading}>
-                <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-                Recargar
-              </Button>
-            </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">

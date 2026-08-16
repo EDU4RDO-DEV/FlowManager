@@ -19,7 +19,7 @@ import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ListPagination } from "@/components/ui/list-pagination";
@@ -242,33 +242,30 @@ export default function RolesPage() {
             </section>
           )}
 
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={loadData}
+              disabled={loading}
+              className="h-10 px-4 text-sm hover:bg-muted/50 transition-colors"
+            >
+              {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+              Recargar
+            </Button>
+            {canCreateRoles ? (
+              <Button
+                asChild
+                className="h-10 px-4 text-sm bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
+              >
+                <Link href="/roles/create">
+                  <Plus className="size-4" />
+                  Nuevo rol
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+
           <Card className="module-page-card rounded-xl bg-background">
-            <CardHeader className="flex flex-row items-center justify-end gap-4">
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={loadData}
-                  disabled={loading}
-                  className="hover:bg-muted/50 transition-colors"
-                >
-                  {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                  Recargar
-                </Button>
-                {canCreateRoles ? (
-                  <Button
-                    size="sm"
-                    asChild
-                    className="bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
-                  >
-                    <Link href="/roles/create">
-                      <Plus className="size-4" />
-                      Nuevo rol
-                    </Link>
-                  </Button>
-                ) : null}
-              </div>
-            </CardHeader>
             <CardContent className="space-y-4">
               {loading && hasLoadedOnce ? (
                 <p className="text-xs text-muted-foreground">Actualizando roles...</p>

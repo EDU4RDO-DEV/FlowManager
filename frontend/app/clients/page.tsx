@@ -10,7 +10,7 @@ import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ListPagination } from "@/components/ui/list-pagination";
@@ -215,31 +215,28 @@ export default function ClientsPage() {
             </section>
           )}
 
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={loadData}
+              disabled={isLoading}
+              className="h-10 px-4 text-sm hover:bg-muted/50 transition-colors"
+            >
+              {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+              Recargar
+            </Button>
+            <Button
+              asChild
+              className="h-10 px-4 text-sm bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
+            >
+              <Link href="/clients/create">
+                <Plus className="size-4" />
+                Nuevo cliente
+              </Link>
+            </Button>
+          </div>
+
           <Card className="module-page-card rounded-xl bg-background">
-            <CardHeader className="flex flex-row items-center justify-end gap-4">
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={loadData}
-                  disabled={isLoading}
-                  className="hover:bg-muted/50 transition-colors"
-                >
-                  {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                  Recargar
-                </Button>
-                <Button
-                  size="sm"
-                  asChild
-                  className="bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
-                >
-                  <Link href="/clients/create">
-                    <Plus className="size-4" />
-                    Nuevo cliente
-                  </Link>
-                </Button>
-              </div>
-            </CardHeader>
             <CardContent className="space-y-4">
               {isLoading && hasLoadedOnce ? (
                 <p className="text-xs text-muted-foreground">Actualizando clientes...</p>

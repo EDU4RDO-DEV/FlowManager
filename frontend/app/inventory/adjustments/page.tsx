@@ -262,13 +262,19 @@ export default function AdjustmentsPage() {
                 </select>
               </div>
 
-              <Button onClick={() => router.push("/inventory/adjustments/create")} className="shrink-0">
+              <Button onClick={() => router.push("/inventory/adjustments/create")} className="h-10 shrink-0 px-4 text-sm">
                 <Plus className="mr-2 h-4 w-4" />
                 Registrar Ajuste
               </Button>
 
-              <Button variant="outline" size="icon" onClick={() => void loadData()} disabled={isLoading}>
-                <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+              <Button
+                variant="outline"
+                onClick={() => void loadData()}
+                disabled={isLoading}
+                className="h-10 px-4 text-sm"
+              >
+                <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+                Recargar
               </Button>
             </div>
           </div>
