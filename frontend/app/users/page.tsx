@@ -46,7 +46,11 @@ export default function UsersPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [activePage, setActivePage] = useState(1);
+  const [trashPage, setTrashPage] = useState(1);
   const [deleteCandidate, setDeleteCandidate] = useState<UserDto | null>(null);
+
+  const PAGE_SIZE = 10;
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -112,6 +116,21 @@ export default function UsersPage() {
       return String(item.idRol) === roleFilter;
     });
   }, [anulatedUsers, query, roleFilter, roleById]);
+
+  const paginatedActiveUsers = useMemo(() => {
+    const start = (activePage - 1) * PAGE_SIZE;
+    return filteredUsers.slice(start, start + PAGE_SIZE);
+  }, [activePage, filteredUsers]);
+
+  const paginatedTrashUsers = useMemo(() => {
+    const start = (trashPage - 1) * PAGE_SIZE;
+    return filteredAnulatedUsers.slice(start, start + PAGE_SIZE);
+  }, [filteredAnulatedUsers, trashPage]);
+
+  useEffect(() => {
+    setActivePage(1);
+    setTrashPage(1);
+  }, [query, roleFilter]);
 
   const metrics = useMemo(() => {
     const total = activeUsers.length + anulatedUsers.length;
@@ -237,7 +256,11 @@ export default function UsersPage() {
 
                 <TabsContent value="activos" className="mt-4">
                   <UsersTable
-                    users={filteredUsers}
+                    users={paginatedActiveUsers}
+                    totalItems={filteredUsers.length}
+                    page={activePage}
+                    pageSize={PAGE_SIZE}
+                    onPageChange={setActivePage}
                     roles={roles}
                     mode="activos"
                     query={query}
@@ -261,7 +284,11 @@ export default function UsersPage() {
 
                 <TabsContent value="anulados" className="mt-4">
                   <UsersTable
-                    users={filteredAnulatedUsers}
+                    users={paginatedTrashUsers}
+                    totalItems={filteredAnulatedUsers.length}
+                    page={trashPage}
+                    pageSize={PAGE_SIZE}
+                    onPageChange={setTrashPage}
                     roles={roles}
                     mode="anulados"
                     query={query}

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ListPagination } from "@/components/ui/list-pagination";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -59,8 +60,12 @@ export default function EmployeesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
+  const [activePage, setActivePage] = useState(1);
+  const [trashPage, setTrashPage] = useState(1);
   const [deleteCandidate, setDeleteCandidate] = useState<EmployeeDto | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const PAGE_SIZE = 10;
 
   async function loadData() {
     setIsLoading(true);
@@ -105,6 +110,21 @@ export default function EmployeesPage() {
       );
     });
   }, [anulatedEmployees, query]);
+
+  const paginatedActiveEmployees = useMemo(() => {
+    const start = (activePage - 1) * PAGE_SIZE;
+    return filteredEmployees.slice(start, start + PAGE_SIZE);
+  }, [activePage, filteredEmployees]);
+
+  const paginatedTrashEmployees = useMemo(() => {
+    const start = (trashPage - 1) * PAGE_SIZE;
+    return filteredAnulatedEmployees.slice(start, start + PAGE_SIZE);
+  }, [filteredAnulatedEmployees, trashPage]);
+
+  useEffect(() => {
+    setActivePage(1);
+    setTrashPage(1);
+  }, [query]);
 
   const metrics = useMemo(() => {
     const total = activeEmployees.length + anulatedEmployees.length;
@@ -278,7 +298,7 @@ export default function EmployeesPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {filteredEmployees.map((employee) => (
+                            {paginatedActiveEmployees.map((employee) => (
                               <TableRow key={employee.id}>
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{employee.id}</TableCell>
                                 <TableCell className="font-medium">{employee.entidad.nombreCompleto}</TableCell>
@@ -313,6 +333,15 @@ export default function EmployeesPage() {
                           </TableBody>
                         </Table>
                       </div>
+                      <div className="px-4 pb-4 pt-2">
+                        <ListPagination
+                          page={activePage}
+                          totalItems={filteredEmployees.length}
+                          pageSize={PAGE_SIZE}
+                          onPageChange={setActivePage}
+                          itemLabel="empleados"
+                        />
+                      </div>
                     </div>
                   )}
                 </TabsContent>
@@ -337,7 +366,7 @@ export default function EmployeesPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {filteredAnulatedEmployees.map((employee) => (
+                            {paginatedTrashEmployees.map((employee) => (
                               <TableRow key={employee.id}>
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{employee.id}</TableCell>
                                 <TableCell className="font-medium">{employee.entidad.nombreCompleto}</TableCell>
@@ -358,6 +387,15 @@ export default function EmployeesPage() {
                             ))}
                           </TableBody>
                         </Table>
+                      </div>
+                      <div className="px-4 pb-4 pt-2">
+                        <ListPagination
+                          page={trashPage}
+                          totalItems={filteredAnulatedEmployees.length}
+                          pageSize={PAGE_SIZE}
+                          onPageChange={setTrashPage}
+                          itemLabel="empleados"
+                        />
                       </div>
                     </div>
                   )}

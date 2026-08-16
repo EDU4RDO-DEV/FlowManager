@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ListPagination } from "@/components/ui/list-pagination";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -47,6 +48,10 @@ export default function InventoryKardexPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
   const [movementFilter, setMovementFilter] = useState<"" | "ENTRADA" | "SALIDA">("");
+  const [activePage, setActivePage] = useState(1);
+  const [trashPage, setTrashPage] = useState(1);
+
+  const PAGE_SIZE = 10;
 
   useEffect(() => {
     void loadData();
@@ -99,6 +104,21 @@ export default function InventoryKardexPage() {
       return matchesQuery && matchesType;
     });
   }, [anulatedMovements, query, movementFilter]);
+
+  const paginatedActive = useMemo(() => {
+    const start = (activePage - 1) * PAGE_SIZE;
+    return filteredActive.slice(start, start + PAGE_SIZE);
+  }, [activePage, filteredActive]);
+
+  const paginatedAnulated = useMemo(() => {
+    const start = (trashPage - 1) * PAGE_SIZE;
+    return filteredAnulated.slice(start, start + PAGE_SIZE);
+  }, [filteredAnulated, trashPage]);
+
+  useEffect(() => {
+    setActivePage(1);
+    setTrashPage(1);
+  }, [query, movementFilter]);
 
   return (
     <RequireAuth moduleKey="inventario" action="read">
@@ -175,7 +195,7 @@ export default function InventoryKardexPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredActive.map((movement) => (
+                        {paginatedActive.map((movement) => (
                           <TableRow key={movement.id}>
                             <TableCell className="whitespace-nowrap text-xs">
                               {formatDate(movement.fechaRegistro)}
@@ -224,6 +244,15 @@ export default function InventoryKardexPage() {
                       </TableBody>
                     </Table>
                   </div>
+                  <div className="px-4 pb-4 pt-2">
+                    <ListPagination
+                      page={activePage}
+                      totalItems={filteredActive.length}
+                      pageSize={PAGE_SIZE}
+                      onPageChange={setActivePage}
+                      itemLabel="movimientos"
+                    />
+                  </div>
                 </TabsContent>
 
                 <TabsContent value="anulados" className="mt-4">
@@ -242,7 +271,7 @@ export default function InventoryKardexPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredAnulated.map((movement) => (
+                        {paginatedAnulated.map((movement) => (
                           <TableRow key={movement.id} className="opacity-70">
                             <TableCell className="whitespace-nowrap text-xs">
                               {formatDate(movement.fechaRegistro)}
@@ -292,6 +321,15 @@ export default function InventoryKardexPage() {
                         ) : null}
                       </TableBody>
                     </Table>
+                  </div>
+                  <div className="px-4 pb-4 pt-2">
+                    <ListPagination
+                      page={trashPage}
+                      totalItems={filteredAnulated.length}
+                      pageSize={PAGE_SIZE}
+                      onPageChange={setTrashPage}
+                      itemLabel="movimientos"
+                    />
                   </div>
                 </TabsContent>
               </Tabs>

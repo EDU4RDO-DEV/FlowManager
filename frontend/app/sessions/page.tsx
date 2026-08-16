@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ListPagination } from "@/components/ui/list-pagination";
 import {
   Table,
   TableBody,
@@ -53,8 +54,12 @@ export default function SessionsPage() {
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
+  const [activePage, setActivePage] = useState(1);
+  const [trashPage, setTrashPage] = useState(1);
   const [deleteCandidate, setDeleteCandidate] = useState<SessionDto | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const PAGE_SIZE = 10;
 
   async function loadData() {
     setLoading(true);
@@ -97,6 +102,21 @@ export default function SessionsPage() {
       );
     });
   }, [sessionsAnuladas, query]);
+
+  const paginatedActiveSessions = useMemo(() => {
+    const start = (activePage - 1) * PAGE_SIZE;
+    return filteredActivas.slice(start, start + PAGE_SIZE);
+  }, [activePage, filteredActivas]);
+
+  const paginatedTrashSessions = useMemo(() => {
+    const start = (trashPage - 1) * PAGE_SIZE;
+    return filteredAnuladas.slice(start, start + PAGE_SIZE);
+  }, [filteredAnuladas, trashPage]);
+
+  useEffect(() => {
+    setActivePage(1);
+    setTrashPage(1);
+  }, [query]);
 
   const metrics = useMemo(() => {
     const total = sessionsActivas.length + sessionsAnuladas.length;
@@ -260,7 +280,7 @@ export default function SessionsPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {filteredActivas.map((item) => (
+                            {paginatedActiveSessions.map((item) => (
                               <TableRow key={item.id}>
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{item.id}</TableCell>
                                 <TableCell>{item.idUsuario}</TableCell>
@@ -284,6 +304,15 @@ export default function SessionsPage() {
                             ))}
                           </TableBody>
                         </Table>
+                      </div>
+                      <div className="px-4 pb-4 pt-2">
+                        <ListPagination
+                          page={activePage}
+                          totalItems={filteredActivas.length}
+                          pageSize={PAGE_SIZE}
+                          onPageChange={setActivePage}
+                          itemLabel="sesiones"
+                        />
                       </div>
                     </div>
                   )}
@@ -310,7 +339,7 @@ export default function SessionsPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {filteredAnuladas.map((item) => (
+                            {paginatedTrashSessions.map((item) => (
                               <TableRow key={item.id}>
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{item.id}</TableCell>
                                 <TableCell>{item.idUsuario}</TableCell>
@@ -333,6 +362,15 @@ export default function SessionsPage() {
                             ))}
                           </TableBody>
                         </Table>
+                      </div>
+                      <div className="px-4 pb-4 pt-2">
+                        <ListPagination
+                          page={trashPage}
+                          totalItems={filteredAnuladas.length}
+                          pageSize={PAGE_SIZE}
+                          onPageChange={setTrashPage}
+                          itemLabel="sesiones"
+                        />
                       </div>
                     </div>
                   )}

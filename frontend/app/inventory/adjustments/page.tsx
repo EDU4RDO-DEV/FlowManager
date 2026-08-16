@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ListPagination } from "@/components/ui/list-pagination";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -50,8 +51,12 @@ export default function AdjustmentsPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
   const [tipoFilter, setTipoFilter] = useState<"" | "ENTRADA" | "SALIDA">("");
+  const [activePage, setActivePage] = useState(1);
+  const [trashPage, setTrashPage] = useState(1);
   const [deleteCandidate, setDeleteCandidate] = useState<AdjustmentDto | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const PAGE_SIZE = 10;
 
   useEffect(() => {
     void loadData();
@@ -96,6 +101,21 @@ export default function AdjustmentsPage() {
       return matchesQuery && matchesTipo;
     });
   }, [anulatedAdjustments, query, tipoFilter]);
+
+  const paginatedActiveAdjustments = useMemo(() => {
+    const start = (activePage - 1) * PAGE_SIZE;
+    return filteredActiveAdjustments.slice(start, start + PAGE_SIZE);
+  }, [activePage, filteredActiveAdjustments]);
+
+  const paginatedTrashAdjustments = useMemo(() => {
+    const start = (trashPage - 1) * PAGE_SIZE;
+    return filteredAnulatedAdjustments.slice(start, start + PAGE_SIZE);
+  }, [filteredAnulatedAdjustments, trashPage]);
+
+  useEffect(() => {
+    setActivePage(1);
+    setTrashPage(1);
+  }, [query, tipoFilter]);
 
   async function confirmDeleteAdjustment(adj: AdjustmentDto) {
     if (!user) return;
@@ -230,7 +250,7 @@ export default function AdjustmentsPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredActiveAdjustments.map((adj) => (
+                        {paginatedActiveAdjustments.map((adj) => (
                           <TableRow key={adj.id}>
                             <TableCell className="font-mono font-medium">#{adj.numeroAjuste}</TableCell>
                             <TableCell>{adj.inventarioItem.nombre}</TableCell>
@@ -283,6 +303,15 @@ export default function AdjustmentsPage() {
                       </TableBody>
                     </Table>
                   </div>
+                  <div className="px-4 pb-4 pt-2">
+                    <ListPagination
+                      page={activePage}
+                      totalItems={filteredActiveAdjustments.length}
+                      pageSize={PAGE_SIZE}
+                      onPageChange={setActivePage}
+                      itemLabel="ajustes"
+                    />
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -314,7 +343,7 @@ export default function AdjustmentsPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredAnulatedAdjustments.map((adj) => (
+                        {paginatedTrashAdjustments.map((adj) => (
                           <TableRow key={adj.id} className="opacity-60">
                             <TableCell className="font-mono font-medium">#{adj.numeroAjuste}</TableCell>
                             <TableCell>{adj.inventarioItem.nombre}</TableCell>
@@ -347,6 +376,15 @@ export default function AdjustmentsPage() {
                         ))}
                       </TableBody>
                     </Table>
+                  </div>
+                  <div className="px-4 pb-4 pt-2">
+                    <ListPagination
+                      page={trashPage}
+                      totalItems={filteredAnulatedAdjustments.length}
+                      pageSize={PAGE_SIZE}
+                      onPageChange={setTrashPage}
+                      itemLabel="ajustes"
+                    />
                   </div>
                 </CardContent>
               </Card>

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ListPagination } from "@/components/ui/list-pagination";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -51,8 +52,12 @@ export default function ProvidersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
+  const [activePage, setActivePage] = useState(1);
+  const [trashPage, setTrashPage] = useState(1);
   const [deleteCandidate, setDeleteCandidate] = useState<ProviderDto | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const PAGE_SIZE = 10;
 
   async function loadData() {
     setIsLoading(true);
@@ -95,6 +100,21 @@ export default function ProvidersPage() {
       );
     });
   }, [anulatedProviders, query]);
+
+  const paginatedActiveProviders = useMemo(() => {
+    const start = (activePage - 1) * PAGE_SIZE;
+    return filteredProviders.slice(start, start + PAGE_SIZE);
+  }, [activePage, filteredProviders]);
+
+  const paginatedTrashProviders = useMemo(() => {
+    const start = (trashPage - 1) * PAGE_SIZE;
+    return filteredAnulatedProviders.slice(start, start + PAGE_SIZE);
+  }, [filteredAnulatedProviders, trashPage]);
+
+  useEffect(() => {
+    setActivePage(1);
+    setTrashPage(1);
+  }, [query]);
 
   const metrics = useMemo(() => {
     const total = activeProviders.length + anulatedProviders.length;
@@ -267,7 +287,7 @@ export default function ProvidersPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {filteredProviders.map((provider) => (
+                            {paginatedActiveProviders.map((provider) => (
                               <TableRow key={provider.id}>
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{provider.id}</TableCell>
                                 <TableCell className="font-medium">{provider.entidad.nombreCompleto}</TableCell>
@@ -301,6 +321,15 @@ export default function ProvidersPage() {
                           </TableBody>
                         </Table>
                       </div>
+                      <div className="px-4 pb-4 pt-2">
+                        <ListPagination
+                          page={activePage}
+                          totalItems={filteredProviders.length}
+                          pageSize={PAGE_SIZE}
+                          onPageChange={setActivePage}
+                          itemLabel="proveedores"
+                        />
+                      </div>
                     </div>
                   )}
                 </TabsContent>
@@ -324,7 +353,7 @@ export default function ProvidersPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {filteredAnulatedProviders.map((provider) => (
+                            {paginatedTrashProviders.map((provider) => (
                               <TableRow key={provider.id}>
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{provider.id}</TableCell>
                                 <TableCell className="font-medium">{provider.entidad.nombreCompleto}</TableCell>
@@ -344,6 +373,15 @@ export default function ProvidersPage() {
                             ))}
                           </TableBody>
                         </Table>
+                      </div>
+                      <div className="px-4 pb-4 pt-2">
+                        <ListPagination
+                          page={trashPage}
+                          totalItems={filteredAnulatedProviders.length}
+                          pageSize={PAGE_SIZE}
+                          onPageChange={setTrashPage}
+                          itemLabel="proveedores"
+                        />
                       </div>
                     </div>
                   )}

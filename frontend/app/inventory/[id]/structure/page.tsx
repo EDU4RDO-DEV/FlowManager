@@ -19,6 +19,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
+import { ListPagination } from "@/components/ui/list-pagination";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -75,7 +76,11 @@ export default function ProductStructurePage() {
   const [createMateriaPrimaId, setCreateMateriaPrimaId] = useState<number | null>(null);
   const [createCantidad, setCreateCantidad] = useState("");
   const [createComponentOpen, setCreateComponentOpen] = useState(false);
+  const [activePage, setActivePage] = useState(1);
+  const [trashPage, setTrashPage] = useState(1);
   const [isSavingForm, setIsSavingForm] = useState(false);
+
+  const PAGE_SIZE = 10;
 
   useEffect(() => {
     void loadData();
@@ -130,6 +135,21 @@ export default function ProductStructurePage() {
         !activeComponentIds.has(p.id),
     );
   }, [activeStructure, allProducts, productId]);
+
+  const paginatedActiveStructure = useMemo(() => {
+    const start = (activePage - 1) * PAGE_SIZE;
+    return activeStructure.slice(start, start + PAGE_SIZE);
+  }, [activePage, activeStructure]);
+
+  const paginatedTrashStructure = useMemo(() => {
+    const start = (trashPage - 1) * PAGE_SIZE;
+    return anulatedStructure.slice(start, start + PAGE_SIZE);
+  }, [anulatedStructure, trashPage]);
+
+  useEffect(() => {
+    setActivePage(1);
+    setTrashPage(1);
+  }, [activeStructure.length, anulatedStructure.length]);
 
   async function handleCreateComponent(data: { idMateriaPrima: number; cantidadRequerida: number }) {
     if (!canCreateStructure) {
@@ -508,7 +528,7 @@ export default function ProductStructurePage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {activeStructure.map((item) => (
+                        {paginatedActiveStructure.map((item) => (
                           <TableRow key={item.id}>
                             <TableCell className="font-medium">{item.materiaPrima.id}</TableCell>
                             <TableCell>{item.materiaPrima.nombre}</TableCell>
@@ -553,6 +573,13 @@ export default function ProductStructurePage() {
                     </Table>
                   </CardContent>
                 </Card>
+                <ListPagination
+                  page={activePage}
+                  totalItems={activeStructure.length}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={setActivePage}
+                  itemLabel="componentes"
+                />
               </div>
             )}
           </TabsContent>
@@ -580,7 +607,7 @@ export default function ProductStructurePage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {anulatedStructure.map((item) => (
+                        {paginatedTrashStructure.map((item) => (
                           <TableRow key={item.id}>
                             <TableCell className="font-medium">{item.materiaPrima.id}</TableCell>
                             <TableCell>{item.materiaPrima.nombre}</TableCell>
@@ -610,6 +637,13 @@ export default function ProductStructurePage() {
                     </Table>
                   </CardContent>
                 </Card>
+                <ListPagination
+                  page={trashPage}
+                  totalItems={anulatedStructure.length}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={setTrashPage}
+                  itemLabel="componentes"
+                />
               </div>
             )}
           </TabsContent>

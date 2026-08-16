@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ListPagination } from "@/components/ui/list-pagination";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -71,8 +72,12 @@ export default function InventoryPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<CategoryFilter>("");
+  const [activePage, setActivePage] = useState(1);
+  const [trashPage, setTrashPage] = useState(1);
   const [deleteCandidate, setDeleteCandidate] = useState<ProductDto | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const PAGE_SIZE = 10;
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -127,6 +132,21 @@ export default function InventoryPage() {
     const finales = activeProducts.filter((item) => item.categoria === "PRODUCTO_TERMINADO").length;
     return { total, activos, sinExistencia, finales };
   }, [activeProducts, anulatedProducts]);
+
+  const paginatedActiveProducts = useMemo(() => {
+    const start = (activePage - 1) * PAGE_SIZE;
+    return activeProducts.slice(start, start + PAGE_SIZE);
+  }, [activePage, activeProducts]);
+
+  const paginatedTrashProducts = useMemo(() => {
+    const start = (trashPage - 1) * PAGE_SIZE;
+    return anulatedProducts.slice(start, start + PAGE_SIZE);
+  }, [anulatedProducts, trashPage]);
+
+  useEffect(() => {
+    setActivePage(1);
+    setTrashPage(1);
+  }, [query, category]);
 
   async function confirmDeleteProduct() {
     if (!deleteCandidate) return;
@@ -324,7 +344,7 @@ export default function InventoryPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {activeProducts.map((product) => (
+                            {paginatedActiveProducts.map((product) => (
                               <TableRow key={product.id}>
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{product.id}</TableCell>
                                 <TableCell className="font-medium">
@@ -388,6 +408,15 @@ export default function InventoryPage() {
                           </TableBody>
                         </Table>
                       </div>
+                      <div className="px-4 pb-4 pt-2">
+                        <ListPagination
+                          page={activePage}
+                          totalItems={activeProducts.length}
+                          pageSize={PAGE_SIZE}
+                          onPageChange={setActivePage}
+                          itemLabel="productos"
+                        />
+                      </div>
                     </div>
                   )}
                 </TabsContent>
@@ -419,7 +448,7 @@ export default function InventoryPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {anulatedProducts.map((product) => (
+                            {paginatedTrashProducts.map((product) => (
                               <TableRow key={product.id}>
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{product.id}</TableCell>
                                 <TableCell className="font-medium">{product.nombre}</TableCell>
@@ -442,6 +471,15 @@ export default function InventoryPage() {
                             ))}
                           </TableBody>
                         </Table>
+                      </div>
+                      <div className="px-4 pb-4 pt-2">
+                        <ListPagination
+                          page={trashPage}
+                          totalItems={anulatedProducts.length}
+                          pageSize={PAGE_SIZE}
+                          onPageChange={setTrashPage}
+                          itemLabel="productos"
+                        />
                       </div>
                     </div>
                   )}

@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ListPagination } from "@/components/ui/list-pagination";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -70,8 +71,12 @@ export default function PurchasesPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
   const [idProveedor, setIdProveedor] = useState<number | "">("");
+  const [activePage, setActivePage] = useState(1);
+  const [trashPage, setTrashPage] = useState(1);
   const [deleteCandidate, setDeleteCandidate] = useState<PurchaseDto | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const PAGE_SIZE = 10;
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -119,6 +124,21 @@ export default function PurchasesPage() {
     () => [...anulatedPurchases].sort((a, b) => b.id - a.id),
     [anulatedPurchases],
   );
+
+  const paginatedActivePurchases = useMemo(() => {
+    const start = (activePage - 1) * PAGE_SIZE;
+    return sortedActivePurchases.slice(start, start + PAGE_SIZE);
+  }, [activePage, sortedActivePurchases]);
+
+  const paginatedTrashPurchases = useMemo(() => {
+    const start = (trashPage - 1) * PAGE_SIZE;
+    return sortedAnulatedPurchases.slice(start, start + PAGE_SIZE);
+  }, [sortedAnulatedPurchases, trashPage]);
+
+  useEffect(() => {
+    setActivePage(1);
+    setTrashPage(1);
+  }, [query, idProveedor, isGastosView]);
 
   async function confirmDeletePurchase(purchase: PurchaseDto) {
     if (!canDeletePurchases) {
@@ -271,7 +291,7 @@ export default function PurchasesPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {sortedActivePurchases.map((purchase) => (
+                        {paginatedActivePurchases.map((purchase) => (
                           <TableRow key={purchase.id}>
                             <TableCell className="font-mono">#{purchase.numeroCompra}</TableCell>
                             <TableCell>{purchase.numeroFactura}</TableCell>
@@ -312,6 +332,15 @@ export default function PurchasesPage() {
                       </TableBody>
                     </Table>
                   </div>
+                  <div className="px-4 pb-4 pt-2">
+                    <ListPagination
+                      page={activePage}
+                      totalItems={sortedActivePurchases.length}
+                      pageSize={PAGE_SIZE}
+                      onPageChange={setActivePage}
+                      itemLabel={isGastosView ? "gastos" : "compras"}
+                    />
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -345,7 +374,7 @@ export default function PurchasesPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {sortedAnulatedPurchases.map((purchase) => (
+                        {paginatedTrashPurchases.map((purchase) => (
                           <TableRow key={purchase.id} className="opacity-65">
                             <TableCell className="font-mono">#{purchase.numeroCompra}</TableCell>
                             <TableCell>{purchase.numeroFactura}</TableCell>
@@ -386,6 +415,15 @@ export default function PurchasesPage() {
                         ))}
                       </TableBody>
                     </Table>
+                  </div>
+                  <div className="px-4 pb-4 pt-2">
+                    <ListPagination
+                      page={trashPage}
+                      totalItems={sortedAnulatedPurchases.length}
+                      pageSize={PAGE_SIZE}
+                      onPageChange={setTrashPage}
+                      itemLabel={isGastosView ? "gastos" : "compras"}
+                    />
                   </div>
                 </CardContent>
               </Card>

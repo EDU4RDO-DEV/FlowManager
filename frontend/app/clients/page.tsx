@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ListPagination } from "@/components/ui/list-pagination";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -51,8 +52,12 @@ export default function ClientsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
+  const [activePage, setActivePage] = useState(1);
+  const [trashPage, setTrashPage] = useState(1);
   const [deleteCandidate, setDeleteCandidate] = useState<ClientDto | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const PAGE_SIZE = 10;
 
   async function loadData() {
     setIsLoading(true);
@@ -97,6 +102,21 @@ export default function ClientsPage() {
       );
     });
   }, [anulatedClients, query]);
+
+  const paginatedActiveClients = useMemo(() => {
+    const start = (activePage - 1) * PAGE_SIZE;
+    return filteredClients.slice(start, start + PAGE_SIZE);
+  }, [activePage, filteredClients]);
+
+  const paginatedTrashClients = useMemo(() => {
+    const start = (trashPage - 1) * PAGE_SIZE;
+    return filteredAnulatedClients.slice(start, start + PAGE_SIZE);
+  }, [filteredAnulatedClients, trashPage]);
+
+  useEffect(() => {
+    setActivePage(1);
+    setTrashPage(1);
+  }, [query]);
 
   const metrics = useMemo(() => {
     const total = activeClients.length + anulatedClients.length;
@@ -270,7 +290,7 @@ export default function ClientsPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {filteredClients.map((client) => (
+                            {paginatedActiveClients.map((client) => (
                               <TableRow key={client.id}>
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{client.id}</TableCell>
                                 <TableCell className="font-medium">{client.entidad.nombreCompleto}</TableCell>
@@ -305,6 +325,15 @@ export default function ClientsPage() {
                           </TableBody>
                         </Table>
                       </div>
+                      <div className="px-4 pb-4 pt-2">
+                        <ListPagination
+                          page={activePage}
+                          totalItems={filteredClients.length}
+                          pageSize={PAGE_SIZE}
+                          onPageChange={setActivePage}
+                          itemLabel="clientes"
+                        />
+                      </div>
                     </div>
                   )}
                 </TabsContent>
@@ -329,7 +358,7 @@ export default function ClientsPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {filteredAnulatedClients.map((client) => (
+                            {paginatedTrashClients.map((client) => (
                               <TableRow key={client.id}>
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{client.id}</TableCell>
                                 <TableCell className="font-medium">{client.entidad.nombreCompleto}</TableCell>
@@ -350,6 +379,15 @@ export default function ClientsPage() {
                             ))}
                           </TableBody>
                         </Table>
+                      </div>
+                      <div className="px-4 pb-4 pt-2">
+                        <ListPagination
+                          page={trashPage}
+                          totalItems={filteredAnulatedClients.length}
+                          pageSize={PAGE_SIZE}
+                          onPageChange={setTrashPage}
+                          itemLabel="clientes"
+                        />
                       </div>
                     </div>
                   )}

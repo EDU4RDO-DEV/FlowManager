@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ListPagination } from "@/components/ui/list-pagination";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -64,8 +65,12 @@ export default function RolesPage() {
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
+  const [activePage, setActivePage] = useState(1);
+  const [trashPage, setTrashPage] = useState(1);
   const [deleteCandidate, setDeleteCandidate] = useState<RoleDto | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const PAGE_SIZE = 10;
 
   async function loadData() {
     setLoading(true);
@@ -108,6 +113,21 @@ export default function RolesPage() {
       );
     });
   }, [rolesAnulados, query]);
+
+  const paginatedActiveRoles = useMemo(() => {
+    const start = (activePage - 1) * PAGE_SIZE;
+    return filteredRolesActivos.slice(start, start + PAGE_SIZE);
+  }, [activePage, filteredRolesActivos]);
+
+  const paginatedTrashRoles = useMemo(() => {
+    const start = (trashPage - 1) * PAGE_SIZE;
+    return filteredRolesAnulados.slice(start, start + PAGE_SIZE);
+  }, [filteredRolesAnulados, trashPage]);
+
+  useEffect(() => {
+    setActivePage(1);
+    setTrashPage(1);
+  }, [query]);
 
   const metrics = useMemo(() => {
     const total = rolesActivos.length + rolesAnulados.length;
@@ -302,7 +322,7 @@ export default function RolesPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {filteredRolesActivos.map((role) => (
+                            {paginatedActiveRoles.map((role) => (
                               <TableRow key={role.id}>
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{role.id}</TableCell>
                                 <TableCell className="font-medium">{role.nombre}</TableCell>
@@ -342,6 +362,15 @@ export default function RolesPage() {
                           </TableBody>
                         </Table>
                       </div>
+                      <div className="px-4 pb-4 pt-2">
+                        <ListPagination
+                          page={activePage}
+                          totalItems={filteredRolesActivos.length}
+                          pageSize={PAGE_SIZE}
+                          onPageChange={setActivePage}
+                          itemLabel="roles"
+                        />
+                      </div>
                     </div>
                   )}
                 </TabsContent>
@@ -365,7 +394,7 @@ export default function RolesPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {filteredRolesAnulados.map((role) => (
+                            {paginatedTrashRoles.map((role) => (
                               <TableRow key={role.id}>
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{role.id}</TableCell>
                                 <TableCell className="font-medium">{role.nombre}</TableCell>
@@ -388,6 +417,15 @@ export default function RolesPage() {
                             ))}
                           </TableBody>
                         </Table>
+                      </div>
+                      <div className="px-4 pb-4 pt-2">
+                        <ListPagination
+                          page={trashPage}
+                          totalItems={filteredRolesAnulados.length}
+                          pageSize={PAGE_SIZE}
+                          onPageChange={setTrashPage}
+                          itemLabel="roles"
+                        />
                       </div>
                     </div>
                   )}

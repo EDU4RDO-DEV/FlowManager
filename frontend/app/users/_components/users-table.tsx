@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ListPagination } from "@/components/ui/list-pagination";
 import { Label } from "@/components/ui/label";
 import {
   Table,
@@ -24,6 +25,10 @@ import { UsersTableSkeleton } from "@/app/users/_components/users-skeletons";
 
 type UsersTableProps = {
   users: UserDto[];
+  totalItems: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (nextPage: number) => void;
   roles: RoleDto[];
   mode?: "activos" | "anulados";
   query: string;
@@ -45,6 +50,10 @@ type UsersTableProps = {
 
 export function UsersTable({
   users,
+  totalItems,
+  page,
+  pageSize,
+  onPageChange,
   roles,
   mode = "activos",
   query,
@@ -218,6 +227,16 @@ export function UsersTable({
                   ))}
                 </TableBody>
               </Table>
+            </div>
+
+            <div className="px-4 pb-4 pt-2">
+              <ListPagination
+                page={page}
+                totalItems={totalItems}
+                pageSize={pageSize}
+                onPageChange={onPageChange}
+                itemLabel="usuarios"
+              />
             </div>
           </div>
         )}

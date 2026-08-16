@@ -10,6 +10,7 @@ import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ListPagination } from "@/components/ui/list-pagination";
 import { Label } from "@/components/ui/label";
 import {
   Table,
@@ -27,6 +28,9 @@ export default function InventoryStructureIndexPage() {
   const [items, setItems] = useState<ProductDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+
+  const PAGE_SIZE = 10;
 
   useEffect(() => {
     void loadData();
@@ -57,6 +61,15 @@ export default function InventoryStructureIndexPage() {
       item.nombre.toLowerCase().includes(normalized),
     );
   }, [items, query]);
+
+  const paginatedItems = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
 
   return (
     <RequireAuth>
@@ -101,7 +114,7 @@ export default function InventoryStructureIndexPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.map((item) => (
+                    {paginatedItems.map((item) => (
                       <TableRow key={item.id}>
                         <TableCell className="font-mono text-xs">#{item.id}</TableCell>
                         <TableCell className="font-medium">{item.nombre}</TableCell>
@@ -128,6 +141,14 @@ export default function InventoryStructureIndexPage() {
                   </TableBody>
                 </Table>
               </div>
+
+              <ListPagination
+                page={page}
+                totalItems={filtered.length}
+                pageSize={PAGE_SIZE}
+                onPageChange={setPage}
+                itemLabel="productos"
+              />
             </CardContent>
           </Card>
         </div>
