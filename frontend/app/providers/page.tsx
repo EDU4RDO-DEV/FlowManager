@@ -6,6 +6,7 @@ import { BadgeCheck, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2, Truck 
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +53,7 @@ export default function ProvidersPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
   const [deleteCandidate, setDeleteCandidate] = useState<ProviderDto | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   async function loadData() {
     setIsLoading(true);
@@ -106,6 +108,7 @@ export default function ProvidersPage() {
     if (!deleteCandidate) return;
 
     try {
+      setIsDeleting(true);
       await deleteProvider(
         deleteCandidate.id,
         user?.id ? { idUsuarioAnulador: user.id } : undefined,
@@ -124,6 +127,8 @@ export default function ProvidersPage() {
       setDeleteCandidate(null);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo eliminar el proveedor."));
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -344,26 +349,19 @@ export default function ProvidersPage() {
           </Card>
         </div>
 
-        {deleteCandidate ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <Card className="w-full max-w-md rounded-xl border border-border bg-background">
-              <CardHeader>
-                <CardTitle className="text-xl font-bold tracking-tight">Confirmar eliminacion</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Esta accion anulara al proveedor <span className="font-medium text-foreground">{deleteCandidate.entidad.nombreCompleto}</span>.
-                </p>
-              </CardHeader>
-              <CardContent className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setDeleteCandidate(null)}>
-                  Cancelar
-                </Button>
-                <Button variant="destructive" onClick={confirmDeleteProvider}>
-                  Confirmar
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        ) : null}
+        <ConfirmActionDialog
+          open={deleteCandidate !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setDeleteCandidate(null);
+            }
+          }}
+          title="Confirmar anulación de proveedor"
+          description={`Esta acción anulará a ${deleteCandidate?.entidad.nombreCompleto ?? "este proveedor"}.`}
+          confirmLabel={isDeleting ? "Anulando..." : "Anular"}
+          loading={isDeleting}
+          onConfirm={confirmDeleteProvider}
+        />
       </DashboardShell>
     </RequireAuth>
   );

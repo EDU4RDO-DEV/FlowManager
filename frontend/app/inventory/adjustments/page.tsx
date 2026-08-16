@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +25,6 @@ import {
 } from "@/components/ui/table";
 import { AdjustmentEmptyState } from "@/app/inventory/adjustments/_components/adjustment-empty-state";
 import { TableSkeleton } from "@/app/inventory/adjustments/_components/adjustment-skeletons";
-import { AdjustmentFormDialog } from "@/app/inventory/adjustments/_components/adjustment-form-dialog";
 import { getApiErrorMessage } from "@/lib/api";
 import {
   deleteAdjustment,
@@ -41,6 +42,7 @@ function formatDate(value: string | null): string {
 }
 
 export default function AdjustmentsPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const [activeAdjustments, setActiveAdjustments] = useState<AdjustmentDto[]>([]);
   const [anulatedAdjustments, setAnulatedAdjustments] = useState<AdjustmentDto[]>([]);
@@ -49,7 +51,7 @@ export default function AdjustmentsPage() {
   const [query, setQuery] = useState("");
   const [tipoFilter, setTipoFilter] = useState<"" | "ENTRADA" | "SALIDA">("");
   const [deleteCandidate, setDeleteCandidate] = useState<AdjustmentDto | null>(null);
-  const [formDialogOpen, setFormDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     void loadData();
@@ -99,6 +101,7 @@ export default function AdjustmentsPage() {
     if (!user) return;
 
     try {
+      setIsDeleting(true);
       await deleteAdjustment(adj.id);
       toast.success("Ajuste anulado exitosamente");
 
@@ -116,6 +119,8 @@ export default function AdjustmentsPage() {
       setDeleteCandidate(null);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo anular el ajuste"));
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -140,12 +145,6 @@ export default function AdjustmentsPage() {
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo restaurar el ajuste"));
     }
-  }
-
-  function handleFormSuccess(newAdjustment: AdjustmentDto) {
-    setActiveAdjustments((prev) => [newAdjustment, ...prev]);
-    setFormDialogOpen(false);
-    toast.success("Ajuste registrado exitosamente");
   }
 
   return (
@@ -195,7 +194,7 @@ export default function AdjustmentsPage() {
                 </select>
               </div>
 
-              <Button onClick={() => setFormDialogOpen(true)} className="shrink-0">
+              <Button onClick={() => router.push("/inventory/adjustments/create")} className="shrink-0">
                 <Plus className="mr-2 h-4 w-4" />
                 Registrar Ajuste
               </Button>
@@ -355,13 +354,23 @@ export default function AdjustmentsPage() {
           </TabsContent>
         </Tabs>
 
-        {formDialogOpen && (
-          <AdjustmentFormDialog
-            open={formDialogOpen}
-            onOpenChange={setFormDialogOpen}
-            onSuccess={handleFormSuccess}
-          />
-        )}
+        <ConfirmActionDialog
+          open={deleteCandidate !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setDeleteCandidate(null);
+            }
+          }}
+          title="Confirmar anulación de ajuste"
+          description={`Esta acción anulará el ajuste ${deleteCandidate ? `#${deleteCandidate.numeroAjuste}` : "seleccionado"}.`}
+          confirmLabel={isDeleting ? "Anulando..." : "Anular"}
+          loading={isDeleting}
+          onConfirm={async () => {
+            if (deleteCandidate) {
+              await confirmDeleteAdjustment(deleteCandidate);
+            }
+          }}
+        />
       </DashboardShell>
     </RequireAuth>
   );

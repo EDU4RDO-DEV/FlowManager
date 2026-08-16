@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { PurchasesEmptyState } from "@/app/purchases/_components/purchases-empty-state";
 import { PurchasesTableSkeleton } from "@/app/purchases/_components/purchases-skeletons";
 import { useAuth } from "@/components/auth-provider";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Badge } from "@/components/ui/badge";
@@ -70,6 +71,7 @@ export default function PurchasesPage() {
   const [query, setQuery] = useState("");
   const [idProveedor, setIdProveedor] = useState<number | "">("");
   const [deleteCandidate, setDeleteCandidate] = useState<PurchaseDto | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     void loadData();
@@ -121,6 +123,7 @@ export default function PurchasesPage() {
     }
 
     try {
+      setIsDeleting(true);
       await anulatePurchase(
         purchase.id,
         user?.id ? { idUsuarioAnulador: user.id } : undefined,
@@ -140,6 +143,8 @@ export default function PurchasesPage() {
       toast.success("Compra anulada correctamente");
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo anular la compra"));
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -277,45 +282,26 @@ export default function PurchasesPage() {
                               {formatMoney(purchase.totalGeneral)}
                             </TableCell>
                             <TableCell className="text-right">
-                              {deleteCandidate?.id === purchase.id ? (
-                                <div className="flex items-center justify-end gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    onClick={() => void confirmDeletePurchase(purchase)}
-                                  >
-                                    Confirmar
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => setDeleteCandidate(null)}
-                                  >
-                                    Cancelar
-                                  </Button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center justify-end gap-1">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => router.push(`/purchases/${purchase.id}`)}
+                                  title="Ver detalle"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                {canDeletePurchases ? (
                                   <Button
                                     size="icon"
                                     variant="ghost"
-                                    onClick={() => router.push(`/purchases/${purchase.id}`)}
-                                    title="Ver detalle"
+                                    onClick={() => setDeleteCandidate(purchase)}
+                                    title={isGastosView ? "Anular gasto" : "Anular compra"}
                                   >
-                                    <Eye className="h-4 w-4" />
+                                    <Trash2 className="h-4 w-4" />
                                   </Button>
-                                  {canDeletePurchases ? (
-                                    <Button
-                                      size="icon"
-                                      variant="ghost"
-                                      onClick={() => setDeleteCandidate(purchase)}
-                                      title={isGastosView ? "Anular gasto" : "Anular compra"}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  ) : null}
-                                </div>
-                              )}
+                                ) : null}
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -402,6 +388,26 @@ export default function PurchasesPage() {
             )}
           </TabsContent>
         </Tabs>
+
+        <ConfirmActionDialog
+          open={deleteCandidate !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setDeleteCandidate(null);
+            }
+          }}
+          title={isGastosView ? "Confirmar anulación de gasto" : "Confirmar anulación de compra"}
+          description={`Esta acción moverá ${isGastosView ? "el gasto" : "la compra"} ${
+            deleteCandidate ? `#${deleteCandidate.numeroCompra}` : ""
+          } a anulados.`}
+          confirmLabel={isDeleting ? "Anulando..." : "Anular"}
+          loading={isDeleting}
+          onConfirm={async () => {
+            if (deleteCandidate) {
+              await confirmDeletePurchase(deleteCandidate);
+            }
+          }}
+        />
 
       </DashboardShell>
     </RequireAuth>

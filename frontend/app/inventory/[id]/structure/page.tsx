@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/auth-provider";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ import { getProductById } from "@/services/products.service";
 import {
   listStructureByProduct,
   listAnulatedStructureByProduct,
+  deleteProductStructure,
   restoreProductStructure,
 } from "@/services/product-structure.service";
 import type { ProductDto } from "@/types/products";
@@ -50,6 +52,8 @@ export default function ProductStructurePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [error, setError] = useState("");
+  const [deleteCandidate, setDeleteCandidate] = useState<ProductStructureDto | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -97,6 +101,39 @@ export default function ProductStructurePage() {
       await loadData();
     } catch (err) {
       toast.error(getApiErrorMessage(err, "No se pudo restaurar el componente."));
+    }
+  }
+
+  async function handleDeleteComponent() {
+    if (!deleteCandidate) {
+      return;
+    }
+
+    if (!canDeleteStructure) {
+      toast.error("No tienes permisos para anular componentes.");
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      await deleteProductStructure(
+        deleteCandidate.id,
+        user?.id ? { idUsuarioAnulador: user.id } : undefined,
+      );
+
+      const movedToTrash: ProductStructureDto = {
+        ...deleteCandidate,
+        anulado: true,
+      };
+
+      setActiveStructure((prev) => prev.filter((item) => item.id !== deleteCandidate.id));
+      setAnulatedStructure((prev) => [movedToTrash, ...prev]);
+      setDeleteCandidate(null);
+      toast.success("Componente anulado correctamente.");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "No se pudo eliminar el componente."));
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -244,11 +281,7 @@ export default function ProductStructurePage() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    onClick={() =>
-                                      router.push(
-                                        `/inventory/${productId}/structure/delete/${item.id}`,
-                                      )
-                                    }
+                                    onClick={() => setDeleteCandidate(item)}
                                   >
                                     <Trash2 className="h-4 w-4 text-red-600" />
                                   </Button>
@@ -348,6 +381,20 @@ export default function ProductStructurePage() {
           </CardContent>
         </Card>
       )}
+
+      <ConfirmActionDialog
+        open={deleteCandidate !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteCandidate(null);
+          }
+        }}
+        title="Confirmar anulación de componente"
+        description={`Esta acción moverá ${deleteCandidate?.materiaPrima.nombre ?? "el componente"} a anulados.`}
+        confirmLabel={isDeleting ? "Anulando..." : "Anular"}
+        loading={isDeleting}
+        onConfirm={handleDeleteComponent}
+      />
 
     </div>
       </DashboardShell>

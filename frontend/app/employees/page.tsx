@@ -6,6 +6,7 @@ import { BriefcaseBusiness, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2,
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +61,7 @@ export default function EmployeesPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
   const [deleteCandidate, setDeleteCandidate] = useState<EmployeeDto | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   async function loadData() {
     setIsLoading(true);
@@ -116,6 +118,7 @@ export default function EmployeesPage() {
     if (!deleteCandidate) return;
 
     try {
+      setIsDeleting(true);
       await deleteEmployee(
         deleteCandidate.id,
         user?.id ? { idUsuarioAnulador: user.id } : undefined,
@@ -134,6 +137,8 @@ export default function EmployeesPage() {
       setDeleteCandidate(null);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo eliminar el empleado."));
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -358,26 +363,19 @@ export default function EmployeesPage() {
           </Card>
         </div>
 
-        {deleteCandidate ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <Card className="w-full max-w-md rounded-xl border border-border bg-background">
-              <CardHeader>
-                <CardTitle className="text-xl font-bold tracking-tight">Confirmar eliminacion</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Esta accion anulara al empleado <span className="font-medium text-foreground">{deleteCandidate.entidad.nombreCompleto}</span>.
-                </p>
-              </CardHeader>
-              <CardContent className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setDeleteCandidate(null)}>
-                  Cancelar
-                </Button>
-                <Button variant="destructive" onClick={confirmDeleteEmployee}>
-                  Confirmar
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        ) : null}
+        <ConfirmActionDialog
+          open={deleteCandidate !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setDeleteCandidate(null);
+            }
+          }}
+          title="Confirmar anulación de empleado"
+          description={`Esta acción anulará a ${deleteCandidate?.entidad.nombreCompleto ?? "este empleado"}.`}
+          confirmLabel={isDeleting ? "Anulando..." : "Anular"}
+          loading={isDeleting}
+          onConfirm={confirmDeleteEmployee}
+        />
       </DashboardShell>
     </RequireAuth>
   );

@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,7 @@ import { InventoryEmptyState } from "@/app/inventory/_components/inventory-empty
 import { CardSkeleton, TableSkeleton } from "@/app/inventory/_components/inventory-skeletons";
 import { getApiErrorMessage } from "@/lib/api";
 import {
+  deleteProduct,
   listAnulatedProducts,
   listProducts,
   restoreProduct,
@@ -69,6 +71,8 @@ export default function InventoryPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<CategoryFilter>("");
+  const [deleteCandidate, setDeleteCandidate] = useState<ProductDto | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     void loadData();
@@ -119,6 +123,34 @@ export default function InventoryPage() {
     const finales = activeProducts.filter((item) => item.categoria === "PRODUCTO_TERMINADO").length;
     return { total, activos, sinExistencia, finales };
   }, [activeProducts, anulatedProducts]);
+
+  async function confirmDeleteProduct() {
+    if (!deleteCandidate) return;
+
+    try {
+      setIsDeleting(true);
+      await deleteProduct(
+        deleteCandidate.id,
+        user?.id ? { idUsuarioAnulador: user.id } : undefined,
+      );
+
+      const movedToTrash: ProductDto = {
+        ...deleteCandidate,
+        anulado: true,
+        idUsuarioAnulador: user?.id ?? deleteCandidate.idUsuarioAnulador,
+        fechaAnulacion: new Date().toISOString(),
+      };
+
+      setActiveProducts((prev) => prev.filter((item) => item.id !== deleteCandidate.id));
+      setAnulatedProducts((prev) => [movedToTrash, ...prev]);
+      toast.success("Producto anulado correctamente.");
+      setDeleteCandidate(null);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo anular el producto."));
+    } finally {
+      setIsDeleting(false);
+    }
+  }
 
   async function restoreProductFromTrash(candidate: ProductDto) {
     try {
@@ -349,12 +381,10 @@ export default function InventoryPage() {
                                     <Button
                                       size="xs"
                                       variant="destructive"
-                                      asChild
+                                      onClick={() => setDeleteCandidate(product)}
                                     >
-                                      <Link href={`/inventory/delete/${product.id}`}>
-                                        <Trash2 className="size-3.5" />
-                                        Anular
-                                      </Link>
+                                      <Trash2 className="size-3.5" />
+                                      Anular
                                     </Button>
                                   </div>
                                 </TableCell>
@@ -425,6 +455,20 @@ export default function InventoryPage() {
             </CardContent>
           </Card>
         </div>
+
+        <ConfirmActionDialog
+          open={deleteCandidate !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setDeleteCandidate(null);
+            }
+          }}
+          title="Confirmar anulación de producto"
+          description={`Esta acción moverá ${deleteCandidate?.nombre ?? "el producto"} a anulados.`}
+          confirmLabel={isDeleting ? "Anulando..." : "Anular"}
+          loading={isDeleting}
+          onConfirm={confirmDeleteProduct}
+        />
 
       </DashboardShell>
     </RequireAuth>
