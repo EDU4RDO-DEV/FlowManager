@@ -465,7 +465,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
       ) : null}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 hidden border-r border-stone-200/80 bg-linear-to-b from-stone-100 via-slate-100 to-stone-50 backdrop-blur-sm transition-all duration-300 dark:border-slate-800 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 lg:flex lg:flex-col ${
+        className={`fixed inset-y-0 left-0 z-50 hidden border-r border-border bg-background transition-all duration-300 dark:border-slate-800 dark:bg-slate-950 lg:flex lg:flex-col ${
           sidebarCollapsed ? "lg:w-20" : "lg:w-76 xl:w-80"
         }`}
       >
@@ -490,7 +490,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
         </div>
 
         <div className="flex-1 overflow-y-auto p-3">
-          <div className="rounded-xl border border-stone-200/70 bg-white/75 p-2 dark:border-slate-800 dark:bg-slate-950/60">
+          <div className="rounded-xl border border-border bg-background/80 p-2 dark:border-slate-800 dark:bg-slate-950/60">
             {sidebarCollapsed ? (
               <nav className="space-y-1">
                 {collapsedQuickLinks.map((item) => {
@@ -501,9 +501,9 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                     <Link
                       key={item.id}
                       href={item.path!}
-                      className={`group flex justify-center rounded-lg border px-2 py-2 text-sm transition-colors hover:bg-stone-100/70 dark:hover:bg-slate-800/60 ${
+                      className={`group flex justify-center rounded-lg border px-2 py-2 text-sm transition-colors hover:bg-muted/60 dark:hover:bg-slate-800/60 ${
                         active
-                          ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                          ? "border-border bg-muted/60 text-foreground dark:border-slate-700 dark:bg-slate-800/60 dark:text-foreground"
                           : "border-transparent text-foreground"
                       }`}
                     >
@@ -545,9 +545,9 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                           <Link
                             key={item.id}
                             href={item.path}
-                            className={`group flex items-center gap-3 rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-stone-100/70 dark:hover:bg-slate-800/60 ${
+                            className={`group flex items-center gap-3 rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-muted/60 dark:hover:bg-slate-800/60 ${
                               active
-                                ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                                ? "border-border bg-muted/60 text-foreground dark:border-slate-700 dark:bg-slate-800/60 dark:text-foreground"
                                 : "border-transparent text-foreground"
                             }`}
                           >
@@ -566,9 +566,9 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                           <button
                             type="button"
                             onClick={() => toggleGroup(entry.id)}
-                            className={`flex w-full items-center gap-3 rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-stone-100/70 dark:hover:bg-slate-800/60 ${
+                            className={`flex w-full items-center gap-3 rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-muted/60 dark:hover:bg-slate-800/60 ${
                               hasActiveChild
-                                ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                                ? "border-border bg-muted/60 text-foreground dark:border-slate-700 dark:bg-slate-800/60 dark:text-foreground"
                                 : "border-transparent text-foreground"
                             }`}
                           >
@@ -587,7 +587,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                             }`}
                           >
                             <div className="min-h-0 overflow-hidden">
-                              <div className="ml-4 mt-1 space-y-1 border-l border-stone-200 pl-2 dark:border-slate-800">
+                              <div className="ml-4 mt-1 space-y-1 border-l border-border pl-2 dark:border-slate-800">
                               {entry.children.map((child) => {
                                 const ChildIcon = child.icon;
                                 const childActive = isLinkActive(child);
@@ -612,9 +612,9 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                                   <Link
                                     key={child.id}
                                     href={child.path}
-                                    className={`group flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition-colors hover:bg-stone-100/70 dark:hover:bg-slate-800/60 ${
+                                    className={`group flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition-colors hover:bg-muted/60 dark:hover:bg-slate-800/60 ${
                                       childActive
-                                        ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                                        ? "border-border bg-muted/60 text-foreground dark:border-slate-700 dark:bg-slate-800/60 dark:text-foreground"
                                         : "border-transparent text-muted-foreground"
                                     }`}
                                   >
@@ -644,7 +644,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
       </aside>
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-[min(22rem,92vw)] border-r border-stone-200/80 bg-linear-to-b from-stone-100 via-slate-100 to-stone-50 backdrop-blur-sm transition-transform duration-300 dark:border-slate-800 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 lg:hidden ${
+        className={`fixed inset-y-0 left-0 z-50 w-[min(22rem,92vw)] border-r border-border bg-background transition-transform duration-300 dark:border-slate-800 dark:bg-slate-950 lg:hidden ${
           mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -699,9 +699,9 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                         key={`mobile-${item.id}`}
                         href={item.path}
                         onClick={closeMobileMenu}
-                        className={`flex items-center gap-3 rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-stone-100/70 dark:hover:bg-slate-800/60 ${
+                        className={`flex items-center gap-3 rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-muted/60 dark:hover:bg-slate-800/60 ${
                           active
-                            ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                            ? "border-border bg-muted/60 text-foreground dark:border-slate-700 dark:bg-slate-800/60 dark:text-foreground"
                             : "border-transparent text-foreground"
                         }`}
                       >
@@ -720,9 +720,9 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                       <button
                         type="button"
                         onClick={() => toggleGroup(entry.id)}
-                        className={`flex w-full items-center gap-3 rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-stone-100/70 dark:hover:bg-slate-800/60 ${
+                        className={`flex w-full items-center gap-3 rounded-lg border px-2.5 py-2 text-sm transition-colors hover:bg-muted/60 dark:hover:bg-slate-800/60 ${
                           hasActiveChild
-                            ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                            ? "border-border bg-muted/60 text-foreground dark:border-slate-700 dark:bg-slate-800/60 dark:text-foreground"
                             : "border-transparent text-foreground"
                         }`}
                       >
@@ -741,7 +741,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                         }`}
                       >
                         <div className="min-h-0 overflow-hidden">
-                          <div className="ml-5 mt-1 space-y-1 border-l border-stone-200 pl-2 dark:border-slate-800">
+                          <div className="ml-5 mt-1 space-y-1 border-l border-border pl-2 dark:border-slate-800">
                           {entry.children.map((child) => {
                             const ChildIcon = child.icon;
                             const childActive = isLinkActive(child);
@@ -767,9 +767,9 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                                 key={`mobile-${child.id}`}
                                 href={child.path}
                                 onClick={closeMobileMenu}
-                                className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition-colors hover:bg-stone-100/70 dark:hover:bg-slate-800/60 ${
+                                className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition-colors hover:bg-muted/60 dark:hover:bg-slate-800/60 ${
                                   childActive
-                                    ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                                    ? "border-border bg-muted/60 text-foreground dark:border-slate-700 dark:bg-slate-800/60 dark:text-foreground"
                                     : "border-transparent text-muted-foreground"
                                 }`}
                               >
@@ -795,7 +795,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
           sidebarCollapsed ? "lg:pl-20" : "lg:pl-76 xl:pl-80"
         }`}
       >
-        <header className="sticky top-0 z-30 border-b border-stone-200/80 bg-stone-100/85 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/75">
+        <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/75">
           <div className="flex h-16 w-full items-center gap-3 px-3 sm:px-4 md:px-6 xl:px-8">
             <Button
               variant="outline"
@@ -840,7 +840,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
           <section className="min-w-0">{children}</section>
         </main>
 
-        <footer className="border-t border-border bg-background/80">
+        <footer className="border-t border-border bg-background/80 dark:border-slate-800 dark:bg-slate-900/85">
           <div className="flex h-12 w-full items-center justify-between gap-3 px-3 text-xs text-muted-foreground sm:px-4 md:px-6 xl:px-8">
             <p className="truncate">FlowManager · Plataforma Operativa</p>
             <p className="truncate text-right">Industrias Basan · Gestion de planta purificadora</p>
