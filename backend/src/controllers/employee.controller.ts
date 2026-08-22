@@ -6,6 +6,7 @@ import {
   deleteEmployee,
   getEmployeeById,
   listAnulatedEmployees,
+  listEmployeesAvailableForUserLink,
   listEmployees,
   restoreEmployee,
   updateEmployee,
@@ -52,6 +53,45 @@ export async function listEmployeesController(_req: Request, res: Response) {
     return res.status(200).json({ ok: true, data });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+function parseId(value: unknown): number {
+  if (typeof value === 'string') {
+    return Number(value);
+  }
+
+  if (Array.isArray(value) && typeof value[0] === 'string') {
+    return Number(value[0]);
+  }
+
+  return Number.NaN;
+}
+
+export async function listAvailableEmployeesController(req: Request, res: Response) {
+  try {
+    const includeUserIdRaw = req.query.includeUserId;
+    const includeUserId = includeUserIdRaw !== undefined ? parseId(includeUserIdRaw) : undefined;
+
+    if (includeUserIdRaw !== undefined && (!Number.isInteger(includeUserId) || includeUserId <= 0)) {
+      return res.status(400).json({
+        ok: false,
+        message: 'includeUserId debe ser un entero positivo cuando se envía',
+      });
+    }
+
+    const data = await listEmployeesAvailableForUserLink(
+      includeUserId !== undefined ? { includeUserId } : {},
+    );
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message === 'Usuario no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+
     return res.status(500).json({ ok: false, message });
   }
 }

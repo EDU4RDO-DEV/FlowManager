@@ -195,6 +195,90 @@ export async function listEmployees() {
   return employees.map(toEmployeeDto);
 }
 
+type ListEmployeesAvailableForUserLinkInput = {
+  includeUserId?: number;
+};
+
+export async function listEmployeesAvailableForUserLink(
+  input: ListEmployeesAvailableForUserLinkInput = {},
+) {
+  let currentUserEntidadId: number | null = null;
+
+  if (input.includeUserId !== undefined) {
+    const user = await prisma.usuario.findFirst({
+      where: {
+        Id: input.includeUserId,
+        Anulado: false,
+      },
+      select: {
+        IdEntidad: true,
+      },
+    });
+
+    if (!user) {
+      throw new Error('Usuario no existe');
+    }
+
+    currentUserEntidadId = user.IdEntidad;
+  }
+
+  const employees = await prisma.empleado.findMany({
+    where: {
+      Anulado: false,
+      Entidad: {
+        Anulado: false,
+      },
+    },
+    orderBy: { Id: 'desc' },
+    include: {
+      Entidad: {
+        select: {
+          Id: true,
+          NombreCompleto: true,
+          Sexo: true,
+          FechaNacimiento: true,
+          Telefono1: true,
+          Telefono2: true,
+          CorreoElectronico: true,
+          RutaImagen: true,
+          Nit: true,
+          Dpi: true,
+          Anulado: true,
+        },
+      },
+    },
+  });
+
+  const linkedUsers = await prisma.usuario.findMany({
+    where: {
+      Anulado: false,
+      IdEntidad: {
+        not: null,
+      },
+      ...(input.includeUserId !== undefined ? { NOT: { Id: input.includeUserId } } : {}),
+    },
+    select: {
+      IdEntidad: true,
+    },
+  });
+
+  const blockedEntidadIds = new Set<number>(
+    linkedUsers
+      .map((item) => item.IdEntidad)
+      .filter((idEntidad): idEntidad is number => idEntidad !== null),
+  );
+
+  return employees
+    .filter((employee) => {
+      if (currentUserEntidadId !== null && employee.IdEntidad === currentUserEntidadId) {
+        return true;
+      }
+
+      return !blockedEntidadIds.has(employee.IdEntidad);
+    })
+    .map(toEmployeeDto);
+}
+
 export async function listAnulatedEmployees() {
   const employees = await prisma.empleado.findMany({
     where: {

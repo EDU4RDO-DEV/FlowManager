@@ -11,7 +11,7 @@ import {
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
-import { listEmployees } from "@/services/employees.service";
+import { listAvailableEmployees } from "@/services/employees.service";
 import { createUser, listRoles } from "@/services/users.service";
 import type { EmployeeDto } from "@/types/employees";
 import type { RoleDto } from "@/types/users";
@@ -47,7 +47,10 @@ export default function CreateUserPage() {
   useEffect(() => {
     async function loadCatalogs() {
       try {
-        const [rolesData, employeesData] = await Promise.all([listRoles(), listEmployees()]);
+        const [rolesData, employeesData] = await Promise.all([
+          listRoles(),
+          listAvailableEmployees(),
+        ]);
         setRoles(rolesData);
         setEmployees(employeesData);
       } catch (error) {

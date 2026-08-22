@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { ArrowRight, Eye, Loader2, LockKeyhole, User } from "lucide-react";
@@ -17,7 +16,6 @@ export default function LoginPage() {
   const { login } = useAuth();
   const [correo, setCorreo] = useState("");
   const [clave, setClave] = useState("");
-  const [rememberMe, setRememberMe] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -55,23 +53,23 @@ export default function LoginPage() {
 
           <div className="relative z-10 flex h-full flex-col justify-between gap-12">
             <div className="space-y-6">
-              <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs uppercase tracking-[0.16em] ring-1 ring-white/35">
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm uppercase tracking-[0.16em] ring-1 ring-white/35">
                 FlowManager
               </span>
 
               <div className="space-y-4">
-                <h1 className="text-4xl font-semibold tracking-[0.06em] lg:text-5xl">WELCOME</h1>
-                <p className="text-sm font-medium uppercase tracking-[0.16em] text-white/85">
+                <h1 className="text-4xl font-semibold tracking-[0.06em] lg:text-5xl">BIENVENIDO</h1>
+                <p className="text-base font-medium uppercase tracking-[0.16em] text-white/85">
                   INDUSTRIAS BASAN
                 </p>
-                <p className="max-w-sm text-sm text-white/80 lg:text-base">
+                <p className="max-w-sm text-base text-white/80 lg:text-lg">
                   Controla operaciones, inventario y sesiones de manera segura
                   desde una sola plataforma de trabajo.
                 </p>
               </div>
             </div>
 
-            <p className="text-xs text-white/75">© {new Date().getFullYear()} FlowManager</p>
+            <p className="text-sm text-white/75">© {new Date().getFullYear()} FlowManager</p>
           </div>
 
           <div
@@ -88,13 +86,13 @@ export default function LoginPage() {
 
           <div className="relative z-10 w-full max-w-md space-y-6">
             <header className="space-y-2 text-slate-800">
-              <h2 className="text-4xl font-semibold tracking-tight">Sign in</h2>
-              <p className="text-sm text-slate-500">Accede a tu panel operativo con tu usuario activo.</p>
+              <h2 className="text-4xl font-semibold tracking-tight">Iniciar sesion</h2>
+              <p className="text-base text-slate-500">Accede a tu panel operativo con tu usuario activo.</p>
             </header>
 
             <form onSubmit={handleSubmit} className="space-y-4" noValidate>
               <div className="space-y-1.5">
-                <Label htmlFor="correo" className="text-xs font-medium text-slate-600">User Name</Label>
+                <Label htmlFor="correo" className="text-sm font-medium text-slate-600">Correo</Label>
                 <div className="relative">
                   <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                   <Input
@@ -105,14 +103,14 @@ export default function LoginPage() {
                     value={correo}
                     onChange={(e) => setCorreo(e.target.value)}
                     disabled={isSubmitting}
-                    className="h-11 rounded-lg border-slate-200 bg-slate-50 pl-9 text-slate-800"
+                    className="h-11 rounded-lg border-slate-200 bg-slate-50 pl-9 text-base text-slate-800"
                     required
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="clave" className="text-xs font-medium text-slate-600">Password</Label>
+                <Label htmlFor="clave" className="text-sm font-medium text-slate-600">Contrasena</Label>
                 <div className="relative">
                   <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                   <Input
@@ -123,33 +121,18 @@ export default function LoginPage() {
                     value={clave}
                     onChange={(e) => setClave(e.target.value)}
                     disabled={isSubmitting}
-                    className="h-11 rounded-lg border-slate-200 bg-slate-50 pl-9 pr-14 text-slate-800"
+                    className="h-11 rounded-lg border-slate-200 bg-slate-50 pl-9 pr-14 text-base text-slate-800"
                     required
                   />
-                  <span className="absolute right-3 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 text-xs font-medium uppercase tracking-[0.06em] text-slate-500">
-                    <Eye className="size-3.5" /> Show
+                  <span className="absolute right-3 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 text-sm font-medium uppercase tracking-[0.06em] text-slate-500">
+                    <Eye className="size-3.5" /> Ver
                   </span>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between gap-3 text-xs text-slate-600">
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="size-4 rounded border-slate-300"
-                  />
-                  Remember me
-                </label>
-                <button type="button" className="font-medium text-slate-500 hover:text-slate-700">
-                  Forgot Password?
-                </button>
-              </div>
-
               <Button
                 type="submit"
-                className="h-11 w-full rounded-lg bg-[oklch(0.39_0.1_244)] text-white hover:bg-[oklch(0.34_0.09_244)]"
+                className="h-11 w-full rounded-lg bg-[oklch(0.39_0.1_244)] text-base text-white hover:bg-[oklch(0.34_0.09_244)]"
                 disabled={isSubmitting}
               >
                 {isSubmitting ? (
@@ -159,33 +142,12 @@ export default function LoginPage() {
                   </>
                 ) : (
                   <>
-                    Sign in
+                    Ingresar
                     <ArrowRight className="size-4" />
                   </>
                 )}
               </Button>
-
-              <div className="flex items-center gap-3 py-1 text-xs text-slate-400">
-                <span className="h-px flex-1 bg-slate-200" />
-                <span>Or</span>
-                <span className="h-px flex-1 bg-slate-200" />
-              </div>
-
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 w-full rounded-lg border-slate-300 text-slate-700 hover:bg-slate-50"
-              >
-                Sign in with other
-              </Button>
             </form>
-
-            <p className="text-center text-sm text-slate-500">
-              Don't have an account?{" "}
-              <Link href="/register" className="font-semibold text-[oklch(0.39_0.1_244)] hover:underline">
-                Sign Up
-              </Link>
-            </p>
           </div>
         </main>
       </div>

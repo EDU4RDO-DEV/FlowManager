@@ -16,6 +16,13 @@ export async function listEmployees(): Promise<EmployeeDto[]> {
   return data.data ?? [];
 }
 
+export async function listAvailableEmployees(includeUserId?: number): Promise<EmployeeDto[]> {
+  const { data } = await api.get<EmployeesListResponse>("/api/employees/disponibles", {
+    params: includeUserId ? { includeUserId } : undefined,
+  });
+  return data.data ?? [];
+}
+
 export async function listAnulatedEmployees(): Promise<EmployeeDto[]> {
   const { data } = await api.get<EmployeesListResponse>("/api/employees/anulados");
   return data.data ?? [];

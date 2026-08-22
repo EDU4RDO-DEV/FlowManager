@@ -13,7 +13,7 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
 import { getEmployeeById, updateEmployee, uploadEmployeeImage } from "@/services/employees.service";
-import { listUsers } from "@/services/users.service";
+import { listAvailableUsers } from "@/services/users.service";
 import type { UserDto } from "@/types/users";
 
 const EMPTY_FORM: EmployeeFormValues = {
@@ -77,7 +77,7 @@ export default function EditEmployeePage() {
       try {
         const [employeeData, usersData] = await Promise.all([
           getEmployeeById(employeeId),
-          listUsers(),
+          listAvailableUsers(employeeId),
         ]);
         setUsers(usersData);
         const linkedUser = usersData.find(

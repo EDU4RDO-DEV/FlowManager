@@ -204,6 +204,94 @@ export async function listUsers() {
   return users.map(toUserDto);
 }
 
+type ListUsersAvailableForEmployeeLinkInput = {
+  includeEmployeeId?: number;
+};
+
+async function validateEntidadNotLinkedToOtherUser(idEntidad: number, exceptUserId?: number) {
+  const existing = await prisma.usuario.findFirst({
+    where: {
+      Anulado: false,
+      IdEntidad: idEntidad,
+      ...(exceptUserId !== undefined ? { NOT: { Id: exceptUserId } } : {}),
+    },
+    select: { Id: true },
+  });
+
+  if (existing) {
+    throw new Error('La entidad ya está vinculada a otro usuario');
+  }
+}
+
+export async function listUsersAvailableForEmployeeLink(
+  input: ListUsersAvailableForEmployeeLinkInput = {},
+) {
+  let currentEmployeeEntidadId: number | null = null;
+
+  if (input.includeEmployeeId !== undefined) {
+    const employee = await prisma.empleado.findFirst({
+      where: {
+        Id: input.includeEmployeeId,
+        Anulado: false,
+      },
+      select: {
+        IdEntidad: true,
+      },
+    });
+
+    if (!employee) {
+      throw new Error('Empleado no existe');
+    }
+
+    currentEmployeeEntidadId = employee.IdEntidad;
+  }
+
+  const users = await prisma.usuario.findMany({
+    where: { Anulado: false },
+    orderBy: { Id: 'desc' },
+    select: {
+      Id: true,
+      IdUsuario: true,
+      IdEntidad: true,
+      IdRol: true,
+      Nombre: true,
+      Correo: true,
+      FechaRegistro: true,
+      IdUsuarioModificador: true,
+      FechaModificacion: true,
+      Anulado: true,
+      IdUsuarioAnulador: true,
+      FechaAnulacion: true,
+    },
+  });
+
+  const employeeEntities = await prisma.empleado.findMany({
+    where: {
+      Anulado: false,
+      ...(currentEmployeeEntidadId !== null
+        ? { NOT: { IdEntidad: currentEmployeeEntidadId } }
+        : {}),
+    },
+    select: { IdEntidad: true },
+  });
+
+  const blockedEntidadIds = new Set<number>(employeeEntities.map((item) => item.IdEntidad));
+
+  return users
+    .filter((user) => {
+      if (user.IdEntidad === null) {
+        return true;
+      }
+
+      if (currentEmployeeEntidadId !== null && user.IdEntidad === currentEmployeeEntidadId) {
+        return true;
+      }
+
+      return !blockedEntidadIds.has(user.IdEntidad);
+    })
+    .map(toUserDto);
+}
+
 export async function listAnulatedUsers() {
   const users = await prisma.usuario.findMany({
     where: { Anulado: true },
@@ -283,6 +371,7 @@ export async function createUser(input: CreateUserInput) {
   if (input.idEmpleadoVinculado !== undefined) {
     entidadVinculadaId = await getEmployeeEntidadId(input.idEmpleadoVinculado);
     await validateEntidadExists(entidadVinculadaId);
+    await validateEntidadNotLinkedToOtherUser(entidadVinculadaId);
   }
 
   const claveHash = await bcrypt.hash(input.clave, 10);
@@ -421,11 +510,13 @@ export async function updateUser(id: number, input: UpdateUserInput) {
 
   if (input.idEntidad !== undefined && input.idEntidad !== null) {
     await validateEntidadExists(input.idEntidad);
+    await validateEntidadNotLinkedToOtherUser(input.idEntidad, id);
   }
 
   if (input.idEmpleadoVinculado !== undefined && input.idEmpleadoVinculado !== null) {
     input.idEntidad = await getEmployeeEntidadId(input.idEmpleadoVinculado);
     await validateEntidadExists(input.idEntidad);
+    await validateEntidadNotLinkedToOtherUser(input.idEntidad, id);
   }
 
   if (input.idUsuarioModificador !== undefined) {

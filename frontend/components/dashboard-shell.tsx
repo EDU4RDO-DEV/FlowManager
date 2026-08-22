@@ -226,7 +226,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                 },
                 {
                   id: "inventario-bom",
-                  name: "Estructura / Recetas (BOM)",
+                  name: "Recetas",
                   path: "/inventory/structure",
                   icon: BookOpenText,
                   available: has.inventario,
@@ -234,7 +234,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                 },
                 {
                   id: "inventario-ajustes",
-                  name: "Ajustes y Mermas",
+                  name: "Ajuste de Inventario",
                   path: "/inventory/adjustments",
                   icon: SlidersHorizontal,
                   available: has.inventario,
@@ -242,7 +242,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                 },
                 {
                   id: "inventario-kardex",
-                  name: "Bitácora / Kardex",
+                  name: "Bitácora",
                   path: "/inventory/kardex",
                   icon: FileText,
                   available: has.inventario,
@@ -266,7 +266,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                 },
                 {
                   id: "compras-gastos",
-                  name: "Gastos de Compra",
+                  name: "Gastos",
                   path: "/purchases/gastos",
                   icon: Wrench,
                   available: has.compras,
@@ -275,7 +275,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                 },
                 {
                   id: "compras-proveedores",
-                  name: "Proveedores (Catálogo)",
+                  name: "Proveedores",
                   path: "/providers",
                   icon: Truck,
                   available: has.proveedores,
@@ -335,7 +335,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
             {
               type: "group",
               id: "configuracion",
-              name: "Configuración / Seguridad",
+              name: "Administración",
               icon: ShieldCheck,
               children: [
                 {

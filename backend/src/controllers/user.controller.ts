@@ -6,6 +6,7 @@ import {
   deleteUser,
   getUserById,
   listAnulatedUsers,
+  listUsersAvailableForEmployeeLink,
   listUsers,
   resetUserPassword,
   restoreUser,
@@ -43,6 +44,37 @@ export async function listUsersController(_req: Request, res: Response) {
     return res.status(200).json({ ok: true, data });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function listAvailableUsersController(req: Request, res: Response) {
+  try {
+    const includeEmployeeIdRaw = req.query.includeEmployeeId;
+    const includeEmployeeId =
+      includeEmployeeIdRaw !== undefined ? parseId(includeEmployeeIdRaw) : undefined;
+
+    if (
+      includeEmployeeIdRaw !== undefined &&
+      (!Number.isInteger(includeEmployeeId) || includeEmployeeId <= 0)
+    ) {
+      return res.status(400).json({
+        ok: false,
+        message: 'includeEmployeeId debe ser un entero positivo cuando se envía',
+      });
+    }
+
+    const data = await listUsersAvailableForEmployeeLink(
+      includeEmployeeId !== undefined ? { includeEmployeeId } : {},
+    );
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message === 'Empleado no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+
     return res.status(500).json({ ok: false, message });
   }
 }
@@ -156,6 +188,10 @@ export async function createUserController(req: Request, res: Response) {
 
     if (message === 'fechaNacimiento inválida') {
       return res.status(400).json({ ok: false, message: 'entidad.fechaNacimiento inválida' });
+    }
+
+    if (message === 'La entidad ya está vinculada a otro usuario') {
+      return res.status(409).json({ ok: false, message });
     }
 
     return res.status(500).json({ ok: false, message });
@@ -287,6 +323,10 @@ export async function updateUserController(req: Request, res: Response) {
 
     if (message === 'idUsuario padre no puede ser el mismo usuario') {
       return res.status(400).json({ ok: false, message });
+    }
+
+    if (message === 'La entidad ya está vinculada a otro usuario') {
+      return res.status(409).json({ ok: false, message });
     }
 
     return res.status(500).json({ ok: false, message });
