@@ -242,7 +242,9 @@ export async function createReglaComisionController(req: Request, res: Response)
       idInventarioItem: dataInput.idInventarioItem,
       cantidadMinima: dataInput.cantidadMinima,
       cantidadMaxima: dataInput.cantidadMaxima,
+      tipoCalculo: dataInput.tipoCalculo,
       porcentaje: dataInput.porcentaje,
+      montoPorUnidad: dataInput.montoPorUnidad,
     });
 
     return res.status(201).json({ ok: true, data, message: 'Regla creada correctamente' });
@@ -265,6 +267,13 @@ export async function createReglaComisionController(req: Request, res: Response)
     }
 
     if (message === 'cantidadMaxima debe ser mayor o igual a cantidadMinima') {
+      return res.status(400).json({ ok: false, message });
+    }
+
+    if (
+      message === 'porcentaje debe ser mayor a 0 para PORCENTAJE_VENTA' ||
+      message === 'montoPorUnidad debe ser mayor a 0 para MONTO_POR_UNIDAD'
+    ) {
       return res.status(400).json({ ok: false, message });
     }
 
@@ -301,6 +310,13 @@ export async function updateReglaComisionController(req: Request, res: Response)
     }
 
     if (message === 'cantidadMaxima debe ser mayor o igual a cantidadMinima') {
+      return res.status(400).json({ ok: false, message });
+    }
+
+    if (
+      message === 'porcentaje debe ser mayor a 0 para PORCENTAJE_VENTA' ||
+      message === 'montoPorUnidad debe ser mayor a 0 para MONTO_POR_UNIDAD'
+    ) {
       return res.status(400).json({ ok: false, message });
     }
 

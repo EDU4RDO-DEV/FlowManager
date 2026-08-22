@@ -118,6 +118,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
         proveedores: allowedModules.includes("proveedores"),
         compras: allowedModules.includes("compras"),
         empleados: allowedModules.includes("empleados"),
+        planilla: allowedModules.includes("planilla"),
         usuarios: allowedModules.includes("usuarios"),
         roles: allowedModules.includes("roles"),
       };
@@ -306,14 +307,18 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                 {
                   id: "rrhh-planilla",
                   name: "Planilla Mensual",
+                  path: "/payroll",
                   icon: FileSpreadsheet,
-                  available: false,
+                  available: has.planilla,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/payroll"),
                 },
                 {
                   id: "rrhh-comisiones",
                   name: "Configuración de Comisiones",
+                  path: "/commissions",
                   icon: SlidersHorizontal,
-                  available: false,
+                  available: has.planilla,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/commissions"),
                 },
               ],
             },

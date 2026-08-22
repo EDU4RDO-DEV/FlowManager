@@ -56,7 +56,11 @@ export async function listAvailableUsersController(req: Request, res: Response) 
 
     if (
       includeEmployeeIdRaw !== undefined &&
-      (!Number.isInteger(includeEmployeeId) || includeEmployeeId <= 0)
+      (
+        typeof includeEmployeeId !== 'number' ||
+        !Number.isInteger(includeEmployeeId) ||
+        includeEmployeeId <= 0
+      )
     ) {
       return res.status(400).json({
         ok: false,

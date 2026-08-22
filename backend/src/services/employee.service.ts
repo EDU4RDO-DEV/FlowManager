@@ -41,6 +41,7 @@ function toEmployeeDto(empleado: {
   Id: number;
   IdEntidad: number;
   IdUsuario: number;
+  IdUsuarioVinculado: number | null;
   IdConfiguracionComision: number | null;
   PuestoTrabajo: string;
   DescripcionPuesto: string | null;
@@ -71,6 +72,7 @@ function toEmployeeDto(empleado: {
     id: empleado.Id,
     idEntidad: empleado.IdEntidad,
     idUsuario: empleado.IdUsuario,
+    idUsuarioVinculado: empleado.IdUsuarioVinculado,
     idConfiguracionComision: empleado.IdConfiguracionComision,
     puestoTrabajo: empleado.PuestoTrabajo,
     descripcionPuesto: empleado.DescripcionPuesto,
@@ -434,6 +436,7 @@ export async function createEmployee(input: CreateEmployeeInput) {
       data: {
         IdEntidad: entidadId,
         IdUsuario: input.idUsuario,
+        IdUsuarioVinculado: input.idUsuarioVinculado,
         IdConfiguracionComision: input.idConfiguracionComision,
         PuestoTrabajo: input.puestoTrabajo,
         DescripcionPuesto: input.descripcionPuesto,
@@ -556,6 +559,9 @@ export async function updateEmployee(id: number, input: UpdateEmployeeInput) {
       data: {
         ...(entidadIdObjetivo !== existing.IdEntidad ? { IdEntidad: entidadIdObjetivo } : {}),
         ...(input.idUsuario !== undefined ? { IdUsuario: input.idUsuario } : {}),
+        ...(input.idUsuarioVinculado !== undefined
+          ? { IdUsuarioVinculado: input.idUsuarioVinculado }
+          : {}),
         ...(input.idUsuarioModificador !== undefined
           ? { IdUsuarioModificador: input.idUsuarioModificador }
           : {}),

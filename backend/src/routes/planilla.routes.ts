@@ -1,6 +1,16 @@
 import { Router } from 'express';
 
 import {
+  closePayrollController,
+  deletePayrollController,
+  generatePayrollController,
+  getPayrollByIdController,
+  listPayrollsController,
+  previewPayrollController,
+  restorePayrollController,
+  updatePayrollController,
+} from '../controllers/planilla-mensual.controller';
+import {
   createComisionConfigController,
   createReglaComisionController,
   deleteComisionConfigController,
@@ -18,6 +28,47 @@ import {
 import { requireModulePermission } from '../middlewares/auth.middleware';
 
 const planillaRouter = Router();
+
+planillaRouter.get(
+  '/mensuales',
+  requireModulePermission('planilla', 'read'),
+  listPayrollsController,
+);
+planillaRouter.get(
+  '/mensuales/:id',
+  requireModulePermission('planilla', 'read'),
+  getPayrollByIdController,
+);
+planillaRouter.post(
+  '/mensuales/previsualizar',
+  requireModulePermission('planilla', 'read'),
+  previewPayrollController,
+);
+planillaRouter.post(
+  '/mensuales/generar',
+  requireModulePermission('planilla', 'create'),
+  generatePayrollController,
+);
+planillaRouter.patch(
+  '/mensuales/:id',
+  requireModulePermission('planilla', 'update'),
+  updatePayrollController,
+);
+planillaRouter.patch(
+  '/mensuales/:id/cerrar',
+  requireModulePermission('planilla', 'update'),
+  closePayrollController,
+);
+planillaRouter.delete(
+  '/mensuales/:id',
+  requireModulePermission('planilla', 'delete'),
+  deletePayrollController,
+);
+planillaRouter.patch(
+  '/mensuales/:id/restaurar',
+  requireModulePermission('planilla', 'update'),
+  restorePayrollController,
+);
 
 planillaRouter.get(
   '/comisiones',

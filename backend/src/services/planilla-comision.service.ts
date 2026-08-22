@@ -14,14 +14,18 @@ type CreateReglaComisionInput = {
   idInventarioItem: number;
   cantidadMinima: number;
   cantidadMaxima?: number;
+  tipoCalculo: 'PORCENTAJE_VENTA' | 'MONTO_POR_UNIDAD';
   porcentaje: number;
+  montoPorUnidad?: number;
 };
 
 type UpdateReglaComisionInput = {
   idInventarioItem?: number;
   cantidadMinima?: number;
   cantidadMaxima?: number | null;
+  tipoCalculo?: 'PORCENTAJE_VENTA' | 'MONTO_POR_UNIDAD';
   porcentaje?: number;
+  montoPorUnidad?: number | null;
   idUsuarioModificador?: number;
 };
 
@@ -30,7 +34,11 @@ function toComisionConfigDto(config: {
   IdUsuario: number;
   Nombre: string;
   FechaRegistro: Date | null;
+  IdUsuarioModificador: number | null;
+  FechaModificacion: Date | null;
   Anulado: boolean;
+  IdUsuarioAnulador: number | null;
+  FechaAnulacion: Date | null;
   ReglaComision?: Array<{
     Id: number;
     Anulado: boolean;
@@ -41,7 +49,11 @@ function toComisionConfigDto(config: {
     idUsuario: config.IdUsuario,
     nombre: config.Nombre,
     fechaRegistro: config.FechaRegistro,
+    idUsuarioModificador: config.IdUsuarioModificador,
+    fechaModificacion: config.FechaModificacion,
     anulado: config.Anulado,
+    idUsuarioAnulador: config.IdUsuarioAnulador,
+    fechaAnulacion: config.FechaAnulacion,
     totalReglasActivas: config.ReglaComision
       ? config.ReglaComision.filter((regla) => !regla.Anulado).length
       : undefined,
@@ -54,8 +66,15 @@ function toReglaComisionDto(regla: {
   IdInventarioItem: number;
   CantidadMinima: number;
   CantidadMaxima: number | null;
+  TipoCalculo: string;
   Porcentaje: unknown;
+  MontoPorUnidad: unknown;
+  FechaRegistro: Date | null;
+  IdUsuarioModificador: number | null;
+  FechaModificacion: Date | null;
   Anulado: boolean;
+  IdUsuarioAnulador: number | null;
+  FechaAnulacion: Date | null;
   InventarioItem?: {
     Id: number;
     Nombre: string;
@@ -67,8 +86,15 @@ function toReglaComisionDto(regla: {
     idInventarioItem: regla.IdInventarioItem,
     cantidadMinima: regla.CantidadMinima,
     cantidadMaxima: regla.CantidadMaxima,
+    tipoCalculo: regla.TipoCalculo,
     porcentaje: Number(regla.Porcentaje),
+    montoPorUnidad: regla.MontoPorUnidad === null ? null : Number(regla.MontoPorUnidad),
+    fechaRegistro: regla.FechaRegistro,
+    idUsuarioModificador: regla.IdUsuarioModificador,
+    fechaModificacion: regla.FechaModificacion,
     anulado: regla.Anulado,
+    idUsuarioAnulador: regla.IdUsuarioAnulador,
+    fechaAnulacion: regla.FechaAnulacion,
     inventarioItem: regla.InventarioItem
       ? {
           id: regla.InventarioItem.Id,
@@ -285,6 +311,10 @@ export async function updateComisionConfig(id: number, input: UpdateComisionConf
     where: { Id: id },
     data: {
       ...(input.nombre !== undefined ? { Nombre: input.nombre } : {}),
+      ...(input.idUsuarioModificador !== undefined
+        ? { IdUsuarioModificador: input.idUsuarioModificador }
+        : {}),
+      FechaModificacion: new Date(),
     },
   });
 
@@ -310,6 +340,8 @@ export async function deleteComisionConfig(id: number, idUsuarioAnulador?: numbe
       where: { Id: id },
       data: {
         Anulado: true,
+        ...(idUsuarioAnulador !== undefined ? { IdUsuarioAnulador: idUsuarioAnulador } : {}),
+        FechaAnulacion: new Date(),
       },
     });
 
@@ -320,6 +352,8 @@ export async function deleteComisionConfig(id: number, idUsuarioAnulador?: numbe
       },
       data: {
         Anulado: true,
+        ...(idUsuarioAnulador !== undefined ? { IdUsuarioAnulador: idUsuarioAnulador } : {}),
+        FechaAnulacion: new Date(),
       },
     });
   });
@@ -345,6 +379,12 @@ export async function restoreComisionConfig(id: number, idUsuarioModificador?: n
     where: { Id: id },
     data: {
       Anulado: false,
+      ...(idUsuarioModificador !== undefined
+        ? { IdUsuarioModificador: idUsuarioModificador }
+        : {}),
+      FechaModificacion: new Date(),
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
     },
   });
 
@@ -384,9 +424,21 @@ export async function createReglaComision(
   await validateInventarioItemExists(input.idInventarioItem);
 
   const cantidadMaxima = input.cantidadMaxima ?? null;
+  const montoPorUnidad = input.montoPorUnidad ?? null;
 
   if (cantidadMaxima !== null && cantidadMaxima < input.cantidadMinima) {
     throw new Error('cantidadMaxima debe ser mayor o igual a cantidadMinima');
+  }
+
+  if (input.tipoCalculo === 'PORCENTAJE_VENTA' && input.porcentaje <= 0) {
+    throw new Error('porcentaje debe ser mayor a 0 para PORCENTAJE_VENTA');
+  }
+
+  if (
+    input.tipoCalculo === 'MONTO_POR_UNIDAD' &&
+    (montoPorUnidad === null || montoPorUnidad <= 0)
+  ) {
+    throw new Error('montoPorUnidad debe ser mayor a 0 para MONTO_POR_UNIDAD');
   }
 
   await validateReglaRangeAvailable({
@@ -402,7 +454,9 @@ export async function createReglaComision(
       IdInventarioItem: input.idInventarioItem,
       CantidadMinima: input.cantidadMinima,
       CantidadMaxima: cantidadMaxima,
-      Porcentaje: input.porcentaje,
+      TipoCalculo: input.tipoCalculo,
+      Porcentaje: input.tipoCalculo === 'PORCENTAJE_VENTA' ? input.porcentaje : 0,
+      MontoPorUnidad: input.tipoCalculo === 'MONTO_POR_UNIDAD' ? montoPorUnidad : null,
       Anulado: false,
     },
     include: {
@@ -440,7 +494,9 @@ export async function updateReglaComision(
       IdInventarioItem: true,
       CantidadMinima: true,
       CantidadMaxima: true,
+      TipoCalculo: true,
       Porcentaje: true,
+      MontoPorUnidad: true,
     },
   });
 
@@ -452,6 +508,14 @@ export async function updateReglaComision(
   const nextCantidadMinima = input.cantidadMinima ?? existing.CantidadMinima;
   const nextCantidadMaxima =
     input.cantidadMaxima !== undefined ? input.cantidadMaxima : existing.CantidadMaxima;
+  const nextTipoCalculo = input.tipoCalculo ?? existing.TipoCalculo;
+  const nextPorcentaje = input.porcentaje ?? Number(existing.Porcentaje);
+  const nextMontoPorUnidad =
+    input.montoPorUnidad !== undefined
+      ? input.montoPorUnidad
+      : existing.MontoPorUnidad === null
+        ? null
+        : Number(existing.MontoPorUnidad);
 
   if (input.idInventarioItem !== undefined) {
     await validateInventarioItemExists(input.idInventarioItem);
@@ -459,6 +523,17 @@ export async function updateReglaComision(
 
   if (nextCantidadMaxima !== null && nextCantidadMaxima < nextCantidadMinima) {
     throw new Error('cantidadMaxima debe ser mayor o igual a cantidadMinima');
+  }
+
+  if (nextTipoCalculo === 'PORCENTAJE_VENTA' && nextPorcentaje <= 0) {
+    throw new Error('porcentaje debe ser mayor a 0 para PORCENTAJE_VENTA');
+  }
+
+  if (
+    nextTipoCalculo === 'MONTO_POR_UNIDAD' &&
+    (nextMontoPorUnidad === null || nextMontoPorUnidad <= 0)
+  ) {
+    throw new Error('montoPorUnidad debe ser mayor a 0 para MONTO_POR_UNIDAD');
   }
 
   await validateReglaRangeAvailable({
@@ -479,7 +554,15 @@ export async function updateReglaComision(
         ? { CantidadMinima: input.cantidadMinima }
         : {}),
       ...(input.cantidadMaxima !== undefined ? { CantidadMaxima: input.cantidadMaxima } : {}),
+      ...(input.tipoCalculo !== undefined ? { TipoCalculo: input.tipoCalculo } : {}),
       ...(input.porcentaje !== undefined ? { Porcentaje: input.porcentaje } : {}),
+      ...(input.montoPorUnidad !== undefined ? { MontoPorUnidad: input.montoPorUnidad } : {}),
+      ...(nextTipoCalculo === 'PORCENTAJE_VENTA' ? { MontoPorUnidad: null } : {}),
+      ...(nextTipoCalculo === 'MONTO_POR_UNIDAD' ? { Porcentaje: 0 } : {}),
+      ...(input.idUsuarioModificador !== undefined
+        ? { IdUsuarioModificador: input.idUsuarioModificador }
+        : {}),
+      FechaModificacion: new Date(),
     },
     include: {
       InventarioItem: {
@@ -522,6 +605,8 @@ export async function deleteReglaComision(
     where: { Id: idRegla },
     data: {
       Anulado: true,
+      ...(idUsuarioAnulador !== undefined ? { IdUsuarioAnulador: idUsuarioAnulador } : {}),
+      FechaAnulacion: new Date(),
     },
   });
 }
@@ -566,6 +651,12 @@ export async function restoreReglaComision(
     where: { Id: idRegla },
     data: {
       Anulado: false,
+      ...(idUsuarioModificador !== undefined
+        ? { IdUsuarioModificador: idUsuarioModificador }
+        : {}),
+      FechaModificacion: new Date(),
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
     },
     include: {
       InventarioItem: {

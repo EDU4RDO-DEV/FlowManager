@@ -17,6 +17,7 @@ export type PermissionModule =
   | "clientes"
   | "proveedores"
   | "compras"
+  | "planilla"
   | "sesiones"
   | "produccion"
   | "inventario";

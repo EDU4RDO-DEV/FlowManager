@@ -80,14 +80,18 @@ model Compra {
 }
 
 model ConfiguracionComision {
-  Id            Int             @id(map: "PK__Configur__3214EC07C239FD38") @default(autoincrement())
-  IdUsuario     Int
-  Nombre        String          @db.VarChar(100)
-  FechaRegistro DateTime?       @default(now(), map: "DF__Configura__Fecha__68487DD7") @db.DateTime
-  Anulado       Boolean         @default(false, map: "DF__Configura__Anula__693CA210")
-  Usuario       Usuario         @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_ConfiguracionComision_Usuario")
-  Empleado      Empleado[]
-  ReglaComision ReglaComision[]
+  Id                   Int             @id(map: "PK__Configur__3214EC07C239FD38") @default(autoincrement())
+  IdUsuario            Int
+  Nombre               String          @db.VarChar(100)
+  FechaRegistro        DateTime?       @default(now(), map: "DF__Configura__Fecha__68487DD7") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime?       @db.DateTime
+  Anulado              Boolean         @default(false, map: "DF__Configura__Anula__693CA210")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime?       @db.DateTime
+  Usuario              Usuario         @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_ConfiguracionComision_Usuario")
+  Empleado             Empleado[]
+  ReglaComision        ReglaComision[]
 }
 
 model DetalleCompra {
@@ -137,6 +141,7 @@ model Empleado {
   Id                      Int                    @id(map: "PK__Empleado__3214EC0707FA1428") @default(autoincrement())
   IdEntidad               Int
   IdUsuario               Int
+  IdUsuarioVinculado      Int?
   IdConfiguracionComision Int?
   PuestoTrabajo           String                 @db.VarChar(255)
   DescripcionPuesto       String?                @db.VarChar(255)
@@ -151,8 +156,11 @@ model Empleado {
   FechaAnulacion          DateTime?              @db.DateTime
   ConfiguracionComision   ConfiguracionComision? @relation(fields: [IdConfiguracionComision], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Empleado_ConfiguracionComision")
   Entidad                 Entidad                @relation(fields: [IdEntidad], references: [Id], onUpdate: NoAction, map: "FK_Empleado_Entidad")
-  Usuario                 Usuario                @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Empleado_Usuario")
+  UsuarioRegistro         Usuario                @relation("Empleado_IdUsuarioRegistroToUsuario", fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Empleado_Usuario")
+  UsuarioVinculado        Usuario?               @relation("Empleado_IdUsuarioVinculadoToUsuario", fields: [IdUsuarioVinculado], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Empleado_UsuarioVinculado")
   PlanillaMensual         PlanillaMensual[]
+
+  @@index([IdUsuarioVinculado, Anulado], map: "IX_Empleado_UsuarioVinculado_Activo")
 }
 
 model Empresa {
@@ -317,6 +325,7 @@ model InventarioItem {
   EstructuraProducto_EstructuraProducto_IdProductoTerminadoToInventarioItem EstructuraProducto[] @relation("EstructuraProducto_IdProductoTerminadoToInventarioItem")
   Proveedor                                                                 Proveedor            @relation(fields: [IdProveedor], references: [Id], onUpdate: NoAction, map: "FK_InventarioItem_Proveedor")
   Usuario                                                                   Usuario              @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_InventarioItem_Usuario")
+  PlanillaDetalleComision                                                   PlanillaDetalleComision[]
   ReglaComision                                                             ReglaComision[]
 }
 
@@ -339,23 +348,65 @@ model PagoVenta {
 }
 
 model PlanillaMensual {
-  Id                   Int       @id(map: "PK__Planilla__3214EC073F7CA9B8") @default(autoincrement())
-  IdEmpleado           Int
-  Mes                  Int
-  Anio                 Int
-  SueldoBase           Decimal   @db.Decimal(10, 2)
-  TotalComisiones      Decimal   @db.Decimal(10, 2)
-  TotalViaticos        Decimal   @default(0, map: "DF__PlanillaM__Total__6EF57B66") @db.Decimal(10, 2)
-  TotalDescuentos      Decimal   @default(0, map: "DF__PlanillaM__Total__6FE99F9F") @db.Decimal(10, 2)
-  SueldoLiquido        Decimal   @db.Decimal(10, 2)
-  Observaciones        String?   @db.VarChar(255)
-  FechaRegistro        DateTime? @default(now(), map: "DF__PlanillaM__Fecha__70DDC3D8") @db.DateTime
-  IdUsuarioModificador Int?
-  FechaModificacion    DateTime? @db.DateTime
-  Anulado              Boolean   @default(false, map: "DF__PlanillaM__Anula__71D1E811")
-  IdUsuarioAnulador    Int?
-  FechaAnulacion       DateTime? @db.DateTime
-  Empleado             Empleado  @relation(fields: [IdEmpleado], references: [Id], onUpdate: NoAction, map: "FK_PlanillaMensual_Empleado")
+  Id                     Int                      @id(map: "PK__Planilla__3214EC073F7CA9B8") @default(autoincrement())
+  IdEmpleado             Int
+  Mes                    Int
+  Anio                   Int
+  Estado                 String                   @default("BORRADOR", map: "DF__PlanillaM__Estado__72C60C4A") @db.VarChar(20)
+  IdUsuarioGenerador     Int?
+  SueldoBase             Decimal                  @db.Decimal(10, 2)
+  TotalComisiones        Decimal                  @db.Decimal(10, 2)
+  TotalBonosMetas        Decimal                  @default(0, map: "DF__PlanillaM__Bonos__73BA3083") @db.Decimal(10, 2)
+  TotalViaticos          Decimal                  @default(0, map: "DF__PlanillaM__Total__6EF57B66") @db.Decimal(10, 2)
+  TotalDescuentos        Decimal                  @default(0, map: "DF__PlanillaM__Total__6FE99F9F") @db.Decimal(10, 2)
+  SueldoLiquido          Decimal                  @db.Decimal(10, 2)
+  Observaciones          String?                  @db.VarChar(255)
+  FechaRegistro          DateTime?                @default(now(), map: "DF__PlanillaM__Fecha__70DDC3D8") @db.DateTime
+  IdUsuarioModificador   Int?
+  FechaModificacion      DateTime?                @db.DateTime
+  Anulado                Boolean                  @default(false, map: "DF__PlanillaM__Anula__71D1E811")
+  IdUsuarioAnulador      Int?
+  FechaAnulacion         DateTime?                @db.DateTime
+  Empleado               Empleado                 @relation(fields: [IdEmpleado], references: [Id], onUpdate: NoAction, map: "FK_PlanillaMensual_Empleado")
+  PlanillaDetalleAjuste  PlanillaDetalleAjuste[]
+  PlanillaDetalleComision PlanillaDetalleComision[]
+
+  @@index([Mes, Anio, Anulado], map: "IX_PlanillaMensual_Periodo_Activo")
+  @@unique([IdEmpleado, Mes, Anio, Anulado], map: "UQ_PlanillaMensual_EmpleadoPeriodoEstado")
+}
+
+model PlanillaDetalleComision {
+  Id                  Int             @id(map: "PK__Planilla__3214EC07DCOM001") @default(autoincrement())
+  IdPlanillaMensual   Int
+  IdInventarioItem    Int
+  Cantidad            Float
+  BaseCalculo         Decimal         @db.Decimal(10, 2)
+  TipoCalculo         String          @db.VarChar(30)
+  ValorAplicado       Decimal         @db.Decimal(10, 4)
+  MontoComision       Decimal         @db.Decimal(10, 2)
+  FechaRegistro       DateTime?       @default(now(), map: "DF__PlanillaD__Fecha__74AE54BC") @db.DateTime
+  Anulado             Boolean         @default(false, map: "DF__PlanillaD__Anula__75A278F5")
+  IdUsuarioAnulador   Int?
+  FechaAnulacion      DateTime?       @db.DateTime
+  InventarioItem      InventarioItem  @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_PlanillaDetalleComision_InventarioItem")
+  PlanillaMensual     PlanillaMensual @relation(fields: [IdPlanillaMensual], references: [Id], onUpdate: NoAction, map: "FK_PlanillaDetalleComision_PlanillaMensual")
+
+  @@index([IdPlanillaMensual, Anulado], map: "IX_PlanillaDetalleComision_Planilla_Activo")
+}
+
+model PlanillaDetalleAjuste {
+  Id                 Int             @id(map: "PK__Planilla__3214EC07DADJ001") @default(autoincrement())
+  IdPlanillaMensual  Int
+  TipoAjuste         String          @db.VarChar(30)
+  Descripcion        String          @db.VarChar(255)
+  Monto              Decimal         @db.Decimal(10, 2)
+  FechaRegistro      DateTime?       @default(now(), map: "DF__PlanillaA__Fecha__76969D2E") @db.DateTime
+  Anulado            Boolean         @default(false, map: "DF__PlanillaA__Anula__778AC167")
+  IdUsuarioAnulador  Int?
+  FechaAnulacion     DateTime?       @db.DateTime
+  PlanillaMensual    PlanillaMensual @relation(fields: [IdPlanillaMensual], references: [Id], onUpdate: NoAction, map: "FK_PlanillaDetalleAjuste_PlanillaMensual")
+
+  @@index([IdPlanillaMensual, Anulado], map: "IX_PlanillaDetalleAjuste_Planilla_Activo")
 }
 
 model Proveedor {
@@ -381,8 +432,15 @@ model ReglaComision {
   IdInventarioItem        Int
   CantidadMinima          Float
   CantidadMaxima          Float?
-  Porcentaje              Decimal               @db.Decimal(5, 2)
+  TipoCalculo             String                @default("PORCENTAJE_VENTA", map: "DF__ReglaComi__TipoC__6D0D32F4") @db.VarChar(30)
+  Porcentaje              Decimal               @default(0, map: "DF__ReglaComi__Porce__6E01572D") @db.Decimal(5, 2)
+  MontoPorUnidad          Decimal?              @db.Decimal(10, 2)
+  FechaRegistro           DateTime?             @default(now(), map: "DF__ReglaComi__Fecha__6EF57B66") @db.DateTime
+  IdUsuarioModificador    Int?
+  FechaModificacion       DateTime?             @db.DateTime
   Anulado                 Boolean               @default(false, map: "DF__ReglaComi__Anula__6C190EBB")
+  IdUsuarioAnulador       Int?
+  FechaAnulacion          DateTime?             @db.DateTime
   ConfiguracionComision   ConfiguracionComision @relation(fields: [IdConfiguracionComision], references: [Id], onUpdate: NoAction, map: "FK_ReglaComision_ConfiguracionComision")
   InventarioItem          InventarioItem        @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_ReglaComision_InventarioItem")
 }
@@ -492,7 +550,8 @@ model Usuario {
   Cliente                                          Cliente[]
   Compra                                           Compra[]
   ConfiguracionComision                            ConfiguracionComision[]
-  Empleado                                         Empleado[]
+  Empleado_Empleado_IdUsuarioRegistroToUsuario     Empleado[]               @relation("Empleado_IdUsuarioRegistroToUsuario")
+  Empleado_Empleado_IdUsuarioVinculadoToUsuario    Empleado[]               @relation("Empleado_IdUsuarioVinculadoToUsuario")
   Empresa                                          Empresa[]
   Entidad_Entidad_IdUsuarioToUsuario               Entidad[]               @relation("Entidad_IdUsuarioToUsuario")
   GastoVehiculo                                    GastoVehiculo[]

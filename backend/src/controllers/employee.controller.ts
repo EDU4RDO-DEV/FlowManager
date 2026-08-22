@@ -74,7 +74,10 @@ export async function listAvailableEmployeesController(req: Request, res: Respon
     const includeUserIdRaw = req.query.includeUserId;
     const includeUserId = includeUserIdRaw !== undefined ? parseId(includeUserIdRaw) : undefined;
 
-    if (includeUserIdRaw !== undefined && (!Number.isInteger(includeUserId) || includeUserId <= 0)) {
+    if (
+      includeUserIdRaw !== undefined &&
+      (typeof includeUserId !== 'number' || !Number.isInteger(includeUserId) || includeUserId <= 0)
+    ) {
       return res.status(400).json({
         ok: false,
         message: 'includeUserId debe ser un entero positivo cuando se envía',

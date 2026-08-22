@@ -18,6 +18,7 @@ export interface EmployeeDto {
   id: number;
   idEntidad: number;
   idUsuario: number;
+  idUsuarioVinculado: number | null;
   idConfiguracionComision: number | null;
   puestoTrabajo: string;
   descripcionPuesto: string | null;

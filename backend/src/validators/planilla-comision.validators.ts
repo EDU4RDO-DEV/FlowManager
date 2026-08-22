@@ -7,6 +7,8 @@ const finitePositiveNumber = z
   .finite('debe ser un número válido')
   .positive('debe ser mayor a 0');
 
+const tipoCalculoSchema = z.enum(['PORCENTAJE_VENTA', 'MONTO_POR_UNIDAD']);
+
 const optionalBooleanFromQuery = z
   .enum(['true', 'false'])
   .transform((value) => value === 'true')
@@ -64,11 +66,17 @@ export const createReglaComisionSchema = z
     idInventarioItem: positiveInt,
     cantidadMinima: finitePositiveNumber,
     cantidadMaxima: finitePositiveNumber.optional(),
+    tipoCalculo: tipoCalculoSchema.default('PORCENTAJE_VENTA'),
     porcentaje: z
       .number()
       .finite('porcentaje debe ser un número válido')
-      .positive('porcentaje debe ser mayor a 0')
+      .min(0, 'porcentaje debe ser mayor o igual a 0')
       .max(100, 'porcentaje no puede ser mayor a 100'),
+    montoPorUnidad: z
+      .number()
+      .finite('montoPorUnidad debe ser un número válido')
+      .positive('montoPorUnidad debe ser mayor a 0')
+      .optional(),
   })
   .superRefine((data, ctx) => {
     if (
@@ -81,6 +89,22 @@ export const createReglaComisionSchema = z
         message: 'cantidadMaxima debe ser mayor o igual a cantidadMinima',
       });
     }
+
+    if (data.tipoCalculo === 'PORCENTAJE_VENTA' && data.porcentaje <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['porcentaje'],
+        message: 'porcentaje debe ser mayor a 0 para PORCENTAJE_VENTA',
+      });
+    }
+
+    if (data.tipoCalculo === 'MONTO_POR_UNIDAD' && (data.montoPorUnidad ?? 0) <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['montoPorUnidad'],
+        message: 'montoPorUnidad debe ser mayor a 0 para MONTO_POR_UNIDAD',
+      });
+    }
   });
 
 export const updateReglaComisionSchema = z
@@ -88,11 +112,18 @@ export const updateReglaComisionSchema = z
     idInventarioItem: positiveInt.optional(),
     cantidadMinima: finitePositiveNumber.optional(),
     cantidadMaxima: finitePositiveNumber.nullable().optional(),
+    tipoCalculo: tipoCalculoSchema.optional(),
     porcentaje: z
       .number()
       .finite('porcentaje debe ser un número válido')
-      .positive('porcentaje debe ser mayor a 0')
+      .min(0, 'porcentaje debe ser mayor o igual a 0')
       .max(100, 'porcentaje no puede ser mayor a 100')
+      .optional(),
+    montoPorUnidad: z
+      .number()
+      .finite('montoPorUnidad debe ser un número válido')
+      .positive('montoPorUnidad debe ser mayor a 0')
+      .nullable()
       .optional(),
     idUsuarioModificador: positiveInt.optional(),
   })
@@ -101,7 +132,9 @@ export const updateReglaComisionSchema = z
       data.idInventarioItem !== undefined ||
       data.cantidadMinima !== undefined ||
       data.cantidadMaxima !== undefined ||
-      data.porcentaje !== undefined,
+      data.porcentaje !== undefined ||
+      data.montoPorUnidad !== undefined ||
+      data.tipoCalculo !== undefined,
     {
       message: 'Debe enviar al menos un campo de la regla para actualizar',
     },
