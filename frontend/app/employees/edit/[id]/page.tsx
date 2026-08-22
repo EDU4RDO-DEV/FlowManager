@@ -12,12 +12,14 @@ import { useAuth } from "@/components/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
+import { listCommissionConfigs } from "@/services/commissions.service";
 import { getEmployeeById, updateEmployee, uploadEmployeeImage } from "@/services/employees.service";
-import { listAvailableUsers } from "@/services/users.service";
+import { getUserById, listAvailableUsers } from "@/services/users.service";
 import type { UserDto } from "@/types/users";
 
 const EMPTY_FORM: EmployeeFormValues = {
   idUsuarioVinculado: "",
+  idConfiguracionComision: "",
   nombreCompleto: "",
   sexo: "",
   fechaNacimiento: "",
@@ -50,6 +52,7 @@ export default function EditEmployeePage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [form, setForm] = useState<EmployeeFormValues>(EMPTY_FORM);
   const [users, setUsers] = useState<UserDto[]>([]);
+  const [commissionConfigs, setCommissionConfigs] = useState<Array<{ id: number; nombre: string }>>([]);
 
   async function handleUploadImage(file: File) {
     setUploadingImage(true);
@@ -75,16 +78,30 @@ export default function EditEmployeePage() {
 
       setLoading(true);
       try {
-        const [employeeData, usersData] = await Promise.all([
+        const [employeeData, usersData, configsData] = await Promise.all([
           getEmployeeById(employeeId),
           listAvailableUsers(employeeId),
+          listCommissionConfigs(),
         ]);
-        setUsers(usersData);
-        const linkedUser = usersData.find(
-          (candidateUser) => candidateUser.idEntidad === employeeData.idEntidad,
-        );
+
+        let usersForForm = usersData;
+        if (
+          employeeData.idUsuarioVinculado &&
+          !usersData.some((candidateUser) => candidateUser.id === employeeData.idUsuarioVinculado)
+        ) {
+          const linkedUser = await getUserById(employeeData.idUsuarioVinculado);
+          usersForForm = [linkedUser, ...usersData];
+        }
+
+        setUsers(usersForForm);
+        setCommissionConfigs(configsData.map((item) => ({ id: item.id, nombre: item.nombre })));
         setForm({
-          idUsuarioVinculado: linkedUser ? String(linkedUser.id) : "",
+          idUsuarioVinculado: employeeData.idUsuarioVinculado
+            ? String(employeeData.idUsuarioVinculado)
+            : "",
+          idConfiguracionComision: employeeData.idConfiguracionComision
+            ? String(employeeData.idConfiguracionComision)
+            : "",
           nombreCompleto: employeeData.entidad.nombreCompleto,
           sexo: employeeData.entidad.sexo ?? "",
           fechaNacimiento: toInputDate(employeeData.entidad.fechaNacimiento),
@@ -169,9 +186,13 @@ export default function EditEmployeePage() {
     setSaving(true);
     try {
       const linkedUserId = form.idUsuarioVinculado ? Number(form.idUsuarioVinculado) : null;
+      const commissionConfigId = form.idConfiguracionComision
+        ? Number(form.idConfiguracionComision)
+        : null;
       await updateEmployee(employeeId, {
         idUsuarioModificador: user.id,
         idUsuarioVinculado: linkedUserId,
+        idConfiguracionComision: commissionConfigId,
         puestoTrabajo: form.puestoTrabajo.trim(),
         descripcionPuesto: form.descripcionPuesto.trim() || null,
         fechaContratacion: form.fechaContratacion,
@@ -215,6 +236,7 @@ export default function EditEmployeePage() {
             <EmployeeFormCard
               title={`Editar empleado #${params.id}`}
               users={users}
+              commissionConfigs={commissionConfigs}
               form={form}
               saving={saving}
               uploadingImage={uploadingImage}

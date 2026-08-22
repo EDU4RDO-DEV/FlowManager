@@ -12,12 +12,14 @@ import { useAuth } from "@/components/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
+import { listCommissionConfigs } from "@/services/commissions.service";
 import { createEmployee, uploadEmployeeImage } from "@/services/employees.service";
 import { listAvailableUsers } from "@/services/users.service";
 import type { UserDto } from "@/types/users";
 
 const EMPTY_FORM: EmployeeFormValues = {
   idUsuarioVinculado: "",
+  idConfiguracionComision: "",
   nombreCompleto: "",
   sexo: "",
   fechaNacimiento: "",
@@ -41,6 +43,7 @@ export default function CreateEmployeePage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [form, setForm] = useState<EmployeeFormValues>(EMPTY_FORM);
   const [users, setUsers] = useState<UserDto[]>([]);
+  const [commissionConfigs, setCommissionConfigs] = useState<Array<{ id: number; nombre: string }>>([]);
 
   async function handleUploadImage(file: File) {
     setUploadingImage(true);
@@ -58,10 +61,14 @@ export default function CreateEmployeePage() {
   useEffect(() => {
     async function loadUsers() {
       try {
-        const usersData = await listAvailableUsers();
+        const [usersData, configsData] = await Promise.all([
+          listAvailableUsers(),
+          listCommissionConfigs(),
+        ]);
         setUsers(usersData);
+        setCommissionConfigs(configsData.map((item) => ({ id: item.id, nombre: item.nombre })));
       } catch (error) {
-        toast.error(getApiErrorMessage(error, "No se pudieron cargar los usuarios."));
+        toast.error(getApiErrorMessage(error, "No se pudieron cargar los catálogos del formulario."));
       }
     }
 
@@ -120,9 +127,13 @@ export default function CreateEmployeePage() {
     setSaving(true);
     try {
       const linkedUserId = form.idUsuarioVinculado ? Number(form.idUsuarioVinculado) : undefined;
+      const commissionConfigId = form.idConfiguracionComision
+        ? Number(form.idConfiguracionComision)
+        : undefined;
       await createEmployee({
         idUsuario: user.id,
         ...(linkedUserId ? { idUsuarioVinculado: linkedUserId } : {}),
+        ...(commissionConfigId ? { idConfiguracionComision: commissionConfigId } : {}),
         puestoTrabajo: form.puestoTrabajo.trim(),
         descripcionPuesto: form.descripcionPuesto.trim() || undefined,
         fechaContratacion: form.fechaContratacion,
@@ -161,6 +172,7 @@ export default function CreateEmployeePage() {
           <EmployeeFormCard
             title="Nuevo empleado"
             users={users}
+            commissionConfigs={commissionConfigs}
             form={form}
             saving={saving}
             uploadingImage={uploadingImage}

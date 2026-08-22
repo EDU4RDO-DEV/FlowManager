@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -14,8 +14,16 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -27,6 +35,7 @@ import {
 } from "@/components/ui/table";
 import { getApiErrorMessage } from "@/lib/api";
 import { hasModulePermission } from "@/lib/rbac";
+import { cn } from "@/lib/utils";
 import {
   createCommissionConfig,
   createCommissionRule,
@@ -38,9 +47,10 @@ import {
   listCommissionConfigs,
   restoreCommissionConfig,
   restoreCommissionRule,
+  updateCommissionRule,
 } from "@/services/commissions.service";
 import { listProducts } from "@/services/products.service";
-import type { CommissionConfigDto, CommissionRuleType } from "@/types/commissions";
+import type { CommissionConfigDto, CommissionRuleDto, CommissionRuleType } from "@/types/commissions";
 
 type ProductOption = { id: number; nombre: string };
 
@@ -71,17 +81,19 @@ export default function CommissionsPage() {
   const [configs, setConfigs] = useState<CommissionConfigDto[]>([]);
   const [trashConfigs, setTrashConfigs] = useState<CommissionConfigDto[]>([]);
   const [selectedConfigId, setSelectedConfigId] = useState<number | null>(null);
-  const [activeRules, setActiveRules] = useState<any[]>([]);
-  const [trashRules, setTrashRules] = useState<any[]>([]);
+  const [activeRules, setActiveRules] = useState<CommissionRuleDto[]>([]);
+  const [trashRules, setTrashRules] = useState<CommissionRuleDto[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [newConfigName, setNewConfigName] = useState("");
   const [ruleForm, setRuleForm] = useState<RuleFormState>(EMPTY_RULE_FORM);
+  const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [isSavingRule, setIsSavingRule] = useState(false);
   const [deleteConfigCandidate, setDeleteConfigCandidate] = useState<CommissionConfigDto | null>(null);
-  const [deleteRuleCandidate, setDeleteRuleCandidate] = useState<any | null>(null);
+  const [deleteRuleCandidate, setDeleteRuleCandidate] = useState<CommissionRuleDto | null>(null);
 
   const selectedConfig = useMemo(
     () => configs.find((item) => item.id === selectedConfigId) ?? null,
@@ -94,7 +106,7 @@ export default function CommissionsPage() {
       const [active, trash, productsData] = await Promise.all([
         listCommissionConfigs(),
         listAnulatedCommissionConfigs(),
-        listProducts({ limit: 200 }),
+        listProducts({ limit: 100 }),
       ]);
       setConfigs(active);
       setTrashConfigs(trash);
@@ -176,14 +188,37 @@ export default function CommissionsPage() {
     }
   }
 
-  async function handleCreateRule() {
+  function startEditingRule(rule: CommissionRuleDto) {
+    setEditingRuleId(rule.id);
+    setRuleForm({
+      idInventarioItem: String(rule.idInventarioItem),
+      cantidadMinima: String(rule.cantidadMinima),
+      cantidadMaxima: rule.cantidadMaxima === null ? "" : String(rule.cantidadMaxima),
+      tipoCalculo: rule.tipoCalculo,
+      porcentaje: rule.tipoCalculo === "PORCENTAJE_VENTA" ? String(rule.porcentaje) : "",
+      montoPorUnidad:
+        rule.tipoCalculo === "MONTO_POR_UNIDAD" ? String(rule.montoPorUnidad ?? "") : "",
+    });
+  }
+
+  function clearRuleForm() {
+    setEditingRuleId(null);
+    setRuleForm(EMPTY_RULE_FORM);
+  }
+
+  async function handleSubmitRule() {
     if (!selectedConfigId) {
       toast.error("Selecciona una configuración");
       return;
     }
 
-    if (!canCreate) {
+    if (!editingRuleId && !canCreate) {
       toast.error("No tienes permisos para crear reglas");
+      return;
+    }
+
+    if (editingRuleId && !canUpdate) {
+      toast.error("No tienes permisos para editar reglas");
       return;
     }
 
@@ -207,19 +242,31 @@ export default function CommissionsPage() {
 
     setIsSavingRule(true);
     try {
-      await createCommissionRule(selectedConfigId, {
-        idInventarioItem,
-        cantidadMinima,
-        cantidadMaxima,
-        tipoCalculo: ruleForm.tipoCalculo,
-        porcentaje,
-        montoPorUnidad,
-      });
-      setRuleForm(EMPTY_RULE_FORM);
+      if (editingRuleId) {
+        await updateCommissionRule(selectedConfigId, editingRuleId, {
+          idInventarioItem,
+          cantidadMinima,
+          cantidadMaxima: cantidadMaxima ?? null,
+          tipoCalculo: ruleForm.tipoCalculo,
+          porcentaje,
+          montoPorUnidad: montoPorUnidad ?? null,
+          idUsuarioModificador: user?.id,
+        });
+      } else {
+        await createCommissionRule(selectedConfigId, {
+          idInventarioItem,
+          cantidadMinima,
+          cantidadMaxima,
+          tipoCalculo: ruleForm.tipoCalculo,
+          porcentaje,
+          montoPorUnidad,
+        });
+      }
+      clearRuleForm();
       await loadRules(selectedConfigId);
-      toast.success("Regla creada");
+      toast.success(editingRuleId ? "Regla actualizada" : "Regla creada");
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "No se pudo crear la regla"));
+      toast.error(getApiErrorMessage(error, "No se pudo guardar la regla"));
     } finally {
       setIsSavingRule(false);
     }
@@ -392,22 +439,69 @@ export default function CommissionsPage() {
                   </div>
                 ) : (
                   <>
-                    {canCreate ? (
+                    {canCreate || canUpdate ? (
                       <div className="rounded-xl border bg-muted/40 p-4 space-y-3">
-                        <p className="text-sm font-medium">Agregar regla</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium">
+                            {editingRuleId ? "Editar regla" : "Agregar regla"}
+                          </p>
+                          {editingRuleId ? (
+                            <Button variant="ghost" size="xs" onClick={clearRuleForm}>
+                              <X className="size-4" />
+                              Cancelar edición
+                            </Button>
+                          ) : null}
+                        </div>
                         <div className="grid gap-3 md:grid-cols-2">
                           <div className="space-y-1.5 md:col-span-2">
                             <Label>Producto</Label>
-                            <select
-                              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                              value={ruleForm.idInventarioItem}
-                              onChange={(e) => setRuleForm((prev) => ({ ...prev, idInventarioItem: e.target.value }))}
-                            >
-                              <option value="">Selecciona un producto</option>
-                              {products.map((product) => (
-                                <option key={product.id} value={String(product.id)}>{product.nombre}</option>
-                              ))}
-                            </select>
+                            <Popover open={isProductPickerOpen} onOpenChange={setIsProductPickerOpen}>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  role="combobox"
+                                  className="w-full justify-between"
+                                >
+                                  {ruleForm.idInventarioItem
+                                    ? products.find((product) => String(product.id) === ruleForm.idInventarioItem)
+                                        ?.nombre ?? "Selecciona un producto"
+                                    : "Selecciona un producto"}
+                                  <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                                <Command>
+                                  <CommandInput placeholder="Buscar producto..." />
+                                  <CommandList>
+                                    <CommandEmpty>Sin resultados</CommandEmpty>
+                                    {products.map((product) => (
+                                      <CommandItem
+                                        key={product.id}
+                                        value={`${product.id} ${product.nombre}`}
+                                        onSelect={() => {
+                                          setRuleForm((prev) => ({
+                                            ...prev,
+                                            idInventarioItem: String(product.id),
+                                          }));
+                                          setIsProductPickerOpen(false);
+                                        }}
+                                      >
+                                        <Check
+                                          className={cn(
+                                            "mr-2 size-4",
+                                            ruleForm.idInventarioItem === String(product.id)
+                                              ? "opacity-100"
+                                              : "opacity-0",
+                                          )}
+                                        />
+                                        {product.nombre}
+                                      </CommandItem>
+                                    ))}
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
                           </div>
                           <div className="space-y-1.5">
                             <Label>Cantidad mínima</Label>
@@ -463,9 +557,9 @@ export default function CommissionsPage() {
                           </div>
                         </div>
                         <div className="flex justify-end">
-                          <Button onClick={() => void handleCreateRule()} disabled={isSavingRule}>
+                          <Button onClick={() => void handleSubmitRule()} disabled={isSavingRule}>
                             {isSavingRule ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-                            Agregar regla
+                            {editingRuleId ? "Guardar cambios" : "Agregar regla"}
                           </Button>
                         </div>
                       </div>
@@ -501,11 +595,18 @@ export default function CommissionsPage() {
                                       : `Q${Number(rule.montoPorUnidad ?? 0).toFixed(2)}`}
                                   </TableCell>
                                   <TableCell className="text-right">
-                                    {canDelete ? (
-                                      <Button variant="ghost" size="xs" onClick={() => setDeleteRuleCandidate(rule)}>
-                                        <Trash2 className="size-4" />
-                                      </Button>
-                                    ) : null}
+                                    <div className="flex justify-end gap-1">
+                                      {canUpdate ? (
+                                        <Button variant="ghost" size="xs" onClick={() => startEditingRule(rule)}>
+                                          <Pencil className="size-4" />
+                                        </Button>
+                                      ) : null}
+                                      {canDelete ? (
+                                        <Button variant="ghost" size="xs" onClick={() => setDeleteRuleCandidate(rule)}>
+                                          <Trash2 className="size-4" />
+                                        </Button>
+                                      ) : null}
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                               ))}

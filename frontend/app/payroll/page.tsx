@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Eye, FileCheck2, Loader2, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { CalendarDays, Check, ChevronsUpDown, Eye, FileCheck2, Loader2, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -14,8 +14,16 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -66,6 +74,7 @@ export default function PayrollPage() {
   const [mes, setMes] = useState(String(currentMonth()));
   const [anio, setAnio] = useState(String(currentYear()));
   const [idEmpleado, setIdEmpleado] = useState("");
+  const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
   const [ajusteTipo, setAjusteTipo] = useState<PayrollAdjustmentPayload["tipoAjuste"]>("BONO_META");
   const [ajusteDescripcion, setAjusteDescripcion] = useState("");
   const [ajusteMonto, setAjusteMonto] = useState("");
@@ -126,6 +135,11 @@ export default function PayrollPage() {
       totalLiquido,
     };
   }, [payrolls, trashPayrolls.length]);
+
+  const selectedEmployee = useMemo(
+    () => employees.find((employee) => String(employee.id) === idEmpleado) ?? null,
+    [employees, idEmpleado],
+  );
 
   function parsePeriod() {
     const mesNum = Number(mes);
@@ -279,16 +293,54 @@ export default function PayrollPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Empleado (opcional)</Label>
-                  <select
-                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                    value={idEmpleado}
-                    onChange={(e) => setIdEmpleado(e.target.value)}
-                  >
-                    <option value="">Todos los empleados</option>
-                    {employees.map((employee) => (
-                      <option key={employee.id} value={String(employee.id)}>{employee.nombre}</option>
-                    ))}
-                  </select>
+                  <Popover open={employeePickerOpen} onOpenChange={setEmployeePickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        className="w-full justify-between"
+                      >
+                        {selectedEmployee ? selectedEmployee.nombre : "Todos los empleados"}
+                        <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                      <Command>
+                        <CommandInput placeholder="Buscar empleado..." />
+                        <CommandList>
+                          <CommandEmpty>Sin resultados</CommandEmpty>
+                          <CommandItem
+                            value="0 Todos los empleados"
+                            onSelect={() => {
+                              setIdEmpleado("");
+                              setEmployeePickerOpen(false);
+                            }}
+                          >
+                            <Check className={`mr-2 size-4 ${idEmpleado === "" ? "opacity-100" : "opacity-0"}`} />
+                            Todos los empleados
+                          </CommandItem>
+                          {employees.map((employee) => (
+                            <CommandItem
+                              key={employee.id}
+                              value={`${employee.id} ${employee.nombre}`}
+                              onSelect={() => {
+                                setIdEmpleado(String(employee.id));
+                                setEmployeePickerOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={`mr-2 size-4 ${
+                                  idEmpleado === String(employee.id) ? "opacity-100" : "opacity-0"
+                                }`}
+                              />
+                              {employee.nombre}
+                            </CommandItem>
+                          ))}
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
 

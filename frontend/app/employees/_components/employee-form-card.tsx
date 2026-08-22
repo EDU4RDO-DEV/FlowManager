@@ -8,6 +8,7 @@ import type { UserDto } from "@/types/users";
 
 export type EmployeeFormValues = {
   idUsuarioVinculado: string;
+  idConfiguracionComision: string;
   nombreCompleto: string;
   sexo: string;
   fechaNacimiento: string;
@@ -27,6 +28,7 @@ export type EmployeeFormValues = {
 type EmployeeFormCardProps = {
   title: string;
   users: UserDto[];
+  commissionConfigs: Array<{ id: number; nombre: string }>;
   form: EmployeeFormValues;
   saving: boolean;
   uploadingImage: boolean;
@@ -60,6 +62,7 @@ function resolveImagePreviewUrl(rutaImagen: string): string {
 export function EmployeeFormCard({
   title,
   users,
+  commissionConfigs,
   form,
   saving,
   uploadingImage,
@@ -276,6 +279,25 @@ export function EmployeeFormCard({
                   placeholder="0.00"
                   className="h-10 bg-background"
                 />
+              </div>
+
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor="employee-commission-config">Configuración de comisión</Label>
+                <select
+                  id="employee-commission-config"
+                  className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm transition-colors hover:bg-muted/50"
+                  value={form.idConfiguracionComision}
+                  onChange={(event) =>
+                    onChange({ ...form, idConfiguracionComision: event.target.value })
+                  }
+                >
+                  <option value="">Sin configuración</option>
+                  {commissionConfigs.map((config) => (
+                    <option key={config.id} value={String(config.id)}>
+                      {config.nombre}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-1.5">
