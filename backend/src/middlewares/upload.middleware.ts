@@ -8,6 +8,7 @@ const productsDir = path.join(uploadsRoot, 'products');
 const clientsDir = path.join(uploadsRoot, 'clients');
 const employeesDir = path.join(uploadsRoot, 'employees');
 const providersDir = path.join(uploadsRoot, 'providers');
+const vehiclesDir = path.join(uploadsRoot, 'vehicles');
 
 if (!fs.existsSync(productsDir)) {
   fs.mkdirSync(productsDir, { recursive: true });
@@ -23,6 +24,10 @@ if (!fs.existsSync(employeesDir)) {
 
 if (!fs.existsSync(providersDir)) {
   fs.mkdirSync(providersDir, { recursive: true });
+}
+
+if (!fs.existsSync(vehiclesDir)) {
+  fs.mkdirSync(vehiclesDir, { recursive: true });
 }
 
 const ALLOWED_MIME_TYPES = new Set([
@@ -109,3 +114,4 @@ function createImageUploader(targetDir: string, fallbackName: string) {
 export const uploadClientImage = createImageUploader(clientsDir, 'cliente');
 export const uploadEmployeeImage = createImageUploader(employeesDir, 'empleado');
 export const uploadProviderImage = createImageUploader(providersDir, 'proveedor');
+export const uploadVehicleExpenseImage = createImageUploader(vehiclesDir, 'vehiculo-gasto');

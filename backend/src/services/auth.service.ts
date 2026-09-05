@@ -34,6 +34,7 @@ type FrontendModuleKey =
   | 'roles'
   | 'empleados'
   | 'clientes'
+  | 'logistica'
   | 'proveedores'
   | 'compras'
   | 'planilla'
@@ -92,6 +93,7 @@ const FRONTEND_MODULES: FrontendModuleKey[] = [
   'roles',
   'empleados',
   'clientes',
+  'logistica',
   'proveedores',
   'compras',
   'planilla',
@@ -106,6 +108,7 @@ const BACKEND_MODULES: BackendModuleKey[] = [
   'roles',
   'empleados',
   'clientes',
+  'logistica',
   'proveedores',
   'compras',
   'planilla',

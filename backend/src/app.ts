@@ -9,6 +9,7 @@ import authRouter from './routes/auth.routes';
 import clientRouter from './routes/client.routes';
 import employeeRouter from './routes/employee.routes';
 import inventoryLogRouter from './routes/inventory-log.routes';
+import logisticsRouter from './routes/logistics.routes';
 import planillaRouter from './routes/planilla.routes';
 import productRouter from './routes/product.routes';
 import productStructureRouter from './routes/product-structure.routes';
@@ -32,6 +33,7 @@ export function createApp() {
   app.use('/api/clients', requireAuth, clientRouter);
   app.use('/api/employees', requireAuth, employeeRouter);
   app.use('/api/inventory-log', requireAuth, inventoryLogRouter);
+  app.use('/api/logistics', requireAuth, logisticsRouter);
   app.use('/api/planilla', requireAuth, planillaRouter);
   app.use('/api/products', requireAuth, productRouter);
   app.use('/api/product-structure', requireAuth, productStructureRouter);
