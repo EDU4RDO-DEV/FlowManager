@@ -384,19 +384,31 @@ export default function CommissionsPage() {
                     {configs.map((item) => (
                       <div
                         key={item.id}
-                        className={`rounded-lg border p-3 ${selectedConfigId === item.id ? "border-sky-500 bg-sky-50/60" : "bg-background"}`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedConfigId(item.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedConfigId(item.id);
+                          }
+                        }}
+                        className={`cursor-pointer rounded-lg border p-3 transition-colors ${selectedConfigId === item.id ? "border-sky-500 bg-sky-50/60" : "bg-background hover:bg-muted/40"}`}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <button
-                            className="text-left"
-                            onClick={() => setSelectedConfigId(item.id)}
-                            type="button"
-                          >
+                          <div className="text-left">
                             <p className="font-medium">{item.nombre}</p>
                             <p className="text-xs text-muted-foreground">{item.totalReglasActivas ?? 0} reglas activas</p>
-                          </button>
+                          </div>
                           {canDelete ? (
-                            <Button variant="ghost" size="xs" onClick={() => setDeleteConfigCandidate(item)}>
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setDeleteConfigCandidate(item);
+                              }}
+                            >
                               <Trash2 className="size-4" />
                             </Button>
                           ) : null}
@@ -470,7 +482,7 @@ export default function CommissionsPage() {
                                   <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
                                 </Button>
                               </PopoverTrigger>
-                              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                              <PopoverContent className="w-(--radix-popover-trigger-width) p-0">
                                 <Command>
                                   <CommandInput placeholder="Buscar producto..." />
                                   <CommandList>
