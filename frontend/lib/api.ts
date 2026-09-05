@@ -120,6 +120,12 @@ api.interceptors.response.use(
 // Extrae un mensaje de error legible desde una respuesta de Axios.
 export function getApiErrorMessage(error: unknown, fallback = 'Ocurrió un error inesperado'): string {
   if (axios.isAxiosError(error)) {
+    // Sin response significa que la solicitud no alcanzó al backend
+    // (API caída, host/puerto inaccesible, CORS de red, timeout de conexión, etc.).
+    if (!error.response) {
+      return 'No hay comunicación con el servidor. Verifica que el backend esté iniciado y accesible.';
+    }
+
     const data = error.response?.data as ApiResponse<unknown> | undefined;
     if (data?.message) return data.message;
     if (error.message) return error.message;
