@@ -305,7 +305,7 @@ export default function PayrollPage() {
                         <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                    <PopoverContent className="w-(--radix-popover-trigger-width) p-0">
                       <Command>
                         <CommandInput placeholder="Buscar empleado..." />
                         <CommandList>
@@ -454,16 +454,34 @@ export default function PayrollPage() {
                               <TableCell>{money(item.sueldoLiquido)}</TableCell>
                               <TableCell className="text-right">
                                 <div className="flex justify-end gap-2">
-                                  <Button variant="outline" size="xs" onClick={() => setSelectedPayrollId(item.id)}>
+                                  <Button
+                                    variant="outline"
+                                    size="xs"
+                                    title="Ver detalle de planilla"
+                                    aria-label="Ver detalle de planilla"
+                                    onClick={() => setSelectedPayrollId(item.id)}
+                                  >
                                     <CalendarDays className="size-4" />
                                   </Button>
                                   {canUpdate && item.estado === "BORRADOR" ? (
-                                    <Button variant="outline" size="xs" onClick={() => void handleClosePayroll(item.id)}>
+                                    <Button
+                                      variant="outline"
+                                      size="xs"
+                                      title="Cerrar planilla"
+                                      aria-label="Cerrar planilla"
+                                      onClick={() => void handleClosePayroll(item.id)}
+                                    >
                                       <FileCheck2 className="size-4" />
                                     </Button>
                                   ) : null}
                                   {canDelete ? (
-                                    <Button variant="ghost" size="xs" onClick={() => setDeleteCandidate(item)}>
+                                    <Button
+                                      variant="ghost"
+                                      size="xs"
+                                      title="Anular planilla"
+                                      aria-label="Anular planilla"
+                                      onClick={() => setDeleteCandidate(item)}
+                                    >
                                       <Trash2 className="size-4" />
                                     </Button>
                                   ) : null}
@@ -484,7 +502,13 @@ export default function PayrollPage() {
                           <p className="text-xs text-muted-foreground">Líquido {money(item.sueldoLiquido)}</p>
                         </div>
                         {canUpdate ? (
-                          <Button variant="outline" size="xs" onClick={() => void handleRestore(item.id)}>
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            title="Restaurar planilla"
+                            aria-label="Restaurar planilla"
+                            onClick={() => void handleRestore(item.id)}
+                          >
                             <RotateCcw className="size-4" />
                           </Button>
                         ) : null}

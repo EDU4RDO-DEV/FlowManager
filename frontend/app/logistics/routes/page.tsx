@@ -122,14 +122,18 @@ export default function LogisticsRoutesPage() {
       setSessions(activeSessions);
       setTrashSessions(removedSessions);
       setVehicles(availableVehicles);
-      setEmployees(
-        employeeList
-          .map((item) => ({
-            userId: item.idUsuarioVinculado ?? item.idUsuario,
+      const employeesByUser = new Map<number, { userId: number; nombre: string }>();
+      for (const item of employeeList) {
+        const userId = item.idUsuarioVinculado ?? item.idUsuario;
+        if (userId > 0 && !employeesByUser.has(userId)) {
+          employeesByUser.set(userId, {
+            userId,
             nombre: item.entidad.nombreCompleto,
-          }))
-          .filter((item) => item.userId > 0),
-      );
+          });
+        }
+      }
+
+      setEmployees(Array.from(employeesByUser.values()));
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cargar logística de rutas"));
     } finally {
