@@ -273,7 +273,7 @@ export default function CreateSalePage() {
       });
 
       toast.success(`Venta #${result.numeroVenta} registrada correctamente`);
-      router.push("/sales");
+      router.push(`/sales/${result.id}`);
       router.refresh();
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo registrar la venta"));

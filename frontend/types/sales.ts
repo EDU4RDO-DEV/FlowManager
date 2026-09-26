@@ -16,18 +16,87 @@ export interface SaleUserDto {
   correo: string;
 }
 
+export interface SaleRouteDto {
+  id: number;
+  estado: "PROGRAMADA" | "EN_CURSO" | "CERRADA";
+  fechaSesion: string | null;
+  ruta: {
+    id: number;
+    nombre: string;
+  };
+}
+
+export interface SaleTalonarioRefDto {
+  id: number;
+  nombre: string;
+}
+
+export interface SaleDetailItemDto {
+  id: number;
+  idVenta: number;
+  idInventarioItem: number;
+  nombre: string;
+  cantidad: number;
+  precioUnitario: number;
+  esBonificacion: boolean;
+  subtotal: number;
+  inventarioItem: {
+    id: number;
+    nombre: string;
+    categoria: "ENVASE" | "INSUMO" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA";
+    existencia: number;
+  };
+}
+
+export interface SalePaymentDto {
+  id: number;
+  idVenta: number;
+  idUsuario: number;
+  monto: number;
+  metodoPago: "EFECTIVO" | "TRANSFERENCIA" | "CHEQUE" | "POS";
+  numeroReferencia: string | null;
+  banco: string | null;
+  fechaPago: string | null;
+  rutaFirma: string | null;
+  observaciones: string | null;
+  usuario: SaleUserDto;
+}
+
 export interface SaleDto {
   id: number;
+  idCliente: number;
+  idUsuario: number;
+  idRutaSesion: number | null;
+  idTalonario: number | null;
   numeroVenta: number;
+  numeroProForma: number | null;
+  tipoRegistro: "VENTA" | "PROFORMA";
   condicionPago: "CONTADO" | "CREDITO";
   estadoPago: "PENDIENTE" | "PARCIAL" | "PAGADO";
   estadoEntrega: "PENDIENTE" | "EN_RUTA" | "ENTREGADO" | "PARCIAL";
   requiereFactura: boolean;
+  autorizacionFel: string | null;
+  numeroFel: string | null;
+  serieFel: string | null;
+  qrFel: string | null;
+  fechaEmisionFel: string | null;
+  nitFacturado: string | null;
+  nombreClienteFacturado: string | null;
+  direccionClienteFacturado: string | null;
+  lugarEntrega: string | null;
+  fechaEntregaEsperada: string | null;
   anulado: boolean;
+  idUsuarioAnulador: number | null;
+  fechaAnulacion: string | null;
   fechaRegistro: string | null;
   cliente: SaleCustomerDto;
   usuario: SaleUserDto;
+  rutaSesion?: SaleRouteDto | null;
+  talonario?: SaleTalonarioRefDto | null;
+  detalle?: SaleDetailItemDto[];
+  pagos?: SalePaymentDto[];
   subtotal: number;
+  totalBonificado?: number;
   total: number;
   totalPagado: number;
   saldo: number;
@@ -130,3 +199,34 @@ export interface CreateSaleResult {
 }
 
 export type CreateSaleResponse = ApiResponse<CreateSaleResult>;
+
+export type SaleByIdResponse = ApiResponse<SaleDto>;
+export type SalePaymentsResponse = ApiResponse<SalePaymentDto[]>;
+
+export interface CreateSalePaymentPayload {
+  idUsuario: number;
+  monto: number;
+  metodoPago: "EFECTIVO" | "TRANSFERENCIA" | "CHEQUE" | "POS";
+  numeroReferencia?: string;
+  banco?: string;
+  fechaPago?: string;
+  rutaFirma?: string;
+  observaciones?: string;
+}
+
+export interface CreateSalePaymentResult {
+  id: number;
+  idVenta: number;
+  idUsuario: number;
+  monto: number;
+  metodoPago: "EFECTIVO" | "TRANSFERENCIA" | "CHEQUE" | "POS";
+  numeroReferencia: string | null;
+  banco: string | null;
+  fechaPago: string | null;
+  rutaFirma: string | null;
+  observaciones: string | null;
+  estadoPago: "PENDIENTE" | "PARCIAL" | "PAGADO";
+  saldo: number;
+}
+
+export type CreateSalePaymentResponse = ApiResponse<CreateSalePaymentResult>;

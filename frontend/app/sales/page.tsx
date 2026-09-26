@@ -201,7 +201,7 @@ export default function SalesPage() {
               ) : (
                 <div className="space-y-2">
                   {sales.map((sale) => (
-                    <div key={sale.id} className="grid grid-cols-1 gap-2 rounded-lg border p-3 md:grid-cols-6 md:items-center">
+                    <div key={sale.id} className="grid grid-cols-1 gap-2 rounded-lg border p-3 md:grid-cols-7 md:items-center">
                       <div>
                         <p className="text-xs text-muted-foreground">Número</p>
                         <p className="font-medium">#{sale.numeroVenta}</p>
@@ -235,6 +235,11 @@ export default function SalesPage() {
                         >
                           {sale.estadoPago}
                         </Badge>
+                      </div>
+                      <div className="md:justify-self-end">
+                        <Button asChild variant="outline" size="sm">
+                          <Link href={`/sales/${sale.id}`}>Ver detalle</Link>
+                        </Button>
                       </div>
                     </div>
                   ))}

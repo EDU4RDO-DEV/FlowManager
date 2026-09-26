@@ -1,11 +1,18 @@
 import { api } from "@/lib/api";
 import type {
+  CreateSalePaymentPayload,
+  CreateSalePaymentResponse,
+  CreateSalePaymentResult,
   CreateSalePayload,
   CreateSaleResponse,
   CreateSaleResult,
   FelPingRequest,
   FelPingResponse,
   FelPingResult,
+  SaleByIdResponse,
+  SaleDto,
+  SalePaymentDto,
+  SalePaymentsResponse,
   SalesFilters,
   SalesListResponse,
   SalesListResult,
@@ -59,4 +66,36 @@ export async function createSale(payload: CreateSalePayload): Promise<CreateSale
   }
 
   return data.data;
+}
+
+export async function getSaleById(id: number): Promise<SaleDto> {
+  const { data } = await api.get<SaleByIdResponse>(`/api/ventas/${id}`);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta inválida al obtener venta");
+  }
+
+  return data.data;
+}
+
+export async function listSalePayments(idVenta: number): Promise<SalePaymentDto[]> {
+  const { data } = await api.get<SalePaymentsResponse>(`/api/ventas/${idVenta}/pagos`);
+  return data.data ?? [];
+}
+
+export async function createSalePayment(
+  idVenta: number,
+  payload: CreateSalePaymentPayload,
+): Promise<CreateSalePaymentResult> {
+  const { data } = await api.post<CreateSalePaymentResponse>(`/api/ventas/${idVenta}/pagos`, payload);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta inválida al registrar pago");
+  }
+
+  return data.data;
+}
+
+export async function anulateSalePayment(idVenta: number, idPago: number, idUsuarioAnulador?: number): Promise<void> {
+  await api.patch(`/api/ventas/${idVenta}/pagos/${idPago}/anular`, {
+    ...(idUsuarioAnulador ? { idUsuarioAnulador } : {}),
+  });
 }
