@@ -39,10 +39,15 @@ type FelIssueResult = {
 
 type ActiveFelConfig = {
   servidor: string;
+  cliente: string;
   usuario: string;
-  contrasena: string;
+  clave: string;
+  nitEmisor: string;
+  afiliacionIva: string;
+  establecimiento: number;
+  formato: string;
+  tipoDocumento: string;
   nombreEmpresa: string;
-  nitEmpresa: string;
 };
 
 function isTruthy(value: string | undefined): boolean {
@@ -53,25 +58,20 @@ function isTruthy(value: string | undefined): boolean {
   return ['1', 'true', 'yes', 'si', 'on'].includes(value.toLowerCase());
 }
 
-function shouldUseMockByDefault(serverUrl: string): boolean {
-  if (process.env.FEL_FORCE_REAL !== undefined) {
-    return !isTruthy(process.env.FEL_FORCE_REAL);
+function shouldUseMockByDefault(): boolean {
+  if (process.env.FEL_USE_MOCK !== undefined) {
+    return isTruthy(process.env.FEL_USE_MOCK);
   }
 
-  const env = (process.env.FEL_ENV ?? 'test').toLowerCase();
-  if (env !== 'prod') {
-    return true;
-  }
-
-  return /pruebas|test/.test(serverUrl.toLowerCase());
+  return false;
 }
 
 function getEmitPath() {
-  return process.env.FEL_EMIT_PATH ?? '/api/fel/emitir';
+  return process.env.FEL_EMIT_PATH ?? '/fel/adocumento';
 }
 
 function getAnulatePath() {
-  return process.env.FEL_ANULATE_PATH ?? '/api/fel/anular';
+  return process.env.FEL_ANULATE_PATH ?? '/fel/aanulacion';
 }
 
 function normalizeUrl(baseUrl: string, path: string): string {
@@ -116,8 +116,8 @@ function buildFacturaXml(input: IssueFelInput, config: ActiveFelConfig): string 
   <SAT ClaseDocumento="dte">
     <DTE ID="DatosCertificados">
       <DatosEmision ID="DatosEmision">
-        <DatosGenerales Tipo="FACT" FechaHoraEmision="${formatFelDate(input.fechaEmision)}" Moneda="GTQ" />
-        <Emisor NITEmisor="${escapeXml(config.nitEmpresa)}" NombreEmisor="${escapeXml(config.nombreEmpresa)}" CodigoEstablecimiento="1" NombreComercial="${escapeXml(config.nombreEmpresa)}" AfiliacionIVA="GEN" />
+        <DatosGenerales Tipo="${escapeXml(config.tipoDocumento)}" FechaHoraEmision="${formatFelDate(input.fechaEmision)}" Moneda="GTQ" />
+        <Emisor NITEmisor="${escapeXml(config.nitEmisor)}" NombreEmisor="${escapeXml(config.nombreEmpresa)}" CodigoEstablecimiento="${config.establecimiento}" NombreComercial="${escapeXml(config.nombreEmpresa)}" AfiliacionIVA="${escapeXml(config.afiliacionIva)}" />
         <Receptor IDReceptor="${escapeXml(input.nitFacturado)}" NombreReceptor="${escapeXml(input.nombreClienteFacturado)}" Direccion="${escapeXml(input.direccionClienteFacturado ?? 'CIUDAD')}" />
         <Items>${itemsXml}
         </Items>
@@ -137,11 +137,15 @@ function parseFelIssueResponse(payload: unknown): FelIssueResult | null {
 
   const source = payload as Record<string, unknown>;
   const autorizacionFel = String(
-    source.autorizacionFel ?? source.autorizacion ?? source.Autorizacion ?? '',
+    source.autorizacionFel ?? source.autorizacion ?? source.Autorizacion ?? source.UUID ?? source.uuid ?? '',
   ).trim();
-  const numeroFel = String(source.numeroFel ?? source.numero ?? source.Numero ?? '').trim();
-  const serieFel = String(source.serieFel ?? source.serie ?? source.Serie ?? '').trim();
-  const qrFel = String(source.qrFel ?? source.qr ?? source.QR ?? '').trim();
+  const numeroFel = String(
+    source.numeroFel ?? source.numero ?? source.Numero ?? source.NUMERO ?? '',
+  ).trim();
+  const serieFel = String(
+    source.serieFel ?? source.serie ?? source.Serie ?? source.SERIE ?? '',
+  ).trim();
+  const qrFel = String(source.qrFel ?? source.qr ?? source.QR ?? source.URLQR ?? '').trim();
   const fecha = String(
     source.fechaEmisionFel ?? source.fechaEmision ?? source.FechaEmision ?? '',
   ).trim();
@@ -185,9 +189,9 @@ async function getActiveFelConfig(tx?: Prisma.TransactionClient): Promise<Active
       ServidorFel: true,
       UsuarioFel: true,
       ContrasenaFel: true,
+      Nit: true,
       NombreComercial: true,
       Nombre: true,
-      Nit: true,
     },
   });
 
@@ -195,26 +199,46 @@ async function getActiveFelConfig(tx?: Prisma.TransactionClient): Promise<Active
     throw new Error('FEL: No existe configuración de empresa activa');
   }
 
-  const servidor = (empresa.ServidorFel ?? '').trim();
-  const usuario = (empresa.UsuarioFel ?? '').trim();
-  const contrasena = (empresa.ContrasenaFel ?? '').trim();
+  const servidor = (process.env.FEL_BASE_URL ?? empresa.ServidorFel ?? '').trim();
+  const usuario = (process.env.FEL_USUARIO ?? empresa.UsuarioFel ?? '').trim();
+  const clave = (process.env.FEL_CLAVE ?? empresa.ContrasenaFel ?? '').trim();
 
-  if (!servidor || !usuario || !contrasena) {
+  const cliente = (process.env.FEL_CLIENTE ?? empresa.Nit ?? '').trim();
+  const nitEmisor = (process.env.FEL_NIT_EMISOR ?? empresa.Nit ?? '').trim();
+  const afiliacionIva = (process.env.FEL_AFILIACION_IVA ?? 'PEQ').trim();
+  const establecimiento = Number(process.env.FEL_ESTABLECIMIENTO ?? '1');
+  const formato = (process.env.FEL_FORMAT ?? 'STD_TWS').trim();
+  const tipoDocumento = (process.env.FEL_TIPO_DOCUMENTO ?? 'FACT').trim();
+
+  if (!servidor || !usuario || !clave) {
     throw new Error('FEL: Configuración incompleta (ServidorFel, UsuarioFel, ContrasenaFel)');
+  }
+
+  if (!cliente || !nitEmisor) {
+    throw new Error('FEL: Configuración incompleta (cliente/nit emisor)');
+  }
+
+  if (!Number.isFinite(establecimiento) || establecimiento <= 0) {
+    throw new Error('FEL: FEL_ESTABLECIMIENTO inválido');
   }
 
   return {
     servidor,
+    cliente,
     usuario,
-    contrasena,
+    clave,
+    nitEmisor,
+    afiliacionIva,
+    establecimiento,
+    formato,
+    tipoDocumento,
     nombreEmpresa: empresa.NombreComercial || empresa.Nombre,
-    nitEmpresa: empresa.Nit,
   };
 }
 
 export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.TransactionClient): Promise<FelIssueResult> {
   const config = await getActiveFelConfig(tx);
-  const shouldMock = shouldUseMockByDefault(config.servidor);
+  const shouldMock = shouldUseMockByDefault();
 
   const xml = buildFacturaXml(input, config);
 
@@ -231,8 +255,13 @@ export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.Transacti
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        usuario: config.usuario,
-        contrasena: config.contrasena,
+        Cliente: config.cliente,
+        Usuario: config.usuario,
+        Clave: config.clave,
+        NitEmisor: config.nitEmisor,
+        Formato: config.formato,
+        TipoDocumento: config.tipoDocumento,
+        XmlDte: xml,
         xml,
         idVenta: input.idVenta,
         numeroVenta: input.numeroVenta,
@@ -262,7 +291,7 @@ export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.Transacti
 
 export async function anulateFelInvoice(input: AnulateFelInput, tx?: Prisma.TransactionClient): Promise<void> {
   const config = await getActiveFelConfig(tx);
-  const shouldMock = shouldUseMockByDefault(config.servidor);
+  const shouldMock = shouldUseMockByDefault();
 
   if (shouldMock) {
     return;
@@ -277,8 +306,11 @@ export async function anulateFelInvoice(input: AnulateFelInput, tx?: Prisma.Tran
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        usuario: config.usuario,
-        contrasena: config.contrasena,
+        Cliente: config.cliente,
+        Usuario: config.usuario,
+        Clave: config.clave,
+        NitEmisor: config.nitEmisor,
+        Formato: config.formato,
         serie: input.serieFel,
         numero: input.numeroFel,
         motivo: input.motivo,
