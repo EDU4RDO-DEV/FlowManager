@@ -155,6 +155,32 @@ export interface TalonarioDto {
 
 export type TalonariosResponse = ApiResponse<TalonarioDto[]>;
 
+export interface CreateTalonarioPayload {
+  idUsuario: number;
+  nombre: string;
+  correlativoInicial: number;
+  correlativoFinal: number;
+  ultimoUtilizado?: number;
+}
+
+export interface UpdateTalonarioPayload {
+  nombre?: string;
+  correlativoInicial?: number;
+  correlativoFinal?: number;
+  ultimoUtilizado?: number;
+  idUsuarioModificador?: number;
+}
+
+export interface AnulateTalonarioPayload {
+  idUsuarioAnulador?: number;
+}
+
+export interface RestoreTalonarioPayload {
+  idUsuarioModificador?: number;
+}
+
+export type TalonarioResponse = ApiResponse<TalonarioDto>;
+
 export interface CreateSaleDetailPayload {
   idInventarioItem: number;
   cantidad: number;
@@ -230,3 +256,13 @@ export interface CreateSalePaymentResult {
 }
 
 export type CreateSalePaymentResponse = ApiResponse<CreateSalePaymentResult>;
+
+export interface UploadSaleImageResult {
+  rutaImagen: string;
+  url: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+}
+
+export type UploadSaleImageResponse = ApiResponse<UploadSaleImageResult>;

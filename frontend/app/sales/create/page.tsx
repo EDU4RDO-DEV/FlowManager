@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
@@ -23,7 +23,7 @@ import {
 import { getApiErrorMessage } from "@/lib/api";
 import { listClients } from "@/services/clients.service";
 import { listProducts } from "@/services/products.service";
-import { createSale, listTalonarios } from "@/services/sales.service";
+import { createSale, listTalonarios, uploadSaleProofImage } from "@/services/sales.service";
 import type { ClientDto } from "@/types/clients";
 import type { ProductDto } from "@/types/products";
 import type { CreateSaleDetailPayload, SalePaymentPayload, TalonarioDto } from "@/types/sales";
@@ -74,6 +74,8 @@ export default function CreateSalePage() {
   const [pagoMonto, setPagoMonto] = useState(0);
   const [pagoReferencia, setPagoReferencia] = useState("");
   const [pagoBanco, setPagoBanco] = useState("");
+  const [rutaConstancia, setRutaConstancia] = useState("");
+  const [isUploadingProof, setIsUploadingProof] = useState(false);
 
   useEffect(() => {
     async function loadSources() {
@@ -251,6 +253,7 @@ export default function CreateSalePage() {
             numeroReferencia: pagoReferencia.trim() || undefined,
             banco: pagoBanco.trim() || undefined,
             fechaPago: new Date().toISOString().slice(0, 10),
+            rutaFirma: rutaConstancia || undefined,
           }
         : undefined;
 
@@ -279,6 +282,25 @@ export default function CreateSalePage() {
       toast.error(getApiErrorMessage(error, "No se pudo registrar la venta"));
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function uploadProof(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      setIsUploadingProof(true);
+      const result = await uploadSaleProofImage(file);
+      setRutaConstancia(result.rutaImagen);
+      toast.success("Constancia del talonario cargada correctamente");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo subir la constancia"));
+    } finally {
+      setIsUploadingProof(false);
+      event.target.value = "";
     }
   }
 
@@ -544,6 +566,27 @@ export default function CreateSalePage() {
                   <Input id="pago-banco" value={pagoBanco} onChange={(event) => setPagoBanco(event.target.value)} />
                 </div>
               ) : null}
+
+              <div className="space-y-1 md:col-span-2">
+                <Label htmlFor="constancia-talonario">Foto de talonario (constancia)</Label>
+                <Input
+                  id="constancia-talonario"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={uploadProof}
+                  disabled={isUploadingProof}
+                />
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {isUploadingProof ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                  {rutaConstancia ? (
+                    <a className="underline" href={rutaConstancia} target="_blank" rel="noreferrer">
+                      Ver constancia cargada
+                    </a>
+                  ) : (
+                    <span>Opcional. Formatos permitidos: JPG, PNG, WEBP (máx. 5MB).</span>
+                  )}
+                </div>
+              </div>
 
               <div className="rounded-lg border p-3 md:col-span-2">
                 <p className="text-sm text-muted-foreground">Resumen</p>

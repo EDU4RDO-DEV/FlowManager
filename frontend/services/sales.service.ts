@@ -1,14 +1,17 @@
 import { api } from "@/lib/api";
 import type {
+  AnulateTalonarioPayload,
   CreateSalePaymentPayload,
   CreateSalePaymentResponse,
   CreateSalePaymentResult,
   CreateSalePayload,
   CreateSaleResponse,
   CreateSaleResult,
+  CreateTalonarioPayload,
   FelPingRequest,
   FelPingResponse,
   FelPingResult,
+  RestoreTalonarioPayload,
   SaleByIdResponse,
   SaleDto,
   SalePaymentDto,
@@ -16,8 +19,12 @@ import type {
   SalesFilters,
   SalesListResponse,
   SalesListResult,
+  TalonarioResponse,
   TalonarioDto,
   TalonariosResponse,
+  UploadSaleImageResponse,
+  UploadSaleImageResult,
+  UpdateTalonarioPayload,
 } from "@/types/sales";
 
 export async function listSales(filters: SalesFilters = {}): Promise<SalesListResult> {
@@ -59,6 +66,42 @@ export async function listTalonarios(): Promise<TalonarioDto[]> {
   return data.data ?? [];
 }
 
+export async function listAnulatedTalonarios(): Promise<TalonarioDto[]> {
+  const { data } = await api.get<TalonariosResponse>("/api/talonarios/anulados");
+  return data.data ?? [];
+}
+
+export async function createTalonario(payload: CreateTalonarioPayload): Promise<TalonarioDto> {
+  const { data } = await api.post<TalonarioResponse>("/api/talonarios", payload);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta inválida al crear talonario");
+  }
+
+  return data.data;
+}
+
+export async function updateTalonario(id: number, payload: UpdateTalonarioPayload): Promise<TalonarioDto> {
+  const { data } = await api.patch<TalonarioResponse>(`/api/talonarios/${id}`, payload);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta inválida al actualizar talonario");
+  }
+
+  return data.data;
+}
+
+export async function anulateTalonario(id: number, payload?: AnulateTalonarioPayload): Promise<void> {
+  await api.patch(`/api/talonarios/${id}/anular`, payload ?? {});
+}
+
+export async function restoreTalonario(id: number, payload?: RestoreTalonarioPayload): Promise<TalonarioDto> {
+  const { data } = await api.patch<TalonarioResponse>(`/api/talonarios/${id}/restaurar`, payload ?? {});
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta inválida al restaurar talonario");
+  }
+
+  return data.data;
+}
+
 export async function createSale(payload: CreateSalePayload): Promise<CreateSaleResult> {
   const { data } = await api.post<CreateSaleResponse>("/api/ventas", payload);
   if (!data.data) {
@@ -98,4 +141,21 @@ export async function anulateSalePayment(idVenta: number, idPago: number, idUsua
   await api.patch(`/api/ventas/${idVenta}/pagos/${idPago}/anular`, {
     ...(idUsuarioAnulador ? { idUsuarioAnulador } : {}),
   });
+}
+
+export async function uploadSaleProofImage(file: File): Promise<UploadSaleImageResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const { data } = await api.post<UploadSaleImageResponse>("/api/ventas/upload-image", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta inválida al subir imagen de constancia");
+  }
+
+  return data.data;
 }

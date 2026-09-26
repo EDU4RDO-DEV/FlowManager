@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -37,6 +37,7 @@ import {
   createSalePayment,
   getSaleById,
   listSalePayments,
+  uploadSaleProofImage,
 } from "@/services/sales.service";
 import type {
   CreateSalePaymentPayload,
@@ -84,6 +85,8 @@ export default function SaleDetailPage() {
   const [numeroReferencia, setNumeroReferencia] = useState("");
   const [banco, setBanco] = useState("");
   const [observaciones, setObservaciones] = useState("");
+  const [rutaConstancia, setRutaConstancia] = useState("");
+  const [isUploadingProof, setIsUploadingProof] = useState(false);
 
   const saleId = useMemo(() => Number(params.id), [params.id]);
   const canCreatePayments = hasModulePermission(user, "ventas", "create");
@@ -174,6 +177,7 @@ export default function SaleDetailPage() {
       numeroReferencia: numeroReferencia.trim() || undefined,
       banco: banco.trim() || undefined,
       observaciones: observaciones.trim() || undefined,
+      rutaFirma: rutaConstancia || undefined,
       fechaPago: new Date().toISOString().slice(0, 10),
     };
 
@@ -185,11 +189,31 @@ export default function SaleDetailPage() {
       setNumeroReferencia("");
       setBanco("");
       setObservaciones("");
+      setRutaConstancia("");
       await loadData();
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo registrar el pago"));
     } finally {
       setIsSavingPayment(false);
+    }
+  }
+
+  async function uploadProof(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      setIsUploadingProof(true);
+      const result = await uploadSaleProofImage(file);
+      setRutaConstancia(result.rutaImagen);
+      toast.success("Constancia cargada correctamente");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo subir la constancia"));
+    } finally {
+      setIsUploadingProof(false);
+      event.target.value = "";
     }
   }
 
@@ -393,6 +417,26 @@ export default function SaleDetailPage() {
                           onChange={(event) => setObservaciones(event.target.value)}
                         />
                       </div>
+                      <div className="space-y-1 md:col-span-2">
+                        <Label htmlFor="constancia-abono">Foto de talonario / comprobante</Label>
+                        <Input
+                          id="constancia-abono"
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          onChange={uploadProof}
+                          disabled={isUploadingProof}
+                        />
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {isUploadingProof ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                          {rutaConstancia ? (
+                            <a className="underline" href={rutaConstancia} target="_blank" rel="noreferrer">
+                              Ver constancia cargada
+                            </a>
+                          ) : (
+                            <span>Opcional. Se guarda junto al pago en la venta.</span>
+                          )}
+                        </div>
+                      </div>
                       <div className="md:col-span-2">
                         <Button
                           onClick={handleRegisterPayment}
@@ -413,6 +457,7 @@ export default function SaleDetailPage() {
                           <TableHead>Método</TableHead>
                           <TableHead>Referencia</TableHead>
                           <TableHead>Banco</TableHead>
+                          <TableHead>Constancia</TableHead>
                           <TableHead className="text-right">Monto</TableHead>
                           <TableHead>Usuario</TableHead>
                           <TableHead className="text-right">Acciones</TableHead>
@@ -425,6 +470,15 @@ export default function SaleDetailPage() {
                             <TableCell>{payment.metodoPago}</TableCell>
                             <TableCell>{payment.numeroReferencia ?? "-"}</TableCell>
                             <TableCell>{payment.banco ?? "-"}</TableCell>
+                            <TableCell>
+                              {payment.rutaFirma ? (
+                                <a className="underline" href={payment.rutaFirma} target="_blank" rel="noreferrer">
+                                  Ver imagen
+                                </a>
+                              ) : (
+                                "-"
+                              )}
+                            </TableCell>
                             <TableCell className="text-right font-medium">{formatMoney(payment.monto)}</TableCell>
                             <TableCell>{payment.usuario.nombre}</TableCell>
                             <TableCell className="text-right">

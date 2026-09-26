@@ -9,13 +9,21 @@ import {
   listSalePaymentsController,
   listSalesController,
   pingFelController,
+  uploadSaleImageController,
   updateSaleController,
 } from '../controllers/sale.controller';
 import { requireModulePermission } from '../middlewares/auth.middleware';
+import { uploadSaleProofImage } from '../middlewares/upload.middleware';
 
 const saleRouter = Router();
 
 saleRouter.post('/fel/ping', requireModulePermission('ventas', 'read'), pingFelController);
+saleRouter.post(
+  '/upload-image',
+  requireModulePermission('ventas', 'read'),
+  uploadSaleProofImage.single('file'),
+  uploadSaleImageController,
+);
 saleRouter.get('/', requireModulePermission('ventas', 'read'), listSalesController);
 saleRouter.get('/:id', requireModulePermission('ventas', 'read'), getSaleByIdController);
 saleRouter.post('/', requireModulePermission('ventas', 'create'), createSaleController);
