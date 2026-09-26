@@ -74,6 +74,10 @@ function getAnulatePath() {
   return process.env.FEL_ANULATE_PATH ?? '/fel/aanulacion';
 }
 
+function getValidateNitPath() {
+  return process.env.FEL_VALIDATE_NIT_PATH ?? '/fel/areceptorinfo';
+}
+
 function normalizeUrl(baseUrl: string, path: string): string {
   const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
@@ -177,6 +181,109 @@ function buildMockIssueResult(input: IssueFelInput): FelIssueResult {
   };
 }
 
+function shouldValidateNitBeforeEmit(): boolean {
+  if (process.env.FEL_VALIDATE_NIT_BEFORE_EMIT !== undefined) {
+    return isTruthy(process.env.FEL_VALIDATE_NIT_BEFORE_EMIT);
+  }
+
+  return true;
+}
+
+function isConsumidorFinalNit(nit: string): boolean {
+  const normalized = nit.trim().toUpperCase();
+  return normalized === 'CF' || normalized === 'C/F' || normalized === 'CONSUMIDORFINAL';
+}
+
+function parseValidateNitResponse(payload: unknown): boolean | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const source = payload as Record<string, unknown>;
+  const rawEstado = String(source.estado ?? source.Estado ?? source.status ?? '').trim().toUpperCase();
+
+  if (rawEstado) {
+    if (['ACTIVO', 'VALIDO', 'VALDIO', 'ENCONTRADO', 'OK'].includes(rawEstado)) {
+      return true;
+    }
+
+    if (['INACTIVO', 'NO_VALIDO', 'NO_ENCONTRADO', 'INVALIDO', 'ERROR'].includes(rawEstado)) {
+      return false;
+    }
+  }
+
+  const boolKeys = ['valido', 'Valido', 'esValido', 'EsValido', 'ok', 'OK'];
+  for (const key of boolKeys) {
+    if (typeof source[key] === 'boolean') {
+      return source[key] as boolean;
+    }
+  }
+
+  const nombre = String(source.nombre ?? source.Nombre ?? source.razonSocial ?? '').trim();
+  if (nombre.length > 0) {
+    return true;
+  }
+
+  return null;
+}
+
+async function validateReceiverNit(nitReceptor: string, config: ActiveFelConfig): Promise<void> {
+  if (!shouldValidateNitBeforeEmit()) {
+    return;
+  }
+
+  if (isConsumidorFinalNit(nitReceptor)) {
+    return;
+  }
+
+  if (shouldUseMockByDefault()) {
+    return;
+  }
+
+  const endpoint = normalizeUrl(config.servidor, getValidateNitPath());
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        Cliente: config.cliente,
+        Usuario: config.usuario,
+        Clave: config.clave,
+        NitEmisor: config.nitEmisor,
+        NITReceptor: nitReceptor,
+        NitReceptor: nitReceptor,
+        NIT: nitReceptor,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = (await response.json()) as unknown;
+    const valid = parseValidateNitResponse(data);
+
+    const strict = isTruthy(process.env.FEL_STRICT_NIT_VALIDATION ?? 'false');
+    if (valid === false) {
+      throw new Error('NIT receptor inválido');
+    }
+
+    if (valid === null && strict) {
+      throw new Error('No se pudo validar NIT receptor con respuesta del proveedor');
+    }
+  } catch (error) {
+    if (isTruthy(process.env.FEL_ALLOW_NIT_VALIDATION_FALLBACK ?? 'true')) {
+      return;
+    }
+
+    const message = error instanceof Error ? error.message : 'falló conexión';
+    throw new Error(`FEL: Error al validar NIT receptor (${message})`);
+  }
+}
+
 async function getActiveFelConfig(tx?: Prisma.TransactionClient): Promise<ActiveFelConfig> {
   const db = tx ?? prisma;
 
@@ -239,6 +346,8 @@ async function getActiveFelConfig(tx?: Prisma.TransactionClient): Promise<Active
 export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.TransactionClient): Promise<FelIssueResult> {
   const config = await getActiveFelConfig(tx);
   const shouldMock = shouldUseMockByDefault();
+
+  await validateReceiverNit(input.nitFacturado, config);
 
   const xml = buildFacturaXml(input, config);
 
