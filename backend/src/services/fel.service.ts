@@ -437,3 +437,36 @@ export async function anulateFelInvoice(input: AnulateFelInput, tx?: Prisma.Tran
     throw new Error(`FEL: Error al anular documento (${message})`);
   }
 }
+
+export async function pingFelProvider(input?: {
+  nitReceptor?: string;
+  validarNit?: boolean;
+}): Promise<{
+  ok: boolean;
+  entorno: 'mock' | 'real';
+  servidor: string;
+  endpointDocumento: string;
+  endpointAnulacion: string;
+  endpointValidarNit: string;
+  nitValidado: boolean;
+}> {
+  const config = await getActiveFelConfig();
+  const mock = shouldUseMockByDefault();
+
+  const nitReceptor = input?.nitReceptor?.trim();
+  const validarNit = input?.validarNit ?? true;
+
+  if (validarNit && nitReceptor) {
+    await validateReceiverNit(nitReceptor, config);
+  }
+
+  return {
+    ok: true,
+    entorno: mock ? 'mock' : 'real',
+    servidor: config.servidor,
+    endpointDocumento: normalizeUrl(config.servidor, getEmitPath()),
+    endpointAnulacion: normalizeUrl(config.servidor, getAnulatePath()),
+    endpointValidarNit: normalizeUrl(config.servidor, getValidateNitPath()),
+    nitValidado: Boolean(validarNit && nitReceptor),
+  };
+}

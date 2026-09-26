@@ -11,11 +11,13 @@ import {
   listSales,
   updateSale,
 } from '../services/sale.service';
+import { pingFelProvider } from '../services/fel.service';
 import {
   anulateSaleBodySchema,
   anulateSalePaymentBodySchema,
   createSalePaymentSchema,
   createSaleSchema,
+  felPingSchema,
   listSalesQuerySchema,
   saleIdParamsSchema,
   salePaymentIdParamsSchema,
@@ -253,6 +255,30 @@ export async function anulateSalePaymentController(req: Request, res: Response) 
 
     if (message === 'Pago no existe' || message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function pingFelController(req: Request, res: Response) {
+  try {
+    const payload = felPingSchema.parse(req.body ?? {});
+    const data = await pingFelProvider({
+      nitReceptor: payload.nitReceptor,
+      validarNit: payload.validarNit,
+    });
+
+    return res.status(200).json({ ok: true, data, message: 'Diagnóstico FEL completado' });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message.startsWith('FEL:')) {
+      return res.status(502).json({ ok: false, message });
     }
 
     return res.status(500).json({ ok: false, message });

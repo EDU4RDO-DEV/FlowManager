@@ -8,12 +8,14 @@ import {
   getSaleByIdController,
   listSalePaymentsController,
   listSalesController,
+  pingFelController,
   updateSaleController,
 } from '../controllers/sale.controller';
 import { requireModulePermission } from '../middlewares/auth.middleware';
 
 const saleRouter = Router();
 
+saleRouter.post('/fel/ping', requireModulePermission('ventas', 'read'), pingFelController);
 saleRouter.get('/', requireModulePermission('ventas', 'read'), listSalesController);
 saleRouter.get('/:id', requireModulePermission('ventas', 'read'), getSaleByIdController);
 saleRouter.post('/', requireModulePermission('ventas', 'create'), createSaleController);

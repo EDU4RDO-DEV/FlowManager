@@ -200,3 +200,8 @@ export const createSalePaymentSchema = salePaymentSchema.extend({
 export const anulateSalePaymentBodySchema = z.object({
   idUsuarioAnulador: positiveInt.optional(),
 });
+
+export const felPingSchema = z.object({
+  nitReceptor: z.string().trim().min(1, 'nitReceptor no puede ir vacío').max(25).optional(),
+  validarNit: z.boolean().optional().default(true),
+});
