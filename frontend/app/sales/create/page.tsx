@@ -437,7 +437,7 @@ export default function CreateSalePage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex flex-wrap items-end gap-2">
-                <div className="min-w-[260px] flex-1 space-y-1">
+                <div className="min-w-65 flex-1 space-y-1">
                   <Label>Producto</Label>
                   <Select
                     value={selectedProductId ? String(selectedProductId) : undefined}
