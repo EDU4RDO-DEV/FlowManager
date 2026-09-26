@@ -104,6 +104,20 @@ CREATE TABLE Cliente (
     Id INT IDENTITY(1,1) PRIMARY KEY,
     IdEntidad INT NOT NULL,
     IdUsuario INT NOT NULL,
+    IdTipoCliente INT NULL,
+    FechaRegistro DATETIME DEFAULT GETDATE(),
+    IdUsuarioModificador INT NULL,
+    FechaModificacion DATETIME NULL,
+    Anulado BIT NOT NULL DEFAULT 0,
+    IdUsuarioAnulador INT NULL,
+    FechaAnulacion DATETIME NULL
+);
+
+CREATE TABLE TipoCliente (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    IdUsuario INT NOT NULL,
+    Nombre VARCHAR(100) NOT NULL,
+    Descripcion VARCHAR(255) NULL,
     FechaRegistro DATETIME DEFAULT GETDATE(),
     IdUsuarioModificador INT NULL,
     FechaModificacion DATETIME NULL,
@@ -230,6 +244,42 @@ CREATE TABLE InventarioItem (
     CostoPromedio DECIMAL(10, 2) NOT NULL,
     PrecioVenta DECIMAL(10, 2) NOT NULL,
     RutaImagen VARCHAR(255) NULL,
+    FechaRegistro DATETIME DEFAULT GETDATE(),
+    IdUsuarioModificador INT NULL,
+    FechaModificacion DATETIME NULL,
+    Anulado BIT NOT NULL DEFAULT 0,
+    IdUsuarioAnulador INT NULL,
+    FechaAnulacion DATETIME NULL
+);
+
+CREATE TABLE ReglaPrecioCliente (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    IdTipoCliente INT NOT NULL,
+    IdInventarioItem INT NOT NULL,
+    IdUsuario INT NOT NULL,
+    Precio DECIMAL(10,2) NOT NULL,
+    FechaInicio DATE NULL,
+    FechaFin DATE NULL,
+    FechaRegistro DATETIME DEFAULT GETDATE(),
+    IdUsuarioModificador INT NULL,
+    FechaModificacion DATETIME NULL,
+    Anulado BIT NOT NULL DEFAULT 0,
+    IdUsuarioAnulador INT NULL,
+    FechaAnulacion DATETIME NULL
+);
+
+CREATE TABLE ReglaBonificacion (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    IdUsuario INT NOT NULL,
+    Nombre VARCHAR(100) NULL,
+    IdInventarioItemCompra INT NOT NULL,
+    CantidadMinima FLOAT NOT NULL,
+    CantidadMaxima FLOAT NULL,
+    IdInventarioItemBonificado INT NOT NULL,
+    CantidadBonificada FLOAT NOT NULL,
+    Prioridad INT NOT NULL DEFAULT 1,
+    FechaInicio DATE NULL,
+    FechaFin DATE NULL,
     FechaRegistro DATETIME DEFAULT GETDATE(),
     IdUsuarioModificador INT NULL,
     FechaModificacion DATETIME NULL,
@@ -439,6 +489,10 @@ ALTER TABLE Entidad ADD CONSTRAINT FK_Entidad_Usuario FOREIGN KEY (IdUsuario) RE
 -- Cliente
 ALTER TABLE Cliente ADD CONSTRAINT FK_Cliente_Entidad FOREIGN KEY (IdEntidad) REFERENCES Entidad(Id);
 ALTER TABLE Cliente ADD CONSTRAINT FK_Cliente_Usuario FOREIGN KEY (IdUsuario) REFERENCES Usuario(Id);
+ALTER TABLE Cliente ADD CONSTRAINT FK_Cliente_TipoCliente FOREIGN KEY (IdTipoCliente) REFERENCES TipoCliente(Id);
+
+-- TipoCliente
+ALTER TABLE TipoCliente ADD CONSTRAINT FK_TipoCliente_Usuario FOREIGN KEY (IdUsuario) REFERENCES Usuario(Id);
 
 -- Empleado
 ALTER TABLE Empleado ADD CONSTRAINT FK_Empleado_Entidad FOREIGN KEY (IdEntidad) REFERENCES Entidad(Id);
@@ -473,6 +527,16 @@ ALTER TABLE DetalleCompra ADD CONSTRAINT FK_DetalleCompra_InventarioItem FOREIGN
 -- InventarioItem
 ALTER TABLE InventarioItem ADD CONSTRAINT FK_InventarioItem_Usuario FOREIGN KEY (IdUsuario) REFERENCES Usuario(Id);
 ALTER TABLE InventarioItem ADD CONSTRAINT FK_InventarioItem_Proveedor FOREIGN KEY (IdProveedor) REFERENCES Proveedor(Id);
+
+-- ReglaPrecioCliente
+ALTER TABLE ReglaPrecioCliente ADD CONSTRAINT FK_ReglaPrecioCliente_TipoCliente FOREIGN KEY (IdTipoCliente) REFERENCES TipoCliente(Id);
+ALTER TABLE ReglaPrecioCliente ADD CONSTRAINT FK_ReglaPrecioCliente_InventarioItem FOREIGN KEY (IdInventarioItem) REFERENCES InventarioItem(Id);
+ALTER TABLE ReglaPrecioCliente ADD CONSTRAINT FK_ReglaPrecioCliente_Usuario FOREIGN KEY (IdUsuario) REFERENCES Usuario(Id);
+
+-- ReglaBonificacion
+ALTER TABLE ReglaBonificacion ADD CONSTRAINT FK_ReglaBonificacion_Usuario FOREIGN KEY (IdUsuario) REFERENCES Usuario(Id);
+ALTER TABLE ReglaBonificacion ADD CONSTRAINT FK_ReglaBonificacion_InventarioItemCompra FOREIGN KEY (IdInventarioItemCompra) REFERENCES InventarioItem(Id);
+ALTER TABLE ReglaBonificacion ADD CONSTRAINT FK_ReglaBonificacion_InventarioItemBonificado FOREIGN KEY (IdInventarioItemBonificado) REFERENCES InventarioItem(Id);
 
 -- EstructuraProducto
 ALTER TABLE EstructuraProducto ADD CONSTRAINT FK_EstructuraProducto_ProductoTerminado FOREIGN KEY (IdProductoTerminado) REFERENCES InventarioItem(Id);

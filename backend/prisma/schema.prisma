@@ -47,6 +47,7 @@ model Cliente {
   Id                   Int       @id(map: "PK__Cliente__3214EC0739E9B73D") @default(autoincrement())
   IdEntidad            Int
   IdUsuario            Int
+  IdTipoCliente        Int?
   FechaRegistro        DateTime? @default(now(), map: "DF__Cliente__FechaRe__5CD6CB2B") @db.DateTime
   IdUsuarioModificador Int?
   FechaModificacion    DateTime? @db.DateTime
@@ -54,8 +55,29 @@ model Cliente {
   IdUsuarioAnulador    Int?
   FechaAnulacion       DateTime? @db.DateTime
   Entidad              Entidad   @relation(fields: [IdEntidad], references: [Id], onUpdate: NoAction, map: "FK_Cliente_Entidad")
+  TipoCliente          TipoCliente? @relation(fields: [IdTipoCliente], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Cliente_TipoCliente")
   Usuario              Usuario   @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Cliente_Usuario")
   Venta                Venta[]
+
+  @@index([IdTipoCliente, Anulado], map: "IX_Cliente_TipoCliente_Activo")
+}
+
+model TipoCliente {
+  Id                   Int                 @id(map: "PK_TipoCliente") @default(autoincrement())
+  IdUsuario            Int
+  Nombre               String              @db.VarChar(100)
+  Descripcion          String?             @db.VarChar(255)
+  FechaRegistro        DateTime?           @default(now(), map: "DF_TipoCliente_FechaRegistro") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime?           @db.DateTime
+  Anulado              Boolean             @default(false, map: "DF_TipoCliente_Anulado")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime?           @db.DateTime
+  Cliente              Cliente[]
+  ReglaPrecioCliente   ReglaPrecioCliente[]
+  Usuario              Usuario             @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_TipoCliente_Usuario")
+
+  @@index([Nombre, Anulado], map: "IX_TipoCliente_Nombre_Activo")
 }
 
 model Compra {
@@ -326,7 +348,10 @@ model InventarioItem {
   Proveedor                                                                 Proveedor            @relation(fields: [IdProveedor], references: [Id], onUpdate: NoAction, map: "FK_InventarioItem_Proveedor")
   Usuario                                                                   Usuario              @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_InventarioItem_Usuario")
   PlanillaDetalleComision                                                   PlanillaDetalleComision[]
+  ReglaBonificacion_ReglaBonificacion_IdInventarioItemBonificadoToInventarioItem ReglaBonificacion[] @relation("ReglaBonificacion_InventarioItemBonificado")
+  ReglaBonificacion_ReglaBonificacion_IdInventarioItemCompraToInventarioItem ReglaBonificacion[] @relation("ReglaBonificacion_InventarioItemCompra")
   ReglaComision                                                             ReglaComision[]
+  ReglaPrecioCliente                                                        ReglaPrecioCliente[]
 }
 
 model PagoVenta {
@@ -445,6 +470,52 @@ model ReglaComision {
   InventarioItem          InventarioItem        @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_ReglaComision_InventarioItem")
 }
 
+model ReglaPrecioCliente {
+  Id                   Int            @id(map: "PK_ReglaPrecioCliente") @default(autoincrement())
+  IdTipoCliente        Int
+  IdInventarioItem     Int
+  IdUsuario            Int
+  Precio               Decimal        @db.Decimal(10, 2)
+  FechaInicio          DateTime?      @db.Date
+  FechaFin             DateTime?      @db.Date
+  FechaRegistro        DateTime?      @default(now(), map: "DF_ReglaPrecioCliente_FechaRegistro") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime?      @db.DateTime
+  Anulado              Boolean        @default(false, map: "DF_ReglaPrecioCliente_Anulado")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime?      @db.DateTime
+  InventarioItem       InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_ReglaPrecioCliente_InventarioItem")
+  TipoCliente          TipoCliente    @relation(fields: [IdTipoCliente], references: [Id], onUpdate: NoAction, map: "FK_ReglaPrecioCliente_TipoCliente")
+  Usuario              Usuario        @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_ReglaPrecioCliente_Usuario")
+
+  @@index([IdTipoCliente, IdInventarioItem, Anulado], map: "IX_ReglaPrecioCliente_Resolucion")
+}
+
+model ReglaBonificacion {
+  Id                  Int            @id(map: "PK_ReglaBonificacion") @default(autoincrement())
+  IdUsuario           Int
+  Nombre              String?        @db.VarChar(100)
+  IdInventarioItemCompra Int
+  CantidadMinima      Float
+  CantidadMaxima      Float?
+  IdInventarioItemBonificado Int
+  CantidadBonificada  Float
+  Prioridad           Int            @default(1, map: "DF_ReglaBonificacion_Prioridad")
+  FechaInicio         DateTime?      @db.Date
+  FechaFin            DateTime?      @db.Date
+  FechaRegistro       DateTime?      @default(now(), map: "DF_ReglaBonificacion_FechaRegistro") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion   DateTime?      @db.DateTime
+  Anulado             Boolean        @default(false, map: "DF_ReglaBonificacion_Anulado")
+  IdUsuarioAnulador   Int?
+  FechaAnulacion      DateTime?      @db.DateTime
+  InventarioItemBonificado InventarioItem @relation("ReglaBonificacion_InventarioItemBonificado", fields: [IdInventarioItemBonificado], references: [Id], onUpdate: NoAction, map: "FK_ReglaBonificacion_InventarioItemBonificado")
+  InventarioItemCompra     InventarioItem @relation("ReglaBonificacion_InventarioItemCompra", fields: [IdInventarioItemCompra], references: [Id], onUpdate: NoAction, map: "FK_ReglaBonificacion_InventarioItemCompra")
+  Usuario             Usuario        @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_ReglaBonificacion_Usuario")
+
+  @@index([IdInventarioItemCompra, Anulado, Prioridad], map: "IX_ReglaBonificacion_Aplicacion")
+}
+
 model Rol {
   Id                             Int       @id(map: "PK__Rol__3214EC07D631775C") @default(autoincrement())
   IdUsuario                      Int
@@ -557,6 +628,8 @@ model Usuario {
   GastoVehiculo                                    GastoVehiculo[]
   InventarioItem                                   InventarioItem[]
   PagoVenta                                        PagoVenta[]
+  ReglaBonificacion                                ReglaBonificacion[]
+  ReglaPrecioCliente                               ReglaPrecioCliente[]
   Proveedor                                        Proveedor[]
   RolPermiso_RolPermiso_IdUsuarioToUsuario         RolPermiso[]            @relation("RolPermiso_IdUsuarioToUsuario")
   Rol_Rol_IdUsuarioToUsuario                       Rol[]                   @relation("Rol_IdUsuarioToUsuario")
@@ -564,6 +637,7 @@ model Usuario {
   RutaSesion_RutaSesion_IdUsuarioVendedorToUsuario RutaSesion[]            @relation("RutaSesion_IdUsuarioVendedorToUsuario")
   Sesion                                           Sesion[]
   Talonario                                        Talonario[]
+  TipoCliente                                      TipoCliente[]
   Entidad_Usuario_IdEntidadToEntidad               Entidad?                @relation("Usuario_IdEntidadToEntidad", fields: [IdEntidad], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Usuario_Entidad")
   Rol_Usuario_IdRolToRol                           Rol?                    @relation("Usuario_IdRolToRol", fields: [IdRol], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Usuario_Rol")
   Usuario                                          Usuario?                @relation("UsuarioToUsuario", fields: [IdUsuario], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Usuario_UsuarioPadre")
