@@ -16,6 +16,7 @@ import productStructureRouter from './routes/product-structure.routes';
 import purchaseRouter from './routes/purchase.routes';
 import providerRouter from './routes/provider.routes';
 import roleRouter from './routes/role.routes';
+import saleRouter from './routes/sale.routes';
 import sessionRouter from './routes/session.routes';
 import userRouter from './routes/user.routes';
 import { uploadsRootPath } from './utils/paths';
@@ -40,6 +41,7 @@ export function createApp() {
   app.use('/api/compras', requireAuth, purchaseRouter);
   app.use('/api/providers', requireAuth, providerRouter);
   app.use('/api/roles', requireAuth, roleRouter);
+  app.use('/api/ventas', requireAuth, saleRouter);
   app.use('/api/sessions', requireAuth, sessionRouter);
   app.use('/api/users', requireAuth, userRouter);
 

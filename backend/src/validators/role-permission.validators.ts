@@ -5,6 +5,7 @@ export const rbacModuleKeys = [
   'usuarios',
   'roles',
   'clientes',
+  'ventas',
   'logistica',
   'empleados',
   'proveedores',

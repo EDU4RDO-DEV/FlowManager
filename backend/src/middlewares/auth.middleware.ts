@@ -40,6 +40,7 @@ type BackendModuleKey =
   | 'usuarios'
   | 'roles'
   | 'clientes'
+  | 'ventas'
   | 'logistica'
   | 'empleados'
   | 'proveedores'
