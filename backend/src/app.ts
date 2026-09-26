@@ -18,6 +18,7 @@ import providerRouter from './routes/provider.routes';
 import roleRouter from './routes/role.routes';
 import saleRouter from './routes/sale.routes';
 import sessionRouter from './routes/session.routes';
+import talonarioRouter from './routes/talonario.routes';
 import userRouter from './routes/user.routes';
 import { uploadsRootPath } from './utils/paths';
 
@@ -43,6 +44,7 @@ export function createApp() {
   app.use('/api/roles', requireAuth, roleRouter);
   app.use('/api/ventas', requireAuth, saleRouter);
   app.use('/api/sessions', requireAuth, sessionRouter);
+  app.use('/api/talonarios', requireAuth, talonarioRouter);
   app.use('/api/users', requireAuth, userRouter);
 
   app.get('/health', (_req, res) => {
