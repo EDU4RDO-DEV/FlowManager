@@ -13,7 +13,7 @@ import {
   resolveSalePrice,
   updateSale,
 } from '../services/sale.service';
-import { pingFelProvider } from '../services/fel.service';
+import { getReceptorInfo, pingFelProvider } from '../services/fel.service';
 import { listRutaSesiones } from '../services/logistics.service';
 import {
   anulateSaleBodySchema,
@@ -21,6 +21,7 @@ import {
   createSalePaymentSchema,
   createSaleSchema,
   felPingSchema,
+  felReceptorQuerySchema,
   listAvailableRutaSesionesQuerySchema,
   listSalesQuerySchema,
   previewSaleBonusesBodySchema,
@@ -54,6 +55,27 @@ export async function uploadSaleImageController(req: Request, res: Response) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function resolveFelReceptorController(req: Request, res: Response) {
+  try {
+    const { nit } = felReceptorQuerySchema.parse(req.query);
+    const data = await getReceptorInfo(nit);
+
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message.startsWith('FEL:')) {
+      return res.status(404).json({ ok: false, message });
+    }
+
     return res.status(500).json({ ok: false, message });
   }
 }

@@ -1087,10 +1087,11 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
     throw new Error('Venta no existe o ya está anulada');
   }
 
-  if (sale.RequiereFactura && sale.SerieFel && sale.NumeroFel) {
+  if (sale.RequiereFactura && sale.AutorizacionFel && sale.SerieFel && sale.NumeroFel) {
     await anulateFelInvoice({
       idVenta: sale.Id,
       numeroVenta: sale.NumeroVenta,
+      autorizacionFel: sale.AutorizacionFel,
       serieFel: sale.SerieFel,
       numeroFel: sale.NumeroFel,
       motivo: `ANULACION VENTA ${sale.NumeroVenta}`,

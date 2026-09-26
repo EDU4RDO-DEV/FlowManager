@@ -23,6 +23,7 @@ type IssueFelInput = {
 type AnulateFelInput = {
   idVenta: number;
   numeroVenta: number;
+  autorizacionFel: string;
   serieFel: string;
   numeroFel: string;
   motivo: string;
@@ -93,78 +94,114 @@ function escapeXml(value: string): string {
     .replace(/'/g, '&apos;');
 }
 
-function formatFelDate(date: Date): string {
-  return date.toISOString().slice(0, 19);
+function toFechaGT(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeReceptorId(value: string): string {
+  const trimmed = value.trim().toUpperCase();
+  if (trimmed === 'CF' || trimmed === 'C/F' || trimmed === 'CONSUMIDORFINAL') {
+    return 'CF';
+  }
+
+  return trimmed.replace(/[^A-Z0-9]/g, '');
 }
 
 function buildFacturaXml(input: IssueFelInput, config: ActiveFelConfig): string {
+  const receptorId = normalizeReceptorId(input.nitFacturado);
+  const isConsumidorFinal = receptorId === 'CF';
+  const direccion = input.direccionClienteFacturado?.trim();
+
   const itemsXml = input.items
     .map((item, index) => {
-      const subtotal = Number((item.cantidad * item.precioUnitario).toFixed(2));
+      // Las bonificaciones se facturan con valor mínimo positivo y 100% de descuento (neto Q0.00),
+      // porque el esquema stdTWS exige TrnVUn > 0.
+      const valorUnitario = item.esBonificacion ? 0.01 : item.precioUnitario;
+      const descuento = item.esBonificacion ? Number((valorUnitario * item.cantidad).toFixed(2)) : 0;
 
       return `
-        <Item NumeroLinea="${index + 1}" BienOServicio="B">
-          <Cantidad>${item.cantidad.toFixed(2)}</Cantidad>
-          <UnidadMedida>UNI</UnidadMedida>
-          <Descripcion>${escapeXml(item.nombre)}${item.esBonificacion ? ' (BONIFICACION)' : ''}</Descripcion>
-          <PrecioUnitario>${item.precioUnitario.toFixed(2)}</PrecioUnitario>
-          <Precio>${subtotal.toFixed(2)}</Precio>
-          <Descuento>0.00</Descuento>
-          <Total>${subtotal.toFixed(2)}</Total>
-        </Item>`;
+    <stdTWS.stdTWSCIt.stdTWSDIt>
+      <TrnLiNum>${index + 1}</TrnLiNum>
+      <TrnArtNom>${escapeXml(item.nombre)}${item.esBonificacion ? ' (BONIFICACION)' : ''}</TrnArtNom>
+      <TrnCan>${item.cantidad.toFixed(6)}</TrnCan>
+      <TrnVUn>${valorUnitario.toFixed(6)}</TrnVUn>
+      <TrnUniMed>UNI</TrnUniMed>
+      <TrnVDes>${descuento.toFixed(2)}</TrnVDes>
+      <TrnArtBienSer>B</TrnArtBienSer>
+      <TrnArtImpAdiCod>0</TrnArtImpAdiCod>
+      <TrnArtImpAdiUniGrav>0</TrnArtImpAdiUniGrav>
+    </stdTWS.stdTWSCIt.stdTWSDIt>`;
     })
     .join('');
 
+  const nombreClienteXml =
+    isConsumidorFinal && input.nombreClienteFacturado
+      ? `\n    <TrnEFACECliNom>${escapeXml(input.nombreClienteFacturado)}</TrnEFACECliNom>`
+      : '';
+  const direccionClienteXml = direccion ? `\n    <TrnEFACECliDir>${escapeXml(direccion)}</TrnEFACECliDir>` : '';
+
   return `<?xml version="1.0" encoding="UTF-8"?>
-<GTDocumento Version="0.1" xmlns="http://www.sat.gob.gt/dte/fel/0.2.0">
-  <SAT ClaseDocumento="dte">
-    <DTE ID="DatosCertificados">
-      <DatosEmision ID="DatosEmision">
-        <DatosGenerales Tipo="${escapeXml(config.tipoDocumento)}" FechaHoraEmision="${formatFelDate(input.fechaEmision)}" Moneda="GTQ" />
-        <Emisor NITEmisor="${escapeXml(config.nitEmisor)}" NombreEmisor="${escapeXml(config.nombreEmpresa)}" CodigoEstablecimiento="${config.establecimiento}" NombreComercial="${escapeXml(config.nombreEmpresa)}" AfiliacionIVA="${escapeXml(config.afiliacionIva)}" />
-        <Receptor IDReceptor="${escapeXml(input.nitFacturado)}" NombreReceptor="${escapeXml(input.nombreClienteFacturado)}" Direccion="${escapeXml(input.direccionClienteFacturado ?? 'CIUDAD')}" />
-        <Items>${itemsXml}
-        </Items>
-        <Totales>
-          <GranTotal>${input.total.toFixed(2)}</GranTotal>
-        </Totales>
-      </DatosEmision>
-    </DTE>
-  </SAT>
-</GTDocumento>`;
+<stdTWS xmlns="FEL">
+    <TrnEstNum>${config.establecimiento}</TrnEstNum>
+    <TipTrnCod>${escapeXml(config.tipoDocumento)}</TipTrnCod>
+    <TrnNum>${input.numeroVenta}</TrnNum>
+    <TrnFec>${toFechaGT(input.fechaEmision)}</TrnFec>
+    <MonCod>GTQ</MonCod>
+    <TrnBenConNIT>${escapeXml(receptorId)}</TrnBenConNIT>${nombreClienteXml}${direccionClienteXml}
+    <stdTWSD>${itemsXml}
+    </stdTWSD>
+</stdTWS>`;
 }
 
-function parseFelIssueResponse(payload: unknown): FelIssueResult | null {
-  if (!payload || typeof payload !== 'object') {
+function extractXmlAttributeValue(xml: string, tag: string, attribute: string): string | null {
+  const tagMatch = xml.match(new RegExp(`<${tag}\\b[^>]*>`, 'i'));
+  if (!tagMatch) {
     return null;
   }
 
-  const source = payload as Record<string, unknown>;
-  const autorizacionFel = String(
-    source.autorizacionFel ?? source.autorizacion ?? source.Autorizacion ?? source.UUID ?? source.uuid ?? '',
-  ).trim();
-  const numeroFel = String(
-    source.numeroFel ?? source.numero ?? source.Numero ?? source.NUMERO ?? '',
-  ).trim();
-  const serieFel = String(
-    source.serieFel ?? source.serie ?? source.Serie ?? source.SERIE ?? '',
-  ).trim();
-  const qrFel = String(source.qrFel ?? source.qr ?? source.QR ?? source.URLQR ?? '').trim();
-  const fecha = String(
-    source.fechaEmisionFel ?? source.fechaEmision ?? source.FechaEmision ?? '',
-  ).trim();
+  const attrMatch = tagMatch[0].match(new RegExp(`${attribute}="([^"]*)"`, 'i'));
+  return attrMatch ? attrMatch[1] : null;
+}
 
-  if (!autorizacionFel || !numeroFel || !serieFel) {
-    return null;
+function getQrBaseUrl(): string {
+  return (
+    process.env.FEL_QR_BASE_URL ??
+    'https://felpub.c.sat.gob.gt/verificador-web/publico/vistas/verificacionDte.jsp'
+  ).trim();
+}
+
+function buildQrUrl(numeroAutorizacion: string): string {
+  const base = getQrBaseUrl();
+  const separator = base.includes('?') ? '&' : '?';
+  return `${base}${separator}tipo=autorizacion&numero=${encodeURIComponent(numeroAutorizacion)}`;
+}
+
+function parseFelIssueResponse(rawResponse: string): FelIssueResult {
+  const decoded = decodeXmlEntities(rawResponse);
+
+  const fatalErrorMatch = decoded.match(/<Errores>[\s\S]*?<\/Errores>/i);
+  if (fatalErrorMatch) {
+    const errorTag = fatalErrorMatch[0].match(/<Error(?:\s+Codigo="(\d+)")?\s*>([^<]*)<\/Error>/i);
+    const mensaje = errorTag?.[2]?.trim() || 'Error al emitir documento';
+    throw new Error(`FEL: ${mensaje}`);
   }
 
-  const fechaEmisionFel = fecha ? new Date(fecha) : new Date();
+  const numeroAutorizacion = extractXmlAttributeValue(decoded, 'DTE', 'NumeroAutorizacion');
+  const serie = extractXmlAttributeValue(decoded, 'DTE', 'Serie');
+  const numero = extractXmlAttributeValue(decoded, 'DTE', 'Numero');
+  const fechaCertificacion = extractXmlAttributeValue(decoded, 'DTE', 'FechaCertificacion');
+
+  if (!numeroAutorizacion || !serie || !numero) {
+    throw new Error('FEL: Respuesta de emisión sin datos de autorización');
+  }
+
+  const fechaEmisionFel = fechaCertificacion ? new Date(fechaCertificacion) : new Date();
 
   return {
-    autorizacionFel,
-    numeroFel,
-    serieFel,
-    qrFel,
+    autorizacionFel: numeroAutorizacion,
+    numeroFel: numero,
+    serieFel: serie,
+    qrFel: buildQrUrl(numeroAutorizacion),
     fechaEmisionFel: Number.isNaN(fechaEmisionFel.getTime()) ? new Date() : fechaEmisionFel,
   };
 }
@@ -386,6 +423,38 @@ async function getActiveFelConfig(tx?: Prisma.TransactionClient): Promise<Active
   };
 }
 
+async function fetchDocumentoRaw(xmldoc: string, config: ActiveFelConfig): Promise<string> {
+  const endpoint = normalizeUrl(config.servidor, getEmitPath());
+
+  const envelope = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <Documento.Execute xmlns="FEL">
+      <Cliente>${escapeXml(config.cliente)}</Cliente>
+      <Usuario>${escapeXml(config.usuario)}</Usuario>
+      <Clave>${escapeXml(config.clave)}</Clave>
+      <Nitemisor>${escapeXml(config.nitEmisor)}</Nitemisor>
+      <Xmldoc>${escapeXml(xmldoc)}</Xmldoc>
+    </Documento.Execute>
+  </soap:Body>
+</soap:Envelope>`;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/xml; charset=utf-8',
+      SOAPAction: 'FELaction/ADOCUMENTO.Execute',
+    },
+    body: envelope,
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  return response.text();
+}
+
 export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.TransactionClient): Promise<FelIssueResult> {
   const config = await getActiveFelConfig(tx);
   const shouldMock = shouldUseMockByDefault();
@@ -398,40 +467,14 @@ export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.Transacti
     return buildMockIssueResult(input);
   }
 
-  const endpoint = normalizeUrl(config.servidor, getEmitPath());
-
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        Cliente: config.cliente,
-        Usuario: config.usuario,
-        Clave: config.clave,
-        NitEmisor: config.nitEmisor,
-        Formato: config.formato,
-        TipoDocumento: config.tipoDocumento,
-        XmlDte: xml,
-        xml,
-        idVenta: input.idVenta,
-        numeroVenta: input.numeroVenta,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const data = (await response.json()) as unknown;
-    const parsed = parseFelIssueResponse(data);
-    if (!parsed) {
-      throw new Error('respuesta sin campos esperados');
-    }
-
-    return parsed;
+    const raw = await fetchDocumentoRaw(xml, config);
+    return parseFelIssueResponse(raw);
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('FEL:') && !isTruthy(process.env.FEL_ALLOW_FALLBACK)) {
+      throw error;
+    }
+
     if (!isTruthy(process.env.FEL_ALLOW_FALLBACK)) {
       const message = error instanceof Error ? error.message : 'falló conexión';
       throw new Error(`FEL: Error al emitir documento (${message})`);
@@ -439,6 +482,59 @@ export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.Transacti
 
     return buildMockIssueResult(input);
   }
+}
+
+function parseFelAnulateResponse(rawResponse: string): void {
+  const decoded = decodeXmlEntities(rawResponse);
+
+  const fatalErrorMatch = decoded.match(/<Errores>[\s\S]*?<\/Errores>/i);
+  if (fatalErrorMatch) {
+    const errorTag = fatalErrorMatch[0].match(/<Error(?:\s+Codigo="(\d+)")?\s*>([^<]*)<\/Error>/i);
+    const mensaje = errorTag?.[2]?.trim() || 'Error al anular documento';
+    throw new Error(`FEL: ${mensaje}`);
+  }
+
+  const fechaAnulacion = extractXmlAttributeValue(decoded, 'DTE', 'FechaAnulacion');
+  if (!fechaAnulacion) {
+    throw new Error('FEL: Respuesta de anulación sin confirmación');
+  }
+}
+
+async function fetchAnulacionRaw(
+  numeroAutorizacion: string,
+  motivo: string,
+  config: ActiveFelConfig,
+): Promise<string> {
+  const endpoint = normalizeUrl(config.servidor, getAnulatePath());
+
+  const envelope = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <Anulacion.Execute xmlns="FEL">
+      <Cliente>${escapeXml(config.cliente)}</Cliente>
+      <Usuario>${escapeXml(config.usuario)}</Usuario>
+      <Clave>${escapeXml(config.clave)}</Clave>
+      <Nitemisor>${escapeXml(config.nitEmisor)}</Nitemisor>
+      <Numautorizacionuuid>${escapeXml(numeroAutorizacion)}</Numautorizacionuuid>
+      <Motivoanulacion>${escapeXml(motivo)}</Motivoanulacion>
+    </Anulacion.Execute>
+  </soap:Body>
+</soap:Envelope>`;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/xml; charset=utf-8',
+      SOAPAction: 'FELaction/AANULACION.Execute',
+    },
+    body: envelope,
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  return response.text();
 }
 
 export async function anulateFelInvoice(input: AnulateFelInput, tx?: Prisma.TransactionClient): Promise<void> {
@@ -449,33 +545,14 @@ export async function anulateFelInvoice(input: AnulateFelInput, tx?: Prisma.Tran
     return;
   }
 
-  const endpoint = normalizeUrl(config.servidor, getAnulatePath());
-
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        Cliente: config.cliente,
-        Usuario: config.usuario,
-        Clave: config.clave,
-        NitEmisor: config.nitEmisor,
-        Formato: config.formato,
-        serie: input.serieFel,
-        numero: input.numeroFel,
-        motivo: input.motivo,
-        fechaAnulacion: input.fechaAnulacion.toISOString(),
-        idVenta: input.idVenta,
-        numeroVenta: input.numeroVenta,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
+    const raw = await fetchAnulacionRaw(input.autorizacionFel, input.motivo, config);
+    parseFelAnulateResponse(raw);
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('FEL:')) {
+      throw error;
+    }
+
     const message = error instanceof Error ? error.message : 'falló conexión';
     throw new Error(`FEL: Error al anular documento (${message})`);
   }

@@ -3,7 +3,7 @@
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, BadgeCheck, Loader2, Plus, Search, Trash2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
@@ -11,8 +11,25 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -21,10 +38,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getApiErrorMessage } from "@/lib/api";
-import { listClients } from "@/services/clients.service";
+import { createClient, listClients } from "@/services/clients.service";
 import { listProducts } from "@/services/products.service";
 import {
   createSale,
+  getFelReceptorInfo,
   listAvailableRouteSessions,
   listTalonarios,
   previewSaleBonuses,
@@ -59,6 +77,10 @@ function toMoney(value: number): string {
   });
 }
 
+function normalizeNit(value: string): string {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
 export default function CreateSalePage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -81,10 +103,22 @@ export default function CreateSalePage() {
   const [nitFacturado, setNitFacturado] = useState("");
   const [nombreFacturado, setNombreFacturado] = useState("");
   const [direccionFacturada, setDireccionFacturada] = useState("");
+  const [isConsultingNit, setIsConsultingNit] = useState(false);
+  const [nitConsultaError, setNitConsultaError] = useState("");
+  const [clientMatchState, setClientMatchState] = useState<"idle" | "found" | "not-found">("idle");
+  const [clientDialogOpen, setClientDialogOpen] = useState(false);
+  const [isCreatingClient, setIsCreatingClient] = useState(false);
+  const [quickClientForm, setQuickClientForm] = useState({
+    nombreCompleto: "",
+    correoElectronico: "",
+    telefono1: "",
+  });
   const [lugarEntrega, setLugarEntrega] = useState("");
 
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [detalle, setDetalle] = useState<DetailRow[]>([]);
+  const [clientPopoverOpen, setClientPopoverOpen] = useState(false);
+  const [productPopoverOpen, setProductPopoverOpen] = useState(false);
 
   const [pagoMetodo, setPagoMetodo] = useState<PaymentMethod>("EFECTIVO");
   const [pagoMonto, setPagoMonto] = useState(0);
@@ -101,7 +135,7 @@ export default function CreateSalePage() {
           listClients(),
           listTalonarios(),
           listAvailableRouteSessions(),
-          listProducts({ anulado: false, page: 1, limit: 100 }),
+          listProducts({ anulado: false, categoria: "PRODUCTO_TERMINADO", page: 1, limit: 100 }),
         ]);
 
         const pages = firstProductsPage.pagination.totalPages;
@@ -110,7 +144,7 @@ export default function CreateSalePage() {
         if (pages > 1) {
           const rest = await Promise.all(
             Array.from({ length: pages - 1 }, (_, idx) =>
-              listProducts({ anulado: false, page: idx + 2, limit: 100 }),
+              listProducts({ anulado: false, categoria: "PRODUCTO_TERMINADO", page: idx + 2, limit: 100 }),
             ),
           );
           allProducts = [...allProducts, ...rest.flatMap((page) => page.items)];
@@ -246,6 +280,96 @@ export default function CreateSalePage() {
 
     return () => clearTimeout(timeoutId);
   }, [detalle]);
+
+  useEffect(() => {
+    if (!requiereFactura) {
+      setNitConsultaError("");
+      setClientMatchState("idle");
+      return;
+    }
+
+    const nit = nitFacturado.trim();
+    if (!nit || nit.toUpperCase() === "CF" || nit.toUpperCase() === "C/F") {
+      setNitConsultaError("");
+      setClientMatchState("idle");
+      return;
+    }
+
+    let cancelled = false;
+    setIsConsultingNit(true);
+    setNitConsultaError("");
+
+    const timeoutId = setTimeout(() => {
+      const normalized = normalizeNit(nit);
+      const localMatch = clients.find((client) => normalizeNit(client.entidad.nit ?? "") === normalized);
+
+      if (localMatch) {
+        setClientMatchState("found");
+        setIdCliente(localMatch.id);
+      } else {
+        setClientMatchState("not-found");
+      }
+
+      void getFelReceptorInfo(nit)
+        .then((info) => {
+          if (cancelled) return;
+          setNombreFacturado(info.nombre);
+          if (info.direccion) {
+            setDireccionFacturada(info.direccion);
+          }
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setNitConsultaError(getApiErrorMessage(error, "No se pudo consultar el NIT"));
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setIsConsultingNit(false);
+          }
+        });
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [nitFacturado, requiereFactura, clients]);
+
+  async function handleCreateQuickClient() {
+    if (!user) {
+      return;
+    }
+
+    const nombreCompleto = quickClientForm.nombreCompleto.trim();
+    if (!nombreCompleto) {
+      toast.error("El nombre completo es obligatorio");
+      return;
+    }
+
+    setIsCreatingClient(true);
+    try {
+      const created = await createClient({
+        idUsuario: user.id,
+        entidad: {
+          nombreCompleto,
+          correoElectronico: quickClientForm.correoElectronico.trim() || undefined,
+          telefono1: quickClientForm.telefono1.trim() || undefined,
+          nit: nitFacturado.trim() || undefined,
+        },
+      });
+
+      setClients((prev) => [created, ...prev]);
+      setIdCliente(created.id);
+      setClientMatchState("found");
+      setClientDialogOpen(false);
+      setQuickClientForm({ nombreCompleto: "", correoElectronico: "", telefono1: "" });
+      toast.success("Cliente creado y seleccionado correctamente");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo crear el cliente"));
+    } finally {
+      setIsCreatingClient(false);
+    }
+  }
 
   function removeRow(idInventarioItem: number) {
     setDetalle((prev) => prev.filter((row) => row.idInventarioItem !== idInventarioItem));
@@ -411,22 +535,47 @@ export default function CreateSalePage() {
             <CardContent className="grid gap-4 md:grid-cols-2">
               <div className="space-y-1">
                 <Label>Cliente *</Label>
-                <Select
-                  value={idCliente ? String(idCliente) : undefined}
-                  onValueChange={(value) => setIdCliente(Number(value))}
-                  disabled={isLoading}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona cliente" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clients.map((client) => (
-                      <SelectItem key={client.id} value={String(client.id)}>
-                        {client.entidad.nombreCompleto}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Popover open={clientPopoverOpen} onOpenChange={setClientPopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      className="w-full justify-between font-normal"
+                      disabled={isLoading}
+                    >
+                      <span className="truncate">{selectedClient?.entidad.nombreCompleto ?? "Selecciona cliente"}</span>
+                      <Search className="ml-2 size-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-full max-w-md p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Buscar cliente por nombre o NIT..." />
+                      <CommandList>
+                        <CommandEmpty>No se encontraron clientes</CommandEmpty>
+                        <CommandGroup>
+                          {clients.map((client) => (
+                            <CommandItem
+                              key={client.id}
+                              value={`${client.entidad.nombreCompleto} ${client.entidad.nit ?? ""}`}
+                              onSelect={() => {
+                                setIdCliente(client.id);
+                                setClientPopoverOpen(false);
+                              }}
+                            >
+                              <div className="flex w-full flex-col">
+                                <span>{client.entidad.nombreCompleto}</span>
+                                {client.entidad.nit ? (
+                                  <span className="text-xs text-muted-foreground">NIT {client.entidad.nit}</span>
+                                ) : null}
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
 
               <div className="space-y-1">
@@ -516,7 +665,52 @@ export default function CreateSalePage() {
                       onChange={(event) => setNitFacturado(event.target.value)}
                       placeholder="1268645K"
                     />
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      {isConsultingNit ? (
+                        <>
+                          <Loader2 className="size-3.5 animate-spin" />
+                          <span>Consultando NIT en Ecofactura...</span>
+                        </>
+                      ) : nitConsultaError ? (
+                        <span className="text-destructive">{nitConsultaError}</span>
+                      ) : (
+                        <span>El nombre se autocompleta al consultar el NIT.</span>
+                      )}
+                    </div>
                   </div>
+
+                  {clientMatchState === "found" ? (
+                    <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 md:col-span-2 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
+                      <BadgeCheck className="size-4 shrink-0" />
+                      <span>
+                        Cliente encontrado por NIT y seleccionado automáticamente
+                        {selectedClient ? `: ${selectedClient.entidad.nombreCompleto}` : ""}.
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {clientMatchState === "not-found" ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700 md:col-span-2 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+                      <span>No existe un cliente registrado con el NIT {nitFacturado.trim()}.</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setQuickClientForm({
+                            nombreCompleto: nombreFacturado.trim(),
+                            correoElectronico: "",
+                            telefono1: "",
+                          });
+                          setClientDialogOpen(true);
+                        }}
+                      >
+                        <UserPlus className="mr-1 size-3.5" />
+                        Registrar cliente
+                      </Button>
+                    </div>
+                  ) : null}
+
                   <div className="space-y-1">
                     <Label htmlFor="nombre-facturado">Nombre facturado</Label>
                     <Input
@@ -548,22 +742,52 @@ export default function CreateSalePage() {
               <div className="flex flex-wrap items-end gap-2">
                 <div className="min-w-65 flex-1 space-y-1">
                   <Label>Producto</Label>
-                  <Select
-                    value={selectedProductId ? String(selectedProductId) : undefined}
-                    onValueChange={(value) => setSelectedProductId(Number(value))}
-                    disabled={isLoading || selectableProducts.length === 0}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona producto" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {selectableProducts.map((product) => (
-                        <SelectItem key={product.id} value={String(product.id)}>
-                          {product.nombre} · Stock {product.existencia.toFixed(2)} · {toMoney(product.precioVenta)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={productPopoverOpen} onOpenChange={setProductPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        className="w-full justify-between font-normal"
+                        disabled={isLoading || selectableProducts.length === 0}
+                      >
+                        <span className="truncate">
+                          {selectedProductId
+                            ? (selectableProducts.find((product) => product.id === selectedProductId)?.nombre ??
+                              "Selecciona producto")
+                            : "Selecciona producto"}
+                        </span>
+                        <Search className="ml-2 size-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full max-w-md p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Buscar producto terminado..." />
+                        <CommandList>
+                          <CommandEmpty>No hay productos disponibles</CommandEmpty>
+                          <CommandGroup>
+                            {selectableProducts.map((product) => (
+                              <CommandItem
+                                key={product.id}
+                                value={product.nombre}
+                                onSelect={() => {
+                                  setSelectedProductId(product.id);
+                                  setProductPopoverOpen(false);
+                                }}
+                              >
+                                <div className="flex w-full items-center justify-between gap-2">
+                                  <span>{product.nombre}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    Stock {product.existencia.toFixed(2)} · {toMoney(product.precioVenta)}
+                                  </span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <Button type="button" onClick={addProductRow} disabled={!selectedProductId}>
                   <Plus className="mr-2 size-4" />
@@ -733,6 +957,61 @@ export default function CreateSalePage() {
             </CardContent>
           </Card>
         </div>
+
+        <Dialog open={clientDialogOpen} onOpenChange={setClientDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Registrar cliente</DialogTitle>
+              <DialogDescription>
+                Se creará con el NIT {nitFacturado.trim() || "-"} y se seleccionará automáticamente en la venta.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="quick-client-nombre">Nombre completo *</Label>
+                <Input
+                  id="quick-client-nombre"
+                  value={quickClientForm.nombreCompleto}
+                  onChange={(event) =>
+                    setQuickClientForm((prev) => ({ ...prev, nombreCompleto: event.target.value }))
+                  }
+                  placeholder="Nombre o razón social"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="quick-client-correo">Correo electrónico</Label>
+                <Input
+                  id="quick-client-correo"
+                  value={quickClientForm.correoElectronico}
+                  onChange={(event) =>
+                    setQuickClientForm((prev) => ({ ...prev, correoElectronico: event.target.value }))
+                  }
+                  placeholder="correo@cliente.com"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="quick-client-telefono">Teléfono</Label>
+                <Input
+                  id="quick-client-telefono"
+                  value={quickClientForm.telefono1}
+                  onChange={(event) =>
+                    setQuickClientForm((prev) => ({ ...prev, telefono1: event.target.value }))
+                  }
+                  placeholder="5555-5555"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setClientDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="button" onClick={handleCreateQuickClient} disabled={isCreatingClient}>
+                {isCreatingClient ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                Guardar y seleccionar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </DashboardShell>
     </RequireAuth>
   );

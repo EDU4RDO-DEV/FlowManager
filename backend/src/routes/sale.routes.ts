@@ -11,6 +11,7 @@ import {
   listSalesController,
   pingFelController,
   previewSaleBonusesController,
+  resolveFelReceptorController,
   resolveSalePriceController,
   uploadSaleImageController,
   updateSaleController,
@@ -21,6 +22,7 @@ import { uploadSaleProofImage } from '../middlewares/upload.middleware';
 const saleRouter = Router();
 
 saleRouter.post('/fel/ping', requireModulePermission('ventas', 'read'), pingFelController);
+saleRouter.get('/fel/receptor', requireModulePermission('ventas', 'read'), resolveFelReceptorController);
 saleRouter.post(
   '/upload-image',
   requireModulePermission('ventas', 'read'),

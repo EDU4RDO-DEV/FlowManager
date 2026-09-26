@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CreditCard, Loader2, Receipt, RefreshCw, Send, ShoppingCart } from "lucide-react";
+import { CreditCard, Loader2, Receipt, RefreshCw, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import { getApiErrorMessage } from "@/lib/api";
 import { hasModulePermission } from "@/lib/rbac";
-import { listSales, pingFel } from "@/services/sales.service";
+import { listSales } from "@/services/sales.service";
 import type { SaleDto, SalesFilters } from "@/types/sales";
 
 function formatMoney(value: number): string {
@@ -60,8 +60,6 @@ export default function SalesPage() {
   const [sales, setSales] = useState<SaleDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  const [nitReceptor, setNitReceptor] = useState("");
-  const [isPingingFel, setIsPingingFel] = useState(false);
 
   const PAGE_SIZE = 20;
 
@@ -111,27 +109,11 @@ export default function SalesPage() {
     return { total, pendientes, parciales, pagadas };
   }, [sales]);
 
-  async function handlePingFel() {
-    try {
-      setIsPingingFel(true);
-      const result = await pingFel({
-        nitReceptor: nitReceptor.trim() || undefined,
-        validarNit: true,
-      });
-
-      toast.success(`FEL ${result.entorno.toUpperCase()}: ${result.servidor}`);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "No se pudo ejecutar diagnóstico FEL"));
-    } finally {
-      setIsPingingFel(false);
-    }
-  }
-
   return (
     <RequireAuth moduleKey="ventas" action="read">
       <DashboardShell
         title="Administración de Ventas"
-        description="Vista operativa inicial del módulo de ventas y diagnóstico FEL"
+        description="Vista operativa inicial del módulo de ventas"
       >
         <div className="space-y-6">
           <section className="grid gap-4 md:grid-cols-4">
@@ -172,32 +154,6 @@ export default function SalesPage() {
               </CardContent>
             </Card>
           </section>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Diagnóstico FEL</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-                <div className="space-y-1">
-                  <Label htmlFor="nit-receptor">NIT receptor (opcional)</Label>
-                  <Input
-                    id="nit-receptor"
-                    value={nitReceptor}
-                    onChange={(event) => setNitReceptor(event.target.value)}
-                    placeholder="1268645K"
-                  />
-                </div>
-                <Button className="mt-auto" onClick={handlePingFel} disabled={isPingingFel}>
-                  {isPingingFel ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-                  Probar FEL
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Usuario actual: {user?.nombre ?? "-"}. Esta prueba usa /api/ventas/fel/ping sin crear ventas.
-              </p>
-            </CardContent>
-          </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">

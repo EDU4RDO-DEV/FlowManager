@@ -232,3 +232,7 @@ export const previewSaleBonusesBodySchema = z.object({
 export const listAvailableRutaSesionesQuerySchema = z.object({
   idUsuarioVendedor: optionalPositiveIntFromQuery,
 });
+
+export const felReceptorQuerySchema = z.object({
+  nit: z.string().trim().min(1, 'nit no puede ir vacío').max(25, 'nit demasiado largo'),
+});

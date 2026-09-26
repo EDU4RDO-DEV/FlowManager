@@ -143,6 +143,14 @@ export interface FelPingResult {
 
 export type FelPingResponse = ApiResponse<FelPingResult>;
 
+export interface FelReceptorResult {
+  nit: string;
+  nombre: string;
+  direccion: string | null;
+}
+
+export type FelReceptorResponse = ApiResponse<FelReceptorResult>;
+
 export interface TalonarioDto {
   id: number;
   idUsuario: number;

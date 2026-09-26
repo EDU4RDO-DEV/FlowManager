@@ -14,6 +14,8 @@ import type {
   FelPingRequest,
   FelPingResponse,
   FelPingResult,
+  FelReceptorResponse,
+  FelReceptorResult,
   ResolveSalePriceResponse,
   ResolveSalePriceResult,
   RestoreTalonarioPayload,
@@ -66,6 +68,18 @@ export async function pingFel(payload: FelPingRequest): Promise<FelPingResult> {
   const { data } = await api.post<FelPingResponse>("/api/ventas/fel/ping", payload);
   if (!data.data) {
     throw new Error(data.message || "Respuesta inválida de diagnóstico FEL");
+  }
+
+  return data.data;
+}
+
+export async function getFelReceptorInfo(nit: string): Promise<FelReceptorResult> {
+  const { data } = await api.get<FelReceptorResponse>("/api/ventas/fel/receptor", {
+    params: { nit },
+  });
+
+  if (!data.data) {
+    throw new Error(data.message || "No se pudo consultar el receptor FEL");
   }
 
   return data.data;
