@@ -50,6 +50,13 @@ const modulesCatalog: Array<{
     icon: Building2,
   },
   {
+    key: "ventas",
+    title: "Ventas",
+    description: "Operación comercial, pagos, FEL y trazabilidad.",
+    path: "/sales",
+    icon: CreditCard,
+  },
+  {
     key: "proveedores",
     title: "Proveedores",
     description: "Catálogo y relaciones de abastecimiento.",
@@ -78,6 +85,7 @@ const dashboardModules: AppModuleKey[] = [
   "roles",
   "empleados",
   "clientes",
+  "ventas",
   "proveedores",
   "compras",
   "sesiones",

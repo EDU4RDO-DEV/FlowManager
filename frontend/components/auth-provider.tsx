@@ -7,7 +7,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
@@ -38,7 +37,6 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  const hasSyncedCurrentUserRef = useRef(false);
 
   const logout = useCallback(() => {
     persistLogout();
@@ -57,11 +55,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!snapshot.hydrated || !snapshot.user) {
-      hasSyncedCurrentUserRef.current = false;
-      return;
-    }
-
-    if (hasSyncedCurrentUserRef.current) {
       return;
     }
 
@@ -85,8 +78,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (!isSameUser) {
             persistUser(currentUser);
           }
-
-          hasSyncedCurrentUserRef.current = true;
         }
       } catch {
         if (!cancelled) {
@@ -98,8 +89,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     void syncCurrentUser();
 
+    function handleWindowFocus() {
+      void syncCurrentUser();
+    }
+
+    window.addEventListener('focus', handleWindowFocus);
+
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', handleWindowFocus);
     };
   }, [snapshot.hydrated, snapshot.user, router]);
 

@@ -6,6 +6,7 @@ export type AppModuleKey =
   | 'roles'
   | 'empleados'
   | 'clientes'
+  | 'ventas'
   | 'logistica'
   | 'proveedores'
   | 'compras'
@@ -22,6 +23,7 @@ const ALL_MODULES: AppModuleKey[] = [
   'roles',
   'empleados',
   'clientes',
+  'ventas',
   'logistica',
   'proveedores',
   'compras',
@@ -35,6 +37,14 @@ export const RBAC_PREVIEW_MODE =
   false;
 
 export function getAllowedModulesByRole(user: AuthUser | null | undefined): AppModuleKey[] {
+  if (!user) {
+    return [];
+  }
+
+  if (RBAC_PREVIEW_MODE) {
+    return ALL_MODULES;
+  }
+
   return ALL_MODULES.filter((moduleKey) => hasModulePermission(user, moduleKey, 'read'));
 }
 
@@ -45,6 +55,10 @@ export function hasModulePermission(
 ): boolean {
   if (!user) {
     return false;
+  }
+
+  if (RBAC_PREVIEW_MODE) {
+    return true;
   }
 
   const granted = user.permisos?.[moduleKey] ?? [];

@@ -15,6 +15,7 @@ export type PermissionModule =
   | "roles"
   | "empleados"
   | "clientes"
+  | "ventas"
   | "logistica"
   | "proveedores"
   | "compras"

@@ -34,7 +34,6 @@ import {
   SlidersHorizontal,
   Truck,
   Users,
-  Wallet,
   Wrench,
 } from "lucide-react";
 
@@ -114,6 +113,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
         resumen: allowedModules.includes("resumen"),
         sesiones: allowedModules.includes("sesiones"),
         clientes: allowedModules.includes("clientes"),
+        ventas: allowedModules.includes("ventas"),
         logistica: allowedModules.includes("logistica"),
         inventario: allowedModules.includes("inventario"),
         proveedores: allowedModules.includes("proveedores"),
@@ -154,15 +154,19 @@ export function DashboardShell({ title, description, children }: DashboardShellP
               children: [
                 {
                   id: "ventas-pagos",
-                  name: "Pagos y Abonos",
-                  icon: Wallet,
-                  available: false,
+                  name: "Administración de Ventas",
+                  path: "/sales",
+                  icon: ShoppingCart,
+                  available: has.ventas,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/sales"),
                 },
                 {
                   id: "ventas-facturacion",
                   name: "Talonarios / Facturación",
+                  path: "/sales/talonarios",
                   icon: Receipt,
-                  available: false,
+                  available: has.ventas,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/sales/talonarios"),
                 },
               ],
             },
