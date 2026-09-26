@@ -85,3 +85,48 @@ export interface TalonarioDto {
 }
 
 export type TalonariosResponse = ApiResponse<TalonarioDto[]>;
+
+export interface CreateSaleDetailPayload {
+  idInventarioItem: number;
+  cantidad: number;
+  precioUnitario?: number;
+  esBonificacion?: boolean;
+}
+
+export interface SalePaymentPayload {
+  monto: number;
+  metodoPago: "EFECTIVO" | "TRANSFERENCIA" | "CHEQUE" | "POS";
+  numeroReferencia?: string;
+  banco?: string;
+  fechaPago?: string;
+  rutaFirma?: string;
+  observaciones?: string;
+}
+
+export interface CreateSalePayload {
+  idUsuario: number;
+  idCliente: number;
+  idRutaSesion?: number;
+  idTalonario?: number;
+  numeroProForma?: number;
+  tipoRegistro: "VENTA" | "PROFORMA";
+  estadoEntrega: "PENDIENTE" | "EN_RUTA" | "ENTREGADO" | "PARCIAL";
+  condicionPago: "CONTADO" | "CREDITO";
+  requiereFactura: boolean;
+  nitFacturado?: string;
+  nombreClienteFacturado?: string;
+  direccionClienteFacturado?: string;
+  lugarEntrega?: string;
+  fechaEntregaEsperada?: string;
+  detalle: CreateSaleDetailPayload[];
+  pagoInicial?: SalePaymentPayload;
+}
+
+export interface CreateSaleResult {
+  id: number;
+  numeroVenta: number;
+  total: number;
+  estadoPago: "PENDIENTE" | "PARCIAL" | "PAGADO";
+}
+
+export type CreateSaleResponse = ApiResponse<CreateSaleResult>;

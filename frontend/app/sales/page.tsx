@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getApiErrorMessage } from "@/lib/api";
+import { hasModulePermission } from "@/lib/rbac";
 import { listSales, pingFel } from "@/services/sales.service";
 import type { SaleDto } from "@/types/sales";
 
@@ -39,6 +40,7 @@ function formatDate(value: string | null): string {
 
 export default function SalesPage() {
   const { user } = useAuth();
+  const canCreateSale = hasModulePermission(user, "ventas", "create");
   const [query, setQuery] = useState("");
   const [sales, setSales] = useState<SaleDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -181,6 +183,11 @@ export default function SalesPage() {
                   {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                   Recargar
                 </Button>
+                {canCreateSale ? (
+                  <Button asChild variant="default">
+                    <Link href="/sales/create">Nueva venta</Link>
+                  </Button>
+                ) : null}
                 <Button asChild>
                   <Link href="/sales/talonarios">Talonarios</Link>
                 </Button>

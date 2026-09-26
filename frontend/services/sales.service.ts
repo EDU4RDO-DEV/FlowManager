@@ -1,5 +1,8 @@
 import { api } from "@/lib/api";
 import type {
+  CreateSalePayload,
+  CreateSaleResponse,
+  CreateSaleResult,
   FelPingRequest,
   FelPingResponse,
   FelPingResult,
@@ -47,4 +50,13 @@ export async function pingFel(payload: FelPingRequest): Promise<FelPingResult> {
 export async function listTalonarios(): Promise<TalonarioDto[]> {
   const { data } = await api.get<TalonariosResponse>("/api/talonarios");
   return data.data ?? [];
+}
+
+export async function createSale(payload: CreateSalePayload): Promise<CreateSaleResult> {
+  const { data } = await api.post<CreateSaleResponse>("/api/ventas", payload);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta inválida al crear venta");
+  }
+
+  return data.data;
 }

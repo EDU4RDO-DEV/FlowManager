@@ -39,6 +39,7 @@ import {
 
 import {
   getAllowedModulesByRole,
+  hasModulePermission,
   RBAC_PREVIEW_MODE,
 } from "@/lib/rbac";
 import { useAuth } from "@/components/auth-provider";
@@ -107,6 +108,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
     configuracion: false,
   });
   const allowedModules = getAllowedModulesByRole(user);
+  const canCreateSale = hasModulePermission(user, "ventas", "create");
   const sections = useMemo<SidebarSection[]>(
     () => {
       const has = {
@@ -159,6 +161,14 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                   icon: ShoppingCart,
                   available: has.ventas,
                   isActive: (currentPath: string) => isPathActive(currentPath, "/sales"),
+                },
+                {
+                  id: "ventas-nueva",
+                  name: "Nueva Venta",
+                  path: "/sales/create",
+                  icon: CreditCard,
+                  available: canCreateSale,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/sales/create"),
                 },
                 {
                   id: "ventas-facturacion",
@@ -384,7 +394,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
         },
       ];
     },
-    [allowedModules],
+    [allowedModules, canCreateSale],
   );
 
   const collapsedQuickLinks = useMemo(() => {
