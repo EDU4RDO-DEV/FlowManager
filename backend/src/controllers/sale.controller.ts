@@ -113,6 +113,10 @@ export async function createSaleController(req: Request, res: Response) {
       return res.status(400).json({ ok: false, message });
     }
 
+    if (message.startsWith('FEL:')) {
+      return res.status(502).json({ ok: false, message });
+    }
+
     return res.status(500).json({ ok: false, message });
   }
 }
@@ -168,6 +172,10 @@ export async function anulateSaleController(req: Request, res: Response) {
       message.includes('no existe o está anulado')
     ) {
       return res.status(404).json({ ok: false, message });
+    }
+
+    if (message.startsWith('FEL:')) {
+      return res.status(502).json({ ok: false, message });
     }
 
     return res.status(500).json({ ok: false, message });

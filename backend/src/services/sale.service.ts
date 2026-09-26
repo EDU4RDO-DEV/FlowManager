@@ -1,6 +1,7 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
+import { anulateFelInvoice, emitFelInvoice } from './fel.service';
 import { registerInventoryMovement } from './inventory-movement.service';
 
 type ListSalesInput = {
@@ -888,6 +889,46 @@ export async function createSale(input: CreateSaleInput) {
         });
       }
 
+      if (input.requiereFactura) {
+        const nitFacturado = input.nitFacturado ?? cliente.Entidad.Nit;
+        const nombreClienteFacturado =
+          input.nombreClienteFacturado ?? cliente.Entidad.NombreCompleto;
+
+        if (!nitFacturado || !nombreClienteFacturado) {
+          throw new Error('FEL: nitFacturado y nombreClienteFacturado son obligatorios');
+        }
+
+        const felResult = await emitFelInvoice(
+          {
+            idVenta: createdSale.Id,
+            numeroVenta: createdSale.NumeroVenta,
+            nitFacturado,
+            nombreClienteFacturado,
+            direccionClienteFacturado: input.direccionClienteFacturado,
+            items: detailRows.map((item) => ({
+              nombre: item.nombre,
+              cantidad: item.cantidad,
+              precioUnitario: item.precioUnitario,
+              esBonificacion: item.esBonificacion,
+            })),
+            total: totals.total,
+            fechaEmision: fechaOperacion,
+          },
+          tx,
+        );
+
+        await tx.venta.update({
+          where: { Id: createdSale.Id },
+          data: {
+            AutorizacionFel: felResult.autorizacionFel,
+            NumeroFel: felResult.numeroFel,
+            SerieFel: felResult.serieFel,
+            QrFel: felResult.qrFel,
+            FechaEmisionFel: felResult.fechaEmisionFel,
+          },
+        });
+      }
+
       const sale = await getSaleByIdInternal(tx, createdSale.Id, true);
       if (!sale) {
         throw new Error('No se pudo registrar la venta');
@@ -1005,6 +1046,17 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
 
   if (!sale) {
     throw new Error('Venta no existe o ya está anulada');
+  }
+
+  if (sale.RequiereFactura && sale.SerieFel && sale.NumeroFel) {
+    await anulateFelInvoice({
+      idVenta: sale.Id,
+      numeroVenta: sale.NumeroVenta,
+      serieFel: sale.SerieFel,
+      numeroFel: sale.NumeroFel,
+      motivo: `ANULACION VENTA ${sale.NumeroVenta}`,
+      fechaAnulacion: new Date(),
+    });
   }
 
   await prisma.$transaction(async (tx) => {
