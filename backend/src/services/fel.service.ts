@@ -194,37 +194,113 @@ function isConsumidorFinalNit(nit: string): boolean {
   return normalized === 'CF' || normalized === 'C/F' || normalized === 'CONSUMIDORFINAL';
 }
 
-function parseValidateNitResponse(payload: unknown): boolean | null {
-  if (!payload || typeof payload !== 'object') {
+function decodeXmlEntities(value: string): string {
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+function extractXmlTagValue(xml: string, tag: string): string | null {
+  if (new RegExp(`<${tag}\\s*/>`, 'i').test(xml)) {
     return null;
   }
 
-  const source = payload as Record<string, unknown>;
-  const rawEstado = String(source.estado ?? source.Estado ?? source.status ?? '').trim().toUpperCase();
+  const match = xml.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'i'));
+  return match ? match[1].trim() : null;
+}
 
-  if (rawEstado) {
-    if (['ACTIVO', 'VALIDO', 'VALDIO', 'ENCONTRADO', 'OK'].includes(rawEstado)) {
-      return true;
+type ReceptorInfoResult = {
+  nit: string;
+  nombre: string;
+  direccion: string | null;
+};
+
+function parseReceptorInfoResponse(rawResponse: string): ReceptorInfoResult {
+  const decoded = decodeXmlEntities(rawResponse);
+
+  const errorMatch = decoded.match(/<Error(?:\s+Codigo="(\d+)")?\s*>([^<]*)<\/Error>/i);
+  if (errorMatch) {
+    const codigo = errorMatch[1];
+    const mensaje = errorMatch[2].trim() || 'Error al consultar NIT';
+
+    if (codigo === '1050') {
+      throw new Error(`FEL: NIT inválido (${mensaje})`);
     }
 
-    if (['INACTIVO', 'NO_VALIDO', 'NO_ENCONTRADO', 'INVALIDO', 'ERROR'].includes(rawEstado)) {
-      return false;
+    if (codigo === '1051') {
+      throw new Error(`FEL: NIT válido pero no registrado en Ecofactura (${mensaje})`);
     }
+
+    throw new Error(`FEL: ${mensaje}`);
   }
 
-  const boolKeys = ['valido', 'Valido', 'esValido', 'EsValido', 'ok', 'OK'];
-  for (const key of boolKeys) {
-    if (typeof source[key] === 'boolean') {
-      return source[key] as boolean;
+  const nit = extractXmlTagValue(decoded, 'NIT');
+  const nombre = extractXmlTagValue(decoded, 'NOMBRE');
+  const direccion = extractXmlTagValue(decoded, 'DIRECCION');
+
+  if (!nit || !nombre) {
+    throw new Error('FEL: Respuesta de consulta de NIT sin datos de receptor');
+  }
+
+  return { nit, nombre, direccion: direccion || null };
+}
+
+async function fetchReceptorInfoRaw(nitReceptor: string, config: ActiveFelConfig): Promise<string> {
+  const endpoint = normalizeUrl(config.servidor, getValidateNitPath());
+
+  const envelope = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <ReceptorInfo.Execute xmlns="FEL">
+      <Cliente>${escapeXml(config.cliente)}</Cliente>
+      <Usuario>${escapeXml(config.usuario)}</Usuario>
+      <Clave>${escapeXml(config.clave)}</Clave>
+      <Receptorid>${escapeXml(nitReceptor)}</Receptorid>
+    </ReceptorInfo.Execute>
+  </soap:Body>
+</soap:Envelope>`;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/xml; charset=utf-8',
+      SOAPAction: 'FELaction/ARECEPTORINFO.Execute',
+    },
+    body: envelope,
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  return response.text();
+}
+
+export async function getReceptorInfo(nitReceptor: string): Promise<ReceptorInfoResult> {
+  const config = await getActiveFelConfig();
+
+  if (shouldUseMockByDefault()) {
+    return {
+      nit: nitReceptor,
+      nombre: 'CONSUMIDOR DE PRUEBA',
+      direccion: 'CIUDAD',
+    };
+  }
+
+  try {
+    const raw = await fetchReceptorInfoRaw(nitReceptor, config);
+    return parseReceptorInfoResponse(raw);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('FEL:')) {
+      throw error;
     }
-  }
 
-  const nombre = String(source.nombre ?? source.Nombre ?? source.razonSocial ?? '').trim();
-  if (nombre.length > 0) {
-    return true;
+    const message = error instanceof Error ? error.message : 'falló conexión';
+    throw new Error(`FEL: Error al consultar receptor (${message})`);
   }
-
-  return null;
 }
 
 async function validateReceiverNit(nitReceptor: string, config: ActiveFelConfig): Promise<void> {
@@ -240,47 +316,14 @@ async function validateReceiverNit(nitReceptor: string, config: ActiveFelConfig)
     return;
   }
 
-  const endpoint = normalizeUrl(config.servidor, getValidateNitPath());
-
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        Cliente: config.cliente,
-        Usuario: config.usuario,
-        Clave: config.clave,
-        NitEmisor: config.nitEmisor,
-        NITReceptor: nitReceptor,
-        NitReceptor: nitReceptor,
-        NIT: nitReceptor,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const data = (await response.json()) as unknown;
-    const valid = parseValidateNitResponse(data);
-
-    const strict = isTruthy(process.env.FEL_STRICT_NIT_VALIDATION ?? 'false');
-    if (valid === false) {
-      throw new Error('NIT receptor inválido');
-    }
-
-    if (valid === null && strict) {
-      throw new Error('No se pudo validar NIT receptor con respuesta del proveedor');
-    }
+    await getReceptorInfo(nitReceptor);
   } catch (error) {
     if (isTruthy(process.env.FEL_ALLOW_NIT_VALIDATION_FALLBACK ?? 'true')) {
       return;
     }
 
-    const message = error instanceof Error ? error.message : 'falló conexión';
-    throw new Error(`FEL: Error al validar NIT receptor (${message})`);
+    throw error instanceof Error ? error : new Error('FEL: Error al validar NIT receptor');
   }
 }
 
