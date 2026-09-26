@@ -23,10 +23,23 @@ import {
 import { getApiErrorMessage } from "@/lib/api";
 import { listClients } from "@/services/clients.service";
 import { listProducts } from "@/services/products.service";
-import { createSale, listTalonarios, uploadSaleProofImage } from "@/services/sales.service";
+import {
+  createSale,
+  listAvailableRouteSessions,
+  listTalonarios,
+  previewSaleBonuses,
+  resolveSalePrice,
+  uploadSaleProofImage,
+} from "@/services/sales.service";
 import type { ClientDto } from "@/types/clients";
 import type { ProductDto } from "@/types/products";
-import type { CreateSaleDetailPayload, SalePaymentPayload, TalonarioDto } from "@/types/sales";
+import type {
+  BonusPreviewItem,
+  CreateSaleDetailPayload,
+  RouteSessionOptionDto,
+  SalePaymentPayload,
+  TalonarioDto,
+} from "@/types/sales";
 
 type PaymentMethod = "EFECTIVO" | "TRANSFERENCIA" | "CHEQUE" | "POS";
 
@@ -57,8 +70,11 @@ export default function CreateSalePage() {
   const [clients, setClients] = useState<ClientDto[]>([]);
   const [products, setProducts] = useState<ProductDto[]>([]);
   const [talonarios, setTalonarios] = useState<TalonarioDto[]>([]);
+  const [routeSessions, setRouteSessions] = useState<RouteSessionOptionDto[]>([]);
+  const [bonusPreview, setBonusPreview] = useState<BonusPreviewItem[]>([]);
 
   const [idCliente, setIdCliente] = useState<number | null>(null);
+  const [idRutaSesion, setIdRutaSesion] = useState<number | null>(null);
   const [idTalonario, setIdTalonario] = useState<number | null>(null);
   const [condicionPago, setCondicionPago] = useState<"CONTADO" | "CREDITO">("CONTADO");
   const [requiereFactura, setRequiereFactura] = useState(false);
@@ -81,9 +97,10 @@ export default function CreateSalePage() {
     async function loadSources() {
       setIsLoading(true);
       try {
-        const [clientsData, talonariosData, firstProductsPage] = await Promise.all([
+        const [clientsData, talonariosData, routeSessionsData, firstProductsPage] = await Promise.all([
           listClients(),
           listTalonarios(),
+          listAvailableRouteSessions(),
           listProducts({ anulado: false, page: 1, limit: 100 }),
         ]);
 
@@ -101,6 +118,7 @@ export default function CreateSalePage() {
 
         setClients(clientsData.filter((client) => !client.anulado));
         setTalonarios(talonariosData.filter((talonario) => !talonario.anulado));
+        setRouteSessions(routeSessionsData);
         setProducts(allProducts.filter((product) => !product.anulado));
       } catch (error) {
         toast.error(getApiErrorMessage(error, "No se pudo cargar catálogo comercial"));
@@ -139,8 +157,13 @@ export default function CreateSalePage() {
     return Number(Math.max(0, pagoMonto - total).toFixed(2));
   }, [condicionPago, pagoMonto, total]);
 
-  function addProductRow() {
+  async function addProductRow() {
     if (!selectedProductId) {
+      return;
+    }
+
+    if (!idCliente) {
+      toast.error("Selecciona un cliente antes de agregar productos");
       return;
     }
 
@@ -149,18 +172,80 @@ export default function CreateSalePage() {
       return;
     }
 
+    let precioUnitario = found.precioVenta;
+    try {
+      const resolved = await resolveSalePrice(idCliente, found.id);
+      precioUnitario = resolved.precioUnitario;
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo resolver precio por tipo de cliente, se usará precio base"));
+    }
+
     setDetalle((prev) => [
       ...prev,
       {
         idInventarioItem: found.id,
         nombre: found.nombre,
         cantidad: 1,
-        precioUnitario: found.precioVenta,
+        precioUnitario,
       },
     ]);
 
     setSelectedProductId(null);
   }
+
+  useEffect(() => {
+    if (!idCliente || detalle.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function recalcPrices() {
+      try {
+        const updated = await Promise.all(
+          detalle.map(async (row) => {
+            try {
+              const resolved = await resolveSalePrice(idCliente as number, row.idInventarioItem);
+              return { ...row, precioUnitario: resolved.precioUnitario };
+            } catch {
+              return row;
+            }
+          }),
+        );
+
+        if (!cancelled) {
+          setDetalle(updated);
+        }
+      } catch {
+        // Si falla la resolución masiva, se conservan los precios actuales.
+      }
+    }
+
+    void recalcPrices();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idCliente]);
+
+  useEffect(() => {
+    const sellRows = detalle.filter((row) => row.cantidad > 0);
+    if (sellRows.length === 0) {
+      setBonusPreview([]);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      void previewSaleBonuses(
+        sellRows.map((row) => ({ idInventarioItem: row.idInventarioItem, cantidad: row.cantidad })),
+      )
+        .then(setBonusPreview)
+        .catch(() => setBonusPreview([]));
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [detalle]);
 
   function removeRow(idInventarioItem: number) {
     setDetalle((prev) => prev.filter((row) => row.idInventarioItem !== idInventarioItem));
@@ -262,6 +347,7 @@ export default function CreateSalePage() {
       const result = await createSale({
         idUsuario: user.id,
         idCliente,
+        idRutaSesion: idRutaSesion ?? undefined,
         idTalonario: idTalonario ?? undefined,
         tipoRegistro: "VENTA",
         estadoEntrega: "PENDIENTE",
@@ -374,6 +460,29 @@ export default function CreateSalePage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label>Sesión de ruta (opcional)</Label>
+                <Select
+                  value={idRutaSesion ? String(idRutaSesion) : "none"}
+                  onValueChange={(value) => setIdRutaSesion(value === "none" ? null : Number(value))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Sin sesión de ruta" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sin sesión de ruta</SelectItem>
+                    {routeSessions.map((session) => (
+                      <SelectItem key={session.id} value={String(session.id)}>
+                        {session.ruta?.nombre ?? `Ruta ${session.idRuta}`} · {session.vendedor?.nombre ?? "Sin vendedor"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Requerido para que la venta cuente en comisiones del vendedor/chofer.
+                </p>
               </div>
 
               <div className="space-y-1">
@@ -514,8 +623,28 @@ export default function CreateSalePage() {
                   </div>
                 ))}
               </div>
+
+              {bonusPreview.length > 0 ? (
+                <div className="space-y-2 rounded-lg border border-indigo-300 bg-indigo-50 p-3 dark:border-indigo-900 dark:bg-indigo-950/30">
+                  <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">
+                    Bonificación estimada (se aplicará automáticamente al guardar)
+                  </p>
+                  {bonusPreview.map((bonus) => (
+                    <div
+                      key={bonus.idInventarioItem}
+                      className="flex items-center justify-between text-sm text-indigo-700 dark:text-indigo-300"
+                    >
+                      <span>{bonus.nombre}</span>
+                      <span>
+                        {bonus.cantidad.toFixed(2)} unid. · {toMoney(0)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </CardContent>
           </Card>
+
 
           <Card>
             <CardHeader>

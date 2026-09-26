@@ -6,9 +6,12 @@ import {
   createSaleController,
   createSalePaymentController,
   getSaleByIdController,
+  listAvailableRutaSesionesController,
   listSalePaymentsController,
   listSalesController,
   pingFelController,
+  previewSaleBonusesController,
+  resolveSalePriceController,
   uploadSaleImageController,
   updateSaleController,
 } from '../controllers/sale.controller';
@@ -23,6 +26,13 @@ saleRouter.post(
   requireModulePermission('ventas', 'read'),
   uploadSaleProofImage.single('file'),
   uploadSaleImageController,
+);
+saleRouter.get('/precio', requireModulePermission('ventas', 'read'), resolveSalePriceController);
+saleRouter.post('/bonificaciones/preview', requireModulePermission('ventas', 'read'), previewSaleBonusesController);
+saleRouter.get(
+  '/rutas-sesiones',
+  requireModulePermission('ventas', 'read'),
+  listAvailableRutaSesionesController,
 );
 saleRouter.get('/', requireModulePermission('ventas', 'read'), listSalesController);
 saleRouter.get('/:id', requireModulePermission('ventas', 'read'), getSaleByIdController);

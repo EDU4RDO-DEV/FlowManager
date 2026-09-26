@@ -33,6 +33,7 @@ import {
 import { getApiErrorMessage } from "@/lib/api";
 import { hasModulePermission } from "@/lib/rbac";
 import {
+  anulateSale,
   anulateSalePayment,
   createSalePayment,
   getSaleById,
@@ -79,6 +80,8 @@ export default function SaleDetailPage() {
   const [isSavingPayment, setIsSavingPayment] = useState(false);
   const [paymentToAnulate, setPaymentToAnulate] = useState<SalePaymentDto | null>(null);
   const [isAnulatingPayment, setIsAnulatingPayment] = useState(false);
+  const [isAnulateSaleDialogOpen, setIsAnulateSaleDialogOpen] = useState(false);
+  const [isAnulatingSale, setIsAnulatingSale] = useState(false);
 
   const [monto, setMonto] = useState(0);
   const [metodoPago, setMetodoPago] = useState<PaymentMethod>("EFECTIVO");
@@ -91,6 +94,7 @@ export default function SaleDetailPage() {
   const saleId = useMemo(() => Number(params.id), [params.id]);
   const canCreatePayments = hasModulePermission(user, "ventas", "create");
   const canAnulatePayments = hasModulePermission(user, "ventas", "delete");
+  const canAnulateSale = hasModulePermission(user, "ventas", "delete");
 
   const loadData = useCallback(async () => {
     if (!Number.isInteger(saleId) || saleId <= 0) {
@@ -235,6 +239,24 @@ export default function SaleDetailPage() {
     }
   }
 
+  async function handleConfirmAnulateSale() {
+    if (!user || !sale) {
+      return;
+    }
+
+    setIsAnulatingSale(true);
+    try {
+      await anulateSale(sale.id, { idUsuarioAnulador: user.id });
+      toast.success("Venta anulada correctamente");
+      setIsAnulateSaleDialogOpen(false);
+      await loadData();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo anular la venta"));
+    } finally {
+      setIsAnulatingSale(false);
+    }
+  }
+
   return (
     <RequireAuth moduleKey="ventas" action="read">
       <DashboardShell
@@ -242,12 +264,20 @@ export default function SaleDetailPage() {
         description="Cuenta por cobrar, historial de pagos y estado comercial"
       >
         <div className="space-y-4">
-          <Button asChild variant="outline">
-            <Link href="/sales">
-              <ArrowLeft className="mr-2 size-4" />
-              Volver a ventas
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Button asChild variant="outline">
+              <Link href="/sales">
+                <ArrowLeft className="mr-2 size-4" />
+                Volver a ventas
+              </Link>
+            </Button>
+
+            {canAnulateSale && sale && !sale.anulado ? (
+              <Button variant="destructive" onClick={() => setIsAnulateSaleDialogOpen(true)}>
+                Anular venta
+              </Button>
+            ) : null}
+          </div>
 
           {isLoading && !hasLoadedOnce ? (
             <Card>
@@ -522,6 +552,16 @@ export default function SaleDetailPage() {
           confirmLabel="Anular pago"
           loading={isAnulatingPayment}
           onConfirm={handleConfirmAnulatePayment}
+        />
+
+        <ConfirmActionDialog
+          open={isAnulateSaleDialogOpen}
+          onOpenChange={setIsAnulateSaleDialogOpen}
+          title="Anular venta"
+          description={`¿Seguro que deseas anular la venta #${sale?.numeroVenta ?? ""}? Se restaurará el inventario, se anularán los pagos y, si tiene FEL emitido, se anulará ante el proveedor.`}
+          confirmLabel="Anular venta"
+          loading={isAnulatingSale}
+          onConfirm={handleConfirmAnulateSale}
         />
       </DashboardShell>
     </RequireAuth>

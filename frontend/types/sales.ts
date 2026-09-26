@@ -121,6 +121,9 @@ export interface SalesFilters {
   anulado?: boolean;
   condicionPago?: "CONTADO" | "CREDITO";
   estadoPago?: "PENDIENTE" | "PARCIAL" | "PAGADO";
+  estadoEntrega?: "PENDIENTE" | "EN_RUTA" | "ENTREGADO" | "PARCIAL";
+  fechaDesde?: string;
+  fechaHasta?: string;
 }
 
 export interface FelPingRequest {
@@ -266,3 +269,38 @@ export interface UploadSaleImageResult {
 }
 
 export type UploadSaleImageResponse = ApiResponse<UploadSaleImageResult>;
+
+export interface ResolveSalePriceResult {
+  idCliente: number;
+  idInventarioItem: number;
+  idTipoCliente: number | null;
+  precioUnitario: number;
+}
+
+export type ResolveSalePriceResponse = ApiResponse<ResolveSalePriceResult>;
+
+export interface BonusPreviewItem {
+  idInventarioItem: number;
+  nombre: string;
+  cantidad: number;
+}
+
+export type BonusPreviewResponse = ApiResponse<BonusPreviewItem[]>;
+
+export interface RouteSessionOptionDto {
+  id: number;
+  idRuta: number;
+  idUsuarioVendedor: number;
+  idUsuarioChofer: number;
+  estado: "PROGRAMADA" | "EN_CURSO" | "CERRADA";
+  fechaSesion: string;
+  ruta?: { id: number; nombre: string };
+  vendedor?: { id: number; nombre: string; correo: string };
+  chofer?: { id: number; nombre: string; correo: string };
+}
+
+export type RouteSessionOptionsResponse = ApiResponse<RouteSessionOptionDto[]>;
+
+export interface AnulateSalePayload {
+  idUsuarioAnulador?: number;
+}

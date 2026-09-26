@@ -13,10 +13,17 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { getApiErrorMessage } from "@/lib/api";
 import { hasModulePermission } from "@/lib/rbac";
 import { listSales, pingFel } from "@/services/sales.service";
-import type { SaleDto } from "@/types/sales";
+import type { SaleDto, SalesFilters } from "@/types/sales";
 
 function formatMoney(value: number): string {
   return value.toLocaleString("es-GT", {
@@ -42,28 +49,47 @@ export default function SalesPage() {
   const { user } = useAuth();
   const canCreateSale = hasModulePermission(user, "ventas", "create");
   const [query, setQuery] = useState("");
+  const [condicionPago, setCondicionPago] = useState<"" | "CONTADO" | "CREDITO">("");
+  const [estadoPago, setEstadoPago] = useState<"" | "PENDIENTE" | "PARCIAL" | "PAGADO">("");
+  const [anulado, setAnulado] = useState<"" | "true" | "false">("");
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [sales, setSales] = useState<SaleDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [nitReceptor, setNitReceptor] = useState("");
   const [isPingingFel, setIsPingingFel] = useState(false);
 
+  const PAGE_SIZE = 20;
+
   const loadSales = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await listSales({
-        page: 1,
-        limit: 20,
+      const filters: SalesFilters = {
+        page,
+        limit: PAGE_SIZE,
         ...(query.trim() ? { busqueda: query.trim() } : {}),
-      });
+        ...(condicionPago ? { condicionPago } : {}),
+        ...(estadoPago ? { estadoPago } : {}),
+        ...(anulado ? { anulado: anulado === "true" } : {}),
+        ...(fechaDesde ? { fechaDesde } : {}),
+        ...(fechaHasta ? { fechaHasta } : {}),
+      };
+
+      const response = await listSales(filters);
       setSales(response.items);
+      setTotalPages(response.pagination.totalPages || 1);
+      setTotal(response.pagination.total);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudieron cargar las ventas"));
     } finally {
       setIsLoading(false);
       setHasLoadedOnce(true);
     }
-  }, [query]);
+  }, [query, condicionPago, estadoPago, anulado, fechaDesde, fechaHasta, page]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -72,6 +98,10 @@ export default function SalesPage() {
 
     return () => clearTimeout(timeoutId);
   }, [loadSales]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, condicionPago, estadoPago, anulado, fechaDesde, fechaHasta]);
 
   const metrics = useMemo(() => {
     const total = sales.length;
@@ -171,14 +201,8 @@ export default function SalesPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Historial reciente de ventas</CardTitle>
+              <CardTitle>Historial de ventas</CardTitle>
               <div className="flex items-center gap-2">
-                <Input
-                  className="w-64"
-                  placeholder="Buscar cliente o NIT"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
                 <Button variant="outline" onClick={loadSales} disabled={isLoading}>
                   {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                   Recargar
@@ -193,7 +217,90 @@ export default function SalesPage() {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
+                <div className="space-y-1 lg:col-span-2">
+                  <Label htmlFor="busqueda">Cliente o NIT</Label>
+                  <Input
+                    id="busqueda"
+                    placeholder="Buscar cliente o NIT"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Condición</Label>
+                  <Select
+                    value={condicionPago || "TODAS"}
+                    onValueChange={(value) =>
+                      setCondicionPago(value === "TODAS" ? "" : (value as "CONTADO" | "CREDITO"))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="TODAS">Todas</SelectItem>
+                      <SelectItem value="CONTADO">Contado</SelectItem>
+                      <SelectItem value="CREDITO">Crédito</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Estado de pago</Label>
+                  <Select
+                    value={estadoPago || "TODOS"}
+                    onValueChange={(value) =>
+                      setEstadoPago(value === "TODOS" ? "" : (value as "PENDIENTE" | "PARCIAL" | "PAGADO"))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="TODOS">Todos</SelectItem>
+                      <SelectItem value="PENDIENTE">Pendiente</SelectItem>
+                      <SelectItem value="PARCIAL">Parcial</SelectItem>
+                      <SelectItem value="PAGADO">Pagado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Estado</Label>
+                  <Select
+                    value={anulado || "TODAS"}
+                    onValueChange={(value) => setAnulado(value === "TODAS" ? "" : (value as "true" | "false"))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="TODAS">Activas y anuladas</SelectItem>
+                      <SelectItem value="false">Solo activas</SelectItem>
+                      <SelectItem value="true">Solo anuladas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="fecha-desde">Fecha desde</Label>
+                  <Input
+                    id="fecha-desde"
+                    type="date"
+                    value={fechaDesde}
+                    onChange={(event) => setFechaDesde(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="fecha-hasta">Fecha hasta</Label>
+                  <Input
+                    id="fecha-hasta"
+                    type="date"
+                    value={fechaHasta}
+                    onChange={(event) => setFechaHasta(event.target.value)}
+                  />
+                </div>
+              </div>
+
               {!isLoading && hasLoadedOnce && sales.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
                   No hay ventas para los filtros actuales.
@@ -245,6 +352,30 @@ export default function SalesPage() {
                   ))}
                 </div>
               )}
+
+              <div className="flex items-center justify-between border-t pt-3 text-sm text-muted-foreground">
+                <span>
+                  {total} venta{total === 1 ? "" : "s"} · Página {page} de {totalPages}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1 || isLoading}
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= totalPages || isLoading}
+                    onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                  >
+                    Siguiente
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>

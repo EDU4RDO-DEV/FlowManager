@@ -9,16 +9,22 @@ import {
   getSaleById,
   listSalePayments,
   listSales,
+  previewSaleBonuses,
+  resolveSalePrice,
   updateSale,
 } from '../services/sale.service';
 import { pingFelProvider } from '../services/fel.service';
+import { listRutaSesiones } from '../services/logistics.service';
 import {
   anulateSaleBodySchema,
   anulateSalePaymentBodySchema,
   createSalePaymentSchema,
   createSaleSchema,
   felPingSchema,
+  listAvailableRutaSesionesQuerySchema,
   listSalesQuerySchema,
+  previewSaleBonusesBodySchema,
+  resolveSalePriceQuerySchema,
   saleIdParamsSchema,
   salePaymentIdParamsSchema,
   updateSaleSchema,
@@ -47,6 +53,70 @@ export async function uploadSaleImageController(req: Request, res: Response) {
       },
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function resolveSalePriceController(req: Request, res: Response) {
+  try {
+    const { idCliente, idInventarioItem } = resolveSalePriceQuerySchema.parse(req.query);
+    const data = await resolveSalePrice(idCliente, idInventarioItem);
+
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (message === 'Cliente no existe' || message.includes('no existe o está anulado')) {
+      return res.status(404).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function previewSaleBonusesController(req: Request, res: Response) {
+  try {
+    const { detalle } = previewSaleBonusesBodySchema.parse(req.body);
+    const data = await previewSaleBonuses(detalle);
+
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function listAvailableRutaSesionesController(req: Request, res: Response) {
+  try {
+    const { idUsuarioVendedor } = listAvailableRutaSesionesQuerySchema.parse(req.query);
+    const rows = await listRutaSesiones({ anulado: false });
+    const data = rows.filter((sesion) => {
+      if (sesion.estado === 'CERRADA') {
+        return false;
+      }
+
+      if (idUsuarioVendedor !== undefined && sesion.idUsuarioVendedor !== idUsuarioVendedor) {
+        return false;
+      }
+
+      return true;
+    });
+
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
     const message = error instanceof Error ? error.message : 'Error interno';
     return res.status(500).json({ ok: false, message });
   }

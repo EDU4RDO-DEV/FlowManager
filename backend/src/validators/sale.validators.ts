@@ -205,3 +205,30 @@ export const felPingSchema = z.object({
   nitReceptor: z.string().trim().min(1, 'nitReceptor no puede ir vacío').max(25).optional(),
   validarNit: z.boolean().optional().default(true),
 });
+
+const requiredPositiveIntFromQuery = z
+  .string()
+  .trim()
+  .regex(/^\d+$/, 'debe ser entero positivo')
+  .transform((value) => Number(value))
+  .refine((value) => value > 0, 'debe ser mayor a 0');
+
+export const resolveSalePriceQuerySchema = z.object({
+  idCliente: requiredPositiveIntFromQuery,
+  idInventarioItem: requiredPositiveIntFromQuery,
+});
+
+export const previewSaleBonusesBodySchema = z.object({
+  detalle: z
+    .array(
+      z.object({
+        idInventarioItem: positiveInt,
+        cantidad: finitePositiveNumber,
+      }),
+    )
+    .min(1, 'detalle debe incluir al menos un producto'),
+});
+
+export const listAvailableRutaSesionesQuerySchema = z.object({
+  idUsuarioVendedor: optionalPositiveIntFromQuery,
+});

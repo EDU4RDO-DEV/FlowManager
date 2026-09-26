@@ -1,6 +1,9 @@
 import { api } from "@/lib/api";
 import type {
+  AnulateSalePayload,
   AnulateTalonarioPayload,
+  BonusPreviewItem,
+  BonusPreviewResponse,
   CreateSalePaymentPayload,
   CreateSalePaymentResponse,
   CreateSalePaymentResult,
@@ -11,7 +14,11 @@ import type {
   FelPingRequest,
   FelPingResponse,
   FelPingResult,
+  ResolveSalePriceResponse,
+  ResolveSalePriceResult,
   RestoreTalonarioPayload,
+  RouteSessionOptionDto,
+  RouteSessionOptionsResponse,
   SaleByIdResponse,
   SaleDto,
   SalePaymentDto,
@@ -36,6 +43,9 @@ export async function listSales(filters: SalesFilters = {}): Promise<SalesListRe
       ...(filters.anulado !== undefined ? { anulado: String(filters.anulado) } : {}),
       ...(filters.condicionPago ? { condicionPago: filters.condicionPago } : {}),
       ...(filters.estadoPago ? { estadoPago: filters.estadoPago } : {}),
+      ...(filters.estadoEntrega ? { estadoEntrega: filters.estadoEntrega } : {}),
+      ...(filters.fechaDesde ? { fechaDesde: filters.fechaDesde } : {}),
+      ...(filters.fechaHasta ? { fechaHasta: filters.fechaHasta } : {}),
     },
   });
 
@@ -159,3 +169,34 @@ export async function uploadSaleProofImage(file: File): Promise<UploadSaleImageR
 
   return data.data;
 }
+
+export async function resolveSalePrice(idCliente: number, idInventarioItem: number): Promise<ResolveSalePriceResult> {
+  const { data } = await api.get<ResolveSalePriceResponse>("/api/ventas/precio", {
+    params: { idCliente, idInventarioItem },
+  });
+
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta inválida al resolver precio");
+  }
+
+  return data.data;
+}
+
+export async function previewSaleBonuses(
+  detalle: Array<{ idInventarioItem: number; cantidad: number }>,
+): Promise<BonusPreviewItem[]> {
+  const { data } = await api.post<BonusPreviewResponse>("/api/ventas/bonificaciones/preview", { detalle });
+  return data.data ?? [];
+}
+
+export async function listAvailableRouteSessions(idUsuarioVendedor?: number): Promise<RouteSessionOptionDto[]> {
+  const { data } = await api.get<RouteSessionOptionsResponse>("/api/ventas/rutas-sesiones", {
+    params: idUsuarioVendedor !== undefined ? { idUsuarioVendedor } : undefined,
+  });
+  return data.data ?? [];
+}
+
+export async function anulateSale(id: number, payload?: AnulateSalePayload): Promise<void> {
+  await api.patch(`/api/ventas/${id}/anular`, payload ?? {});
+}
+

@@ -223,7 +223,7 @@ async function getAndReserveNextTalonarioCorrelativo(tx: Prisma.TransactionClien
 }
 
 async function resolveApplicablePrice(
-  tx: Prisma.TransactionClient,
+  tx: PrismaClient | Prisma.TransactionClient,
   idInventarioItem: number,
   idTipoCliente: number | null,
   fechaOperacion: Date,
@@ -264,7 +264,7 @@ async function resolveApplicablePrice(
 }
 
 async function buildAutoBonusDetails(
-  tx: Prisma.TransactionClient,
+  tx: PrismaClient | Prisma.TransactionClient,
   detalleVenta: Array<{ idInventarioItem: number; cantidad: number }>,
 ): Promise<CreateSaleDetailInput[]> {
   const bonuses: CreateSaleDetailInput[] = [];
@@ -663,6 +663,45 @@ export async function getSaleById(id: number) {
   }
 
   return toSaleDto(sale);
+}
+
+export async function resolveSalePrice(idCliente: number, idInventarioItem: number) {
+  const cliente = await getClienteActivo(idCliente);
+  const precioUnitario = await resolveApplicablePrice(
+    prisma,
+    idInventarioItem,
+    cliente.IdTipoCliente,
+    new Date(),
+  );
+
+  return {
+    idCliente,
+    idInventarioItem,
+    idTipoCliente: cliente.IdTipoCliente,
+    precioUnitario,
+  };
+}
+
+export async function previewSaleBonuses(detalle: Array<{ idInventarioItem: number; cantidad: number }>) {
+  const bonuses = await buildAutoBonusDetails(prisma, detalle);
+  if (bonuses.length === 0) {
+    return [];
+  }
+
+  const items = await prisma.inventarioItem.findMany({
+    where: {
+      Id: { in: bonuses.map((bonus) => bonus.idInventarioItem) },
+    },
+    select: { Id: true, Nombre: true },
+  });
+
+  const nameById = new Map(items.map((item) => [item.Id, item.Nombre]));
+
+  return bonuses.map((bonus) => ({
+    idInventarioItem: bonus.idInventarioItem,
+    nombre: nameById.get(bonus.idInventarioItem) ?? `Producto ${bonus.idInventarioItem}`,
+    cantidad: bonus.cantidad,
+  }));
 }
 
 export async function createSale(input: CreateSaleInput) {
