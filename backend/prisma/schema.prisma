@@ -685,6 +685,7 @@ model Venta {
   NumeroFel                 String?        @db.VarChar(255)
   SerieFel                  String?        @db.VarChar(255)
   QrFel                     String?        @db.VarChar(Max)
+  RutaPdfFel                String?        @db.VarChar(255)
   FechaEmisionFel           DateTime?      @db.DateTime
   NitFacturado              String?        @db.VarChar(255)
   NombreClienteFacturado    String?        @db.VarChar(255)

@@ -358,6 +358,7 @@ CREATE TABLE Venta (
     NumeroFel VARCHAR(255) NULL,
     SerieFel VARCHAR(255) NULL,
     QrFel VARCHAR(MAX) NULL,
+    RutaPdfFel VARCHAR(255) NULL,
     FechaEmisionFel DATETIME NULL,
     NitFacturado VARCHAR(255) NULL,
     NombreClienteFacturado VARCHAR(255) NULL,

@@ -1,6 +1,10 @@
+import fs from 'fs';
+import path from 'path';
+
 import type { Prisma } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
+import { uploadsRootPath } from '../utils/paths';
 
 type FelIssueItemInput = {
   nombre: string;
@@ -36,6 +40,7 @@ type FelIssueResult = {
   serieFel: string;
   qrFel: string;
   fechaEmisionFel: Date;
+  rutaPdfFel: string | null;
 };
 
 type ActiveFelConfig = {
@@ -96,6 +101,19 @@ function escapeXml(value: string): string {
 
 function toFechaGT(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+// Cada afiliación de IVA solo puede emitir ciertos tipos de DTE (ver manual Ecofactura "Tipos de DTE por afiliación").
+function resolveDefaultTipoDocumento(afiliacionIva: string): string {
+  const mapa: Record<string, string> = {
+    GEN: 'FACT',
+    PEQ: 'FPEQ',
+    PEE: 'FAPE',
+    AGR: 'FACA',
+    AGE: 'FAAE',
+  };
+
+  return mapa[afiliacionIva.trim().toUpperCase()] ?? 'FACT';
 }
 
 function normalizeReceptorId(value: string): string {
@@ -176,7 +194,29 @@ function buildQrUrl(numeroAutorizacion: string): string {
   return `${base}${separator}tipo=autorizacion&numero=${encodeURIComponent(numeroAutorizacion)}`;
 }
 
-function parseFelIssueResponse(rawResponse: string): FelIssueResult {
+function savePdfFile(pdfBase64: string | null, fileName: string): string | null {
+  if (!pdfBase64) {
+    return null;
+  }
+
+  try {
+    const dir = path.join(uploadsRootPath, 'sales', 'fel');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    const filePath = path.join(dir, fileName);
+    fs.writeFileSync(filePath, Buffer.from(pdfBase64, 'base64'));
+
+    return `/uploads/sales/fel/${fileName}`;
+  } catch {
+    return null;
+  }
+}
+
+type ParsedFelIssueResponse = Omit<FelIssueResult, 'rutaPdfFel'> & { pdfBase64: string | null };
+
+function parseFelIssueResponse(rawResponse: string): ParsedFelIssueResponse {
   const decoded = decodeXmlEntities(rawResponse);
 
   const fatalErrorMatch = decoded.match(/<Errores>[\s\S]*?<\/Errores>/i);
@@ -190,6 +230,7 @@ function parseFelIssueResponse(rawResponse: string): FelIssueResult {
   const serie = extractXmlAttributeValue(decoded, 'DTE', 'Serie');
   const numero = extractXmlAttributeValue(decoded, 'DTE', 'Numero');
   const fechaCertificacion = extractXmlAttributeValue(decoded, 'DTE', 'FechaCertificacion');
+  const pdfBase64 = extractXmlTagValue(decoded, 'Pdf');
 
   if (!numeroAutorizacion || !serie || !numero) {
     throw new Error('FEL: Respuesta de emisión sin datos de autorización');
@@ -203,6 +244,7 @@ function parseFelIssueResponse(rawResponse: string): FelIssueResult {
     serieFel: serie,
     qrFel: buildQrUrl(numeroAutorizacion),
     fechaEmisionFel: Number.isNaN(fechaEmisionFel.getTime()) ? new Date() : fechaEmisionFel,
+    pdfBase64,
   };
 }
 
@@ -215,6 +257,7 @@ function buildMockIssueResult(input: IssueFelInput): FelIssueResult {
     serieFel: 'PRUEBA',
     qrFel: `https://pruebasecofactura.com/qr/${suffix}`,
     fechaEmisionFel: new Date(),
+    rutaPdfFel: null,
   };
 }
 
@@ -395,7 +438,7 @@ async function getActiveFelConfig(tx?: Prisma.TransactionClient): Promise<Active
   const afiliacionIva = (process.env.FEL_AFILIACION_IVA ?? 'PEQ').trim();
   const establecimiento = Number(process.env.FEL_ESTABLECIMIENTO ?? '1');
   const formato = (process.env.FEL_FORMAT ?? 'STD_TWS').trim();
-  const tipoDocumento = (process.env.FEL_TIPO_DOCUMENTO ?? 'FACT').trim();
+  const tipoDocumento = (process.env.FEL_TIPO_DOCUMENTO ?? resolveDefaultTipoDocumento(afiliacionIva)).trim();
 
   if (!servidor || !usuario || !clave) {
     throw new Error('FEL: Configuración incompleta (ServidorFel, UsuarioFel, ContrasenaFel)');
@@ -469,7 +512,17 @@ export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.Transacti
 
   try {
     const raw = await fetchDocumentoRaw(xml, config);
-    return parseFelIssueResponse(raw);
+    const parsed = parseFelIssueResponse(raw);
+    const rutaPdfFel = savePdfFile(parsed.pdfBase64, `venta-${input.idVenta}-${parsed.serieFel}-${parsed.numeroFel}.pdf`);
+
+    return {
+      autorizacionFel: parsed.autorizacionFel,
+      numeroFel: parsed.numeroFel,
+      serieFel: parsed.serieFel,
+      qrFel: parsed.qrFel,
+      fechaEmisionFel: parsed.fechaEmisionFel,
+      rutaPdfFel,
+    };
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('FEL:') && !isTruthy(process.env.FEL_ALLOW_FALLBACK)) {
       throw error;
@@ -484,7 +537,7 @@ export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.Transacti
   }
 }
 
-function parseFelAnulateResponse(rawResponse: string): void {
+function parseFelAnulateResponse(rawResponse: string): { pdfBase64: string | null } {
   const decoded = decodeXmlEntities(rawResponse);
 
   const fatalErrorMatch = decoded.match(/<Errores>[\s\S]*?<\/Errores>/i);
@@ -498,6 +551,8 @@ function parseFelAnulateResponse(rawResponse: string): void {
   if (!fechaAnulacion) {
     throw new Error('FEL: Respuesta de anulación sin confirmación');
   }
+
+  return { pdfBase64: extractXmlTagValue(decoded, 'Pdf') };
 }
 
 async function fetchAnulacionRaw(
@@ -537,17 +592,26 @@ async function fetchAnulacionRaw(
   return response.text();
 }
 
-export async function anulateFelInvoice(input: AnulateFelInput, tx?: Prisma.TransactionClient): Promise<void> {
+export async function anulateFelInvoice(
+  input: AnulateFelInput,
+  tx?: Prisma.TransactionClient,
+): Promise<{ rutaPdfFel: string | null }> {
   const config = await getActiveFelConfig(tx);
   const shouldMock = shouldUseMockByDefault();
 
   if (shouldMock) {
-    return;
+    return { rutaPdfFel: null };
   }
 
   try {
     const raw = await fetchAnulacionRaw(input.autorizacionFel, input.motivo, config);
-    parseFelAnulateResponse(raw);
+    const { pdfBase64 } = parseFelAnulateResponse(raw);
+    const rutaPdfFel = savePdfFile(
+      pdfBase64,
+      `venta-${input.idVenta}-${input.serieFel}-${input.numeroFel}-anulado.pdf`,
+    );
+
+    return { rutaPdfFel };
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('FEL:')) {
       throw error;

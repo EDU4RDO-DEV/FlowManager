@@ -454,6 +454,7 @@ function toSaleDto(sale: NonNullable<Awaited<ReturnType<typeof getSaleByIdIntern
     numeroFel: sale.NumeroFel,
     serieFel: sale.SerieFel,
     qrFel: sale.QrFel,
+    rutaPdfFel: sale.RutaPdfFel,
     fechaEmisionFel: sale.FechaEmisionFel,
     nitFacturado: sale.NitFacturado,
     nombreClienteFacturado: sale.NombreClienteFacturado,
@@ -963,6 +964,7 @@ export async function createSale(input: CreateSaleInput) {
             NumeroFel: felResult.numeroFel,
             SerieFel: felResult.serieFel,
             QrFel: felResult.qrFel,
+            RutaPdfFel: felResult.rutaPdfFel,
             FechaEmisionFel: felResult.fechaEmisionFel,
           },
         });
@@ -1087,8 +1089,10 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
     throw new Error('Venta no existe o ya está anulada');
   }
 
+  let rutaPdfFelAnulacion: string | null = null;
+
   if (sale.RequiereFactura && sale.AutorizacionFel && sale.SerieFel && sale.NumeroFel) {
-    await anulateFelInvoice({
+    const anulacionResult = await anulateFelInvoice({
       idVenta: sale.Id,
       numeroVenta: sale.NumeroVenta,
       autorizacionFel: sale.AutorizacionFel,
@@ -1097,6 +1101,8 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
       motivo: `ANULACION VENTA ${sale.NumeroVenta}`,
       fechaAnulacion: new Date(),
     });
+
+    rutaPdfFelAnulacion = anulacionResult.rutaPdfFel;
   }
 
   await prisma.$transaction(async (tx) => {
@@ -1173,6 +1179,7 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
         Anulado: true,
         IdUsuarioAnulador: idUsuarioAnulador,
         FechaAnulacion: fechaAnulacion,
+        ...(rutaPdfFelAnulacion ? { RutaPdfFel: rutaPdfFelAnulacion } : {}),
       },
     });
   });

@@ -68,6 +68,19 @@ function formatMoney(value: number): string {
   });
 }
 
+function resolveUploadUrl(rutaArchivo: string): string {
+  const configuredBase = process.env.NEXT_PUBLIC_API_URL;
+  if (configuredBase) {
+    return `${configuredBase}${rutaArchivo}`;
+  }
+
+  if (typeof window !== "undefined") {
+    return `http://${window.location.hostname}:4000${rutaArchivo}`;
+  }
+
+  return rutaArchivo;
+}
+
 export default function SaleDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -354,6 +367,58 @@ export default function SaleDetailPage() {
                   </div>
                 </CardContent>
               </Card>
+
+              {sale.requiereFactura ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Facturación FEL</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-3 md:grid-cols-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">NIT facturado</p>
+                      <p className="font-medium">{sale.nitFacturado ?? "-"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Nombre facturado</p>
+                      <p className="font-medium">{sale.nombreClienteFacturado ?? "-"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Serie / Número</p>
+                      <p className="font-medium">
+                        {sale.serieFel && sale.numeroFel ? `${sale.serieFel} / ${sale.numeroFel}` : "Pendiente"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Fecha de emisión</p>
+                      <p className="font-medium">{formatDate(sale.fechaEmisionFel)}</p>
+                    </div>
+                    <div className="md:col-span-2">
+                      <p className="text-xs text-muted-foreground">Autorización (UUID)</p>
+                      <p className="break-all font-medium">{sale.autorizacionFel ?? "-"}</p>
+                    </div>
+                    <div className="flex items-end gap-3 md:col-span-2">
+                      {sale.rutaPdfFel ? (
+                        <Button asChild variant="outline" size="sm">
+                          <a href={resolveUploadUrl(sale.rutaPdfFel)} target="_blank" rel="noreferrer">
+                            Ver PDF certificado
+                          </a>
+                        </Button>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          {sale.autorizacionFel ? "PDF no disponible" : "Factura pendiente de emisión"}
+                        </p>
+                      )}
+                      {sale.qrFel ? (
+                        <Button asChild variant="outline" size="sm">
+                          <a href={sale.qrFel} target="_blank" rel="noreferrer">
+                            Verificar en SAT
+                          </a>
+                        </Button>
+                      ) : null}
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
 
               <Card>
                 <CardHeader>

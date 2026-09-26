@@ -79,6 +79,7 @@ export interface SaleDto {
   numeroFel: string | null;
   serieFel: string | null;
   qrFel: string | null;
+  rutaPdfFel: string | null;
   fechaEmisionFel: string | null;
   nitFacturado: string | null;
   nombreClienteFacturado: string | null;
