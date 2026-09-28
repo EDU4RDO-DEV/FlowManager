@@ -185,6 +185,14 @@ export async function registerController(req: Request, res: Response) {
       return res.status(409).json({ ok: false, message });
     }
 
+    if (message === 'Entidad no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+
+    if (message === 'La entidad ya está vinculada a otro usuario') {
+      return res.status(409).json({ ok: false, message });
+    }
+
     if (message.includes('FK_Usuario_Rol')) {
       return res.status(400).json({
         ok: false,
@@ -235,6 +243,10 @@ export async function assignUserRoleEntityController(req: Request, res: Response
     }
 
     if (message === 'El usuario ya tiene la misma asignación de rol/entidad') {
+      return res.status(409).json({ ok: false, message });
+    }
+
+    if (message === 'La entidad ya está vinculada a otro usuario') {
       return res.status(409).json({ ok: false, message });
     }
 

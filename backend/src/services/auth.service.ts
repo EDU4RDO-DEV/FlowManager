@@ -251,6 +251,22 @@ function normalizeEmail(correo: string): string {
   return correo.trim().toLowerCase();
 }
 
+// Usuario.IdEntidad ↔ Entidad es 1:0..1 en activos (UQ_Usuario_Entidad_Activo).
+async function assertEntidadDisponibleParaUsuario(idEntidad: number, exceptUserId?: number) {
+  const existing = await prisma.usuario.findFirst({
+    where: {
+      IdEntidad: idEntidad,
+      Anulado: false,
+      ...(exceptUserId !== undefined ? { NOT: { Id: exceptUserId } } : {}),
+    },
+    select: { Id: true },
+  });
+
+  if (existing) {
+    throw new Error('La entidad ya está vinculada a otro usuario');
+  }
+}
+
 function sanitizeAccessMinutes(): number {
   if (!Number.isFinite(ACCESS_TOKEN_EXPIRES_IN_MINUTES) || ACCESS_TOKEN_EXPIRES_IN_MINUTES < 1) {
     return 480;
@@ -628,6 +644,10 @@ export async function register(input: RegisterInput): Promise<RegisterResult> {
     throw new Error('El correo ya está registrado');
   }
 
+  if (idEntidad !== undefined) {
+    await assertEntidadDisponibleParaUsuario(idEntidad);
+  }
+
   const hashedPassword = await bcrypt.hash(clave, sanitizeSaltRounds());
 
   const created = await prisma.usuario.create({
@@ -704,6 +724,8 @@ export async function assignUserRoleEntity(
     if (!entidad) {
       throw new Error('Entidad no existe');
     }
+
+    await assertEntidadDisponibleParaUsuario(idEntidad, idUsuario);
   }
 
   const isNoOpConflict =
