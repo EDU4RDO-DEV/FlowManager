@@ -69,6 +69,8 @@ type CreateSalePaymentInput = SalePaymentInput & {
   idUsuario: number;
 };
 
+type CuentaPorCobrarEstado = 'ACTIVO' | 'PAGADO' | 'ANULADO';
+
 function toNumber(value: unknown): number {
   return Number(value);
 }
@@ -110,6 +112,10 @@ function getSaleTotals(detalle: Array<{ cantidad: number; precioUnitario: number
     totalBonificado: Number(totalBonificado.toFixed(2)),
     total: Number(total.toFixed(2)),
   };
+}
+
+function getCuentaPorCobrarEstadoBySaldo(saldo: number): CuentaPorCobrarEstado {
+  return saldo <= 0 ? 'PAGADO' : 'ACTIVO';
 }
 
 async function validateUsuarioExists(idUsuario: number) {
@@ -170,6 +176,69 @@ async function validateRutaSesionActiva(idRutaSesion: number) {
   if (sesion.Estado === 'CERRADA') {
     throw new Error('RutaSesion está cerrada');
   }
+}
+
+async function getClienteCondicionCreditoVigente(
+  tx: PrismaClient | Prisma.TransactionClient,
+  idCliente: number,
+  fechaOperacion: Date,
+) {
+  const condicion = await tx.clienteCondicionCredito.findFirst({
+    where: {
+      IdCliente: idCliente,
+      HabilitadoCredito: true,
+      Anulado: false,
+      FechaInicioVigencia: {
+        lte: fechaOperacion,
+      },
+      OR: [{ FechaFinVigencia: null }, { FechaFinVigencia: { gte: fechaOperacion } }],
+    },
+    orderBy: [{ FechaInicioVigencia: 'desc' }, { Id: 'desc' }],
+    select: {
+      Id: true,
+      IdTipoCredito: true,
+    },
+  });
+
+  if (!condicion) {
+    throw new Error('Cliente no habilitado para crédito');
+  }
+
+  return condicion;
+}
+
+async function syncCuentaPorCobrarFromSale(
+  tx: Prisma.TransactionClient,
+  idVenta: number,
+  recalculated: { saldo: number },
+  idUsuarioModificador?: number,
+) {
+  const cuenta = await tx.cuentaPorCobrar.findFirst({
+    where: {
+      IdVenta: idVenta,
+      Anulado: false,
+    },
+    select: {
+      Id: true,
+      Estado: true,
+    },
+  });
+
+  if (!cuenta || cuenta.Estado === 'ANULADO') {
+    return;
+  }
+
+  const estado = getCuentaPorCobrarEstadoBySaldo(recalculated.saldo);
+
+  await tx.cuentaPorCobrar.update({
+    where: { Id: cuenta.Id },
+    data: {
+      Estado: estado,
+      FechaLiquidacion: estado === 'PAGADO' ? new Date() : null,
+      IdUsuarioModificador: idUsuarioModificador,
+      FechaModificacion: new Date(),
+    },
+  });
 }
 
 async function getNextNumeroVenta(tx: Prisma.TransactionClient): Promise<number> {
@@ -721,6 +790,10 @@ export async function createSale(input: CreateSaleInput) {
     async (tx) => {
       const numeroVenta = await getNextNumeroVenta(tx);
       const fechaOperacion = new Date();
+      const condicionCreditoAplicada =
+        input.condicionPago === 'CREDITO'
+          ? await getClienteCondicionCreditoVigente(tx, input.idCliente, fechaOperacion)
+          : null;
 
       let numeroProForma = input.numeroProForma;
       if (input.idTalonario) {
@@ -924,6 +997,24 @@ export async function createSale(input: CreateSaleInput) {
             FechaPago: input.pagoInicial.fechaPago ? toDateOnly(input.pagoInicial.fechaPago) : new Date(),
             RutaFirma: input.pagoInicial.rutaFirma,
             Observaciones: input.pagoInicial.observaciones,
+            Anulado: false,
+          },
+        });
+      }
+
+      if (input.condicionPago === 'CREDITO') {
+        const saldoInicial = Number(Math.max(0, totals.total - totalPagoInicial).toFixed(2));
+        const estadoCxC = getCuentaPorCobrarEstadoBySaldo(saldoInicial);
+
+        await tx.cuentaPorCobrar.create({
+          data: {
+            IdVenta: createdSale.Id,
+            IdTipoCreditoAplicado: condicionCreditoAplicada?.IdTipoCredito,
+            IdClienteCondicionCreditoAplicada: condicionCreditoAplicada?.Id,
+            IdUsuarioCreacion: input.idUsuario,
+            TotalOriginal: totals.total,
+            Estado: estadoCxC,
+            FechaLiquidacion: estadoCxC === 'PAGADO' ? new Date() : null,
             Anulado: false,
           },
         });
@@ -1182,6 +1273,22 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
         ...(rutaPdfFelAnulacion ? { RutaPdfFel: rutaPdfFelAnulacion } : {}),
       },
     });
+
+    await tx.cuentaPorCobrar.updateMany({
+      where: {
+        IdVenta: sale.Id,
+        Anulado: false,
+      },
+      data: {
+        Estado: 'ANULADO',
+        MotivoCierre: `ANULACION_VENTA_${sale.NumeroVenta}`,
+        Anulado: true,
+        IdUsuarioAnulador: idUsuarioAnulador,
+        FechaAnulacion: fechaAnulacion,
+        FechaModificacion: fechaAnulacion,
+        IdUsuarioModificador: idUsuarioAnulador,
+      },
+    });
   });
 }
 
@@ -1335,6 +1442,7 @@ export async function createSalePayment(idVenta: number, input: CreateSalePaymen
     });
 
     const recalculated = await recalculateSalePaymentStatus(tx, idVenta);
+    await syncCuentaPorCobrarFromSale(tx, idVenta, recalculated, input.idUsuario);
 
     return {
       id: payment.Id,
@@ -1387,6 +1495,7 @@ export async function anulateSalePayment(idVenta: number, idPago: number, idUsua
       },
     });
 
-    await recalculateSalePaymentStatus(tx, idVenta);
+    const recalculated = await recalculateSalePaymentStatus(tx, idVenta);
+    await syncCuentaPorCobrarFromSale(tx, idVenta, recalculated, idUsuarioAnulador);
   });
 }

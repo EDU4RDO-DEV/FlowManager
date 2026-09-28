@@ -229,6 +229,7 @@ export async function createSaleController(req: Request, res: Response) {
       message.startsWith('Stock insuficiente') ||
       message.startsWith('Venta de contado') ||
       message.startsWith('Pago inicial') ||
+      message === 'Cliente no habilitado para crédito' ||
       message.includes('No fue posible reservar correlativo de talonario')
     ) {
       return res.status(400).json({ ok: false, message });
