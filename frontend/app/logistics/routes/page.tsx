@@ -310,31 +310,6 @@ export default function LogisticsRoutesPage() {
         description="Gestión de rutas, sesiones operativas y asignación de chofer, vendedor y vehículo."
       >
         <div className="space-y-6">
-          {isLoading && !hasLoadedOnce ? (
-            <LogisticsCardsSkeleton />
-          ) : (
-            <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <Card className="rounded-xl">
-                <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground">Rutas activas</p>
-                  <p className="text-2xl font-bold tracking-tight">{metrics.rutasActivas}</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-xl">
-                <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground">Sesiones activas</p>
-                  <p className="text-2xl font-bold tracking-tight">{metrics.sesionesActivas}</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-xl">
-                <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground">Sesiones en curso</p>
-                  <p className="text-2xl font-bold tracking-tight">{metrics.sesionesEnCurso}</p>
-                </CardContent>
-              </Card>
-            </section>
-          )}
-
           <div className="flex justify-end">
             <Button variant="outline" onClick={loadData} disabled={isLoading}>
               {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
@@ -342,356 +317,406 @@ export default function LogisticsRoutesPage() {
             </Button>
           </div>
 
-          <Card className="rounded-xl">
-            <CardContent className="space-y-4 p-4">
-              <h2 className="text-lg font-semibold">Administrar rutas</h2>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="route-name">Nombre de ruta</Label>
-                  <Input
-                    id="route-name"
-                    value={routeForm.nombre}
-                    onChange={(event) => setRouteForm((prev) => ({ ...prev, nombre: event.target.value }))}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="route-description">Descripción</Label>
-                  <Input
-                    id="route-description"
-                    value={routeForm.descripcion}
-                    onChange={(event) => setRouteForm((prev) => ({ ...prev, descripcion: event.target.value }))}
-                  />
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  onClick={saveRoute}
-                  disabled={!canCreate && !editingRouteId ? true : !canUpdate && !!editingRouteId ? true : false}
-                  className="bg-sky-600 text-white hover:bg-sky-700"
-                >
-                  {editingRouteId ? <Pencil className="size-4" /> : <Plus className="size-4" />}
-                  {editingRouteId ? "Guardar cambios" : "Crear ruta"}
-                </Button>
-                {editingRouteId ? (
-                  <Button variant="outline" onClick={resetRouteForm}>
-                    Cancelar edición
-                  </Button>
-                ) : null}
-              </div>
+          <Tabs defaultValue="vista-general">
+            <div className="space-y-4">
+              <TabsList className="flex flex-wrap">
+                <TabsTrigger value="vista-general">Vista general</TabsTrigger>
+                <TabsTrigger value="rutas">Rutas ({routes.length})</TabsTrigger>
+                <TabsTrigger value="sesiones">Sesiones ({sessions.length})</TabsTrigger>
+              </TabsList>
 
-              <Tabs defaultValue="rutas-activas">
-                <TabsList>
-                  <TabsTrigger value="rutas-activas">Rutas activas ({routes.length})</TabsTrigger>
-                  <TabsTrigger value="rutas-anuladas">Rutas anuladas ({trashRoutes.length})</TabsTrigger>
-                </TabsList>
+            <TabsContent value="vista-general" className="space-y-4">
+              {isLoading && !hasLoadedOnce ? (
+                <LogisticsCardsSkeleton />
+              ) : (
+                <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <Card className="rounded-xl">
+                    <CardContent className="p-4">
+                      <p className="text-sm text-muted-foreground">Rutas activas</p>
+                      <p className="text-2xl font-bold tracking-tight">{metrics.rutasActivas}</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="rounded-xl">
+                    <CardContent className="p-4">
+                      <p className="text-sm text-muted-foreground">Sesiones activas</p>
+                      <p className="text-2xl font-bold tracking-tight">{metrics.sesionesActivas}</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="rounded-xl">
+                    <CardContent className="p-4">
+                      <p className="text-sm text-muted-foreground">Sesiones en curso</p>
+                      <p className="text-2xl font-bold tracking-tight">{metrics.sesionesEnCurso}</p>
+                    </CardContent>
+                  </Card>
+                </section>
+              )}
 
-                <TabsContent value="rutas-activas">
-                  {routes.length === 0 ? (
-                    <LogisticsEmptyState
-                      title="Sin rutas registradas"
-                      description="Crea una ruta para habilitar sesiones de distribución."
-                      actionLabel="Crear ruta"
-                      onAction={() => document.getElementById("route-name")?.focus()}
-                    />
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Nombre</TableHead>
-                          <TableHead>Descripción</TableHead>
-                          <TableHead className="text-right">Acciones</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
+              <Card className="rounded-xl">
+                <CardContent className="space-y-2 p-4">
+                  <p className="font-medium">Flujo recomendado</p>
+                  <p className="text-sm text-muted-foreground">1) Crea o valida rutas.</p>
+                  <p className="text-sm text-muted-foreground">2) Crea sesiones en estado PROGRAMADA o EN_CURSO.</p>
+                  <p className="text-sm text-muted-foreground">3) Usa esas sesiones desde Nueva venta.</p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="rutas">
+              <Card className="rounded-xl">
+                <CardContent className="space-y-4 p-4">
+                  <h2 className="text-lg font-semibold">Administrar rutas</h2>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="route-name">Nombre de ruta</Label>
+                      <Input
+                        id="route-name"
+                        value={routeForm.nombre}
+                        onChange={(event) => setRouteForm((prev) => ({ ...prev, nombre: event.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="route-description">Descripción</Label>
+                      <Input
+                        id="route-description"
+                        value={routeForm.descripcion}
+                        onChange={(event) => setRouteForm((prev) => ({ ...prev, descripcion: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={saveRoute}
+                      disabled={!canCreate && !editingRouteId ? true : !canUpdate && !!editingRouteId ? true : false}
+                      className="bg-sky-600 text-white hover:bg-sky-700"
+                    >
+                      {editingRouteId ? <Pencil className="size-4" /> : <Plus className="size-4" />}
+                      {editingRouteId ? "Guardar cambios" : "Crear ruta"}
+                    </Button>
+                    {editingRouteId ? (
+                      <Button variant="outline" onClick={resetRouteForm}>
+                        Cancelar edición
+                      </Button>
+                    ) : null}
+                  </div>
+
+                  <Tabs defaultValue="rutas-activas">
+                    <TabsList>
+                      <TabsTrigger value="rutas-activas">Rutas activas ({routes.length})</TabsTrigger>
+                      <TabsTrigger value="rutas-anuladas">Rutas anuladas ({trashRoutes.length})</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="rutas-activas">
+                      {routes.length === 0 ? (
+                        <LogisticsEmptyState
+                          title="Sin rutas registradas"
+                          description="Crea una ruta para habilitar sesiones de distribución."
+                          actionLabel="Crear ruta"
+                          onAction={() => document.getElementById("route-name")?.focus()}
+                        />
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Nombre</TableHead>
+                              <TableHead>Descripción</TableHead>
+                              <TableHead className="text-right">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {routes.map((item) => (
+                              <TableRow key={item.id}>
+                                <TableCell className="font-medium">{item.nombre}</TableCell>
+                                <TableCell>{item.descripcion ?? "-"}</TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button variant="outline" size="sm" onClick={() => startEditRoute(item)} disabled={!canUpdate}>
+                                      <Pencil className="size-4" />
+                                      Editar
+                                    </Button>
+                                    <Button variant="destructive" size="sm" onClick={() => setRouteDeleteCandidate(item)} disabled={!canDelete}>
+                                      <Trash2 className="size-4" />
+                                      Anular
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="rutas-anuladas">
+                      {trashRoutes.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No hay rutas anuladas.</p>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Nombre</TableHead>
+                              <TableHead className="text-right">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {trashRoutes.map((item) => (
+                              <TableRow key={item.id}>
+                                <TableCell className="font-medium">{item.nombre}</TableCell>
+                                <TableCell className="text-right">
+                                  <Button variant="outline" size="sm" onClick={() => restoreRouteFromTrash(item)} disabled={!canUpdate}>
+                                    <RotateCcw className="size-4" />
+                                    Restaurar
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+              <TabsContent value="sesiones">
+              <Card className="rounded-xl">
+                <CardContent className="space-y-4 p-4">
+                  <h2 className="text-lg font-semibold">Administrar sesiones de ruta</h2>
+                  {isLoading && !hasLoadedOnce ? <LogisticsTableSkeleton rows={4} /> : null}
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="session-route">Ruta</Label>
+                      <select
+                        id="session-route"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={sessionForm.idRuta}
+                        onChange={(event) => setSessionForm((prev) => ({ ...prev, idRuta: event.target.value }))}
+                      >
+                        <option value="">Seleccionar</option>
                         {routes.map((item) => (
-                          <TableRow key={item.id}>
-                            <TableCell className="font-medium">{item.nombre}</TableCell>
-                            <TableCell>{item.descripcion ?? "-"}</TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button variant="outline" size="sm" onClick={() => startEditRoute(item)} disabled={!canUpdate}>
-                                  <Pencil className="size-4" />
-                                  Editar
-                                </Button>
-                                <Button variant="destructive" size="sm" onClick={() => setRouteDeleteCandidate(item)} disabled={!canDelete}>
-                                  <Trash2 className="size-4" />
-                                  Anular
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
+                          <option key={item.id} value={item.id}>
+                            {item.nombre}
+                          </option>
                         ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </TabsContent>
+                      </select>
+                    </div>
 
-                <TabsContent value="rutas-anuladas">
-                  {trashRoutes.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No hay rutas anuladas.</p>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Nombre</TableHead>
-                          <TableHead className="text-right">Acciones</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {trashRoutes.map((item) => (
-                          <TableRow key={item.id}>
-                            <TableCell className="font-medium">{item.nombre}</TableCell>
-                            <TableCell className="text-right">
-                              <Button variant="outline" size="sm" onClick={() => restoreRouteFromTrash(item)} disabled={!canUpdate}>
-                                <RotateCcw className="size-4" />
-                                Restaurar
-                              </Button>
-                            </TableCell>
-                          </TableRow>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="session-vehicle">Vehículo</Label>
+                      <select
+                        id="session-vehicle"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={sessionForm.idVehiculo}
+                        onChange={(event) => setSessionForm((prev) => ({ ...prev, idVehiculo: event.target.value }))}
+                      >
+                        <option value="">Seleccionar</option>
+                        {vehicles.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.placa} - {item.marca}
+                          </option>
                         ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
+                      </select>
+                    </div>
 
-          <Card className="rounded-xl">
-            <CardContent className="space-y-4 p-4">
-              <h2 className="text-lg font-semibold">Administrar sesiones de ruta</h2>
-              {isLoading && !hasLoadedOnce ? <LogisticsTableSkeleton rows={4} /> : null}
-
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="session-route">Ruta</Label>
-                  <select
-                    id="session-route"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={sessionForm.idRuta}
-                    onChange={(event) => setSessionForm((prev) => ({ ...prev, idRuta: event.target.value }))}
-                  >
-                    <option value="">Seleccionar</option>
-                    {routes.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="session-vehicle">Vehículo</Label>
-                  <select
-                    id="session-vehicle"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={sessionForm.idVehiculo}
-                    onChange={(event) => setSessionForm((prev) => ({ ...prev, idVehiculo: event.target.value }))}
-                  >
-                    <option value="">Seleccionar</option>
-                    {vehicles.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.placa} - {item.marca}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="session-driver">Chofer</Label>
-                  <select
-                    id="session-driver"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={sessionForm.idUsuarioChofer}
-                    onChange={(event) => setSessionForm((prev) => ({ ...prev, idUsuarioChofer: event.target.value }))}
-                  >
-                    <option value="">Seleccionar</option>
-                    {employees.map((item) => (
-                      <option key={item.userId} value={item.userId}>
-                        {item.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="session-seller">Vendedor</Label>
-                  <select
-                    id="session-seller"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={sessionForm.idUsuarioVendedor}
-                    onChange={(event) => setSessionForm((prev) => ({ ...prev, idUsuarioVendedor: event.target.value }))}
-                  >
-                    <option value="">Seleccionar</option>
-                    {employees.map((item) => (
-                      <option key={item.userId} value={item.userId}>
-                        {item.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="session-date">Fecha</Label>
-                  <Input
-                    id="session-date"
-                    type="date"
-                    value={sessionForm.fechaSesion}
-                    onChange={(event) => setSessionForm((prev) => ({ ...prev, fechaSesion: event.target.value }))}
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="session-km-initial">Km inicial</Label>
-                  <Input
-                    id="session-km-initial"
-                    type="number"
-                    min="0"
-                    value={sessionForm.kmInicial}
-                    onChange={(event) => setSessionForm((prev) => ({ ...prev, kmInicial: event.target.value }))}
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="session-km-final">Km final</Label>
-                  <Input
-                    id="session-km-final"
-                    type="number"
-                    min="0"
-                    value={sessionForm.kmFinal}
-                    onChange={(event) => setSessionForm((prev) => ({ ...prev, kmFinal: event.target.value }))}
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="session-status">Estado</Label>
-                  <select
-                    id="session-status"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={sessionForm.estado}
-                    onChange={(event) =>
-                      setSessionForm((prev) => ({ ...prev, estado: event.target.value as RutaSesionEstado }))
-                    }
-                  >
-                    {SESSION_STATES.map((state) => (
-                      <option key={state} value={state}>
-                        {state}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  onClick={saveSession}
-                  disabled={!canCreate && !editingSessionId ? true : !canUpdate && !!editingSessionId ? true : false}
-                  className="bg-sky-600 text-white hover:bg-sky-700"
-                >
-                  {editingSessionId ? <Pencil className="size-4" /> : <Plus className="size-4" />}
-                  {editingSessionId ? "Guardar cambios" : "Crear sesión"}
-                </Button>
-                {editingSessionId ? (
-                  <Button variant="outline" onClick={resetSessionForm}>
-                    Cancelar edición
-                  </Button>
-                ) : null}
-              </div>
-
-              <Tabs defaultValue="sesiones-activas">
-                <TabsList>
-                  <TabsTrigger value="sesiones-activas">Sesiones activas ({sessions.length})</TabsTrigger>
-                  <TabsTrigger value="sesiones-anuladas">Sesiones anuladas ({trashSessions.length})</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="sesiones-activas">
-                  {sessions.length === 0 ? (
-                    <LogisticsEmptyState
-                      title="Sin sesiones de ruta"
-                      description="Crea la primera sesión para asignar personal y vehículo a una fecha de distribución."
-                      actionLabel="Crear sesión"
-                      onAction={() => document.getElementById("session-route")?.focus()}
-                    />
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Ruta</TableHead>
-                          <TableHead>Fecha</TableHead>
-                          <TableHead>Vehículo</TableHead>
-                          <TableHead>Chofer</TableHead>
-                          <TableHead>Vendedor</TableHead>
-                          <TableHead>Estado</TableHead>
-                          <TableHead className="text-right">Acciones</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {sessions.map((item) => (
-                          <TableRow key={item.id}>
-                            <TableCell className="font-medium">{item.ruta?.nombre ?? `#${item.idRuta}`}</TableCell>
-                            <TableCell>{formatDate(item.fechaSesion)}</TableCell>
-                            <TableCell>{item.vehiculo?.placa ?? `#${item.idVehiculo}`}</TableCell>
-                            <TableCell>{item.chofer?.nombre ?? `#${item.idUsuarioChofer}`}</TableCell>
-                            <TableCell>{item.vendedor?.nombre ?? `#${item.idUsuarioVendedor}`}</TableCell>
-                            <TableCell>{item.estado}</TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button variant="outline" size="sm" onClick={() => startEditSession(item)} disabled={!canUpdate}>
-                                  <Pencil className="size-4" />
-                                  Editar
-                                </Button>
-                                <Button variant="destructive" size="sm" onClick={() => setSessionDeleteCandidate(item)} disabled={!canDelete}>
-                                  <Trash2 className="size-4" />
-                                  Anular
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="session-driver">Chofer</Label>
+                      <select
+                        id="session-driver"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={sessionForm.idUsuarioChofer}
+                        onChange={(event) => setSessionForm((prev) => ({ ...prev, idUsuarioChofer: event.target.value }))}
+                      >
+                        <option value="">Seleccionar</option>
+                        {employees.map((item) => (
+                          <option key={item.userId} value={item.userId}>
+                            {item.nombre}
+                          </option>
                         ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </TabsContent>
+                      </select>
+                    </div>
 
-                <TabsContent value="sesiones-anuladas">
-                  {trashSessions.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No hay sesiones anuladas.</p>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Ruta</TableHead>
-                          <TableHead>Fecha</TableHead>
-                          <TableHead>Vehículo</TableHead>
-                          <TableHead className="text-right">Acciones</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {trashSessions.map((item) => (
-                          <TableRow key={item.id}>
-                            <TableCell className="font-medium">{item.ruta?.nombre ?? `#${item.idRuta}`}</TableCell>
-                            <TableCell>{formatDate(item.fechaSesion)}</TableCell>
-                            <TableCell>{item.vehiculo?.placa ?? `#${item.idVehiculo}`}</TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => restoreSessionFromTrash(item)}
-                                disabled={!canUpdate}
-                              >
-                                <RotateCcw className="size-4" />
-                                Restaurar
-                              </Button>
-                            </TableCell>
-                          </TableRow>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="session-seller">Vendedor</Label>
+                      <select
+                        id="session-seller"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={sessionForm.idUsuarioVendedor}
+                        onChange={(event) => setSessionForm((prev) => ({ ...prev, idUsuarioVendedor: event.target.value }))}
+                      >
+                        <option value="">Seleccionar</option>
+                        {employees.map((item) => (
+                          <option key={item.userId} value={item.userId}>
+                            {item.nombre}
+                          </option>
                         ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="session-date">Fecha</Label>
+                      <Input
+                        id="session-date"
+                        type="date"
+                        value={sessionForm.fechaSesion}
+                        onChange={(event) => setSessionForm((prev) => ({ ...prev, fechaSesion: event.target.value }))}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="session-km-initial">Km inicial</Label>
+                      <Input
+                        id="session-km-initial"
+                        type="number"
+                        min="0"
+                        value={sessionForm.kmInicial}
+                        onChange={(event) => setSessionForm((prev) => ({ ...prev, kmInicial: event.target.value }))}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="session-km-final">Km final</Label>
+                      <Input
+                        id="session-km-final"
+                        type="number"
+                        min="0"
+                        value={sessionForm.kmFinal}
+                        onChange={(event) => setSessionForm((prev) => ({ ...prev, kmFinal: event.target.value }))}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="session-status">Estado</Label>
+                      <select
+                        id="session-status"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={sessionForm.estado}
+                        onChange={(event) =>
+                          setSessionForm((prev) => ({ ...prev, estado: event.target.value as RutaSesionEstado }))
+                        }
+                      >
+                        {SESSION_STATES.map((state) => (
+                          <option key={state} value={state}>
+                            {state}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={saveSession}
+                      disabled={!canCreate && !editingSessionId ? true : !canUpdate && !!editingSessionId ? true : false}
+                      className="bg-sky-600 text-white hover:bg-sky-700"
+                    >
+                      {editingSessionId ? <Pencil className="size-4" /> : <Plus className="size-4" />}
+                      {editingSessionId ? "Guardar cambios" : "Crear sesión"}
+                    </Button>
+                    {editingSessionId ? (
+                      <Button variant="outline" onClick={resetSessionForm}>
+                        Cancelar edición
+                      </Button>
+                    ) : null}
+                  </div>
+
+                  <Tabs defaultValue="sesiones-activas">
+                    <TabsList>
+                      <TabsTrigger value="sesiones-activas">Sesiones activas ({sessions.length})</TabsTrigger>
+                      <TabsTrigger value="sesiones-anuladas">Sesiones anuladas ({trashSessions.length})</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="sesiones-activas">
+                      {sessions.length === 0 ? (
+                        <LogisticsEmptyState
+                          title="Sin sesiones de ruta"
+                          description="Crea la primera sesión para asignar personal y vehículo a una fecha de distribución."
+                          actionLabel="Crear sesión"
+                          onAction={() => document.getElementById("session-route")?.focus()}
+                        />
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Ruta</TableHead>
+                              <TableHead>Fecha</TableHead>
+                              <TableHead>Vehículo</TableHead>
+                              <TableHead>Chofer</TableHead>
+                              <TableHead>Vendedor</TableHead>
+                              <TableHead>Estado</TableHead>
+                              <TableHead className="text-right">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {sessions.map((item) => (
+                              <TableRow key={item.id}>
+                                <TableCell className="font-medium">{item.ruta?.nombre ?? `#${item.idRuta}`}</TableCell>
+                                <TableCell>{formatDate(item.fechaSesion)}</TableCell>
+                                <TableCell>{item.vehiculo?.placa ?? `#${item.idVehiculo}`}</TableCell>
+                                <TableCell>{item.chofer?.nombre ?? `#${item.idUsuarioChofer}`}</TableCell>
+                                <TableCell>{item.vendedor?.nombre ?? `#${item.idUsuarioVendedor}`}</TableCell>
+                                <TableCell>{item.estado}</TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button variant="outline" size="sm" onClick={() => startEditSession(item)} disabled={!canUpdate}>
+                                      <Pencil className="size-4" />
+                                      Editar
+                                    </Button>
+                                    <Button variant="destructive" size="sm" onClick={() => setSessionDeleteCandidate(item)} disabled={!canDelete}>
+                                      <Trash2 className="size-4" />
+                                      Anular
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="sesiones-anuladas">
+                      {trashSessions.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No hay sesiones anuladas.</p>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Ruta</TableHead>
+                              <TableHead>Fecha</TableHead>
+                              <TableHead>Vehículo</TableHead>
+                              <TableHead className="text-right">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {trashSessions.map((item) => (
+                              <TableRow key={item.id}>
+                                <TableCell className="font-medium">{item.ruta?.nombre ?? `#${item.idRuta}`}</TableCell>
+                                <TableCell>{formatDate(item.fechaSesion)}</TableCell>
+                                <TableCell>{item.vehiculo?.placa ?? `#${item.idVehiculo}`}</TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => restoreSessionFromTrash(item)}
+                                    disabled={!canUpdate}
+                                  >
+                                    <RotateCcw className="size-4" />
+                                    Restaurar
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+              </TabsContent>
+            </div>
+          </Tabs>
         </div>
       </DashboardShell>
 
