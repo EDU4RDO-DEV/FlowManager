@@ -223,10 +223,29 @@ async function validateEntidadNotLinkedToOtherUser(idEntidad: number, exceptUser
   }
 }
 
+// Empleado.IdUsuarioVinculado es la única fuente de verdad de la relación laboral.
+async function validateEmpleadoDisponibleParaUsuario(idEmpleado: number, exceptUserId?: number) {
+  const empleado = await prisma.empleado.findFirst({
+    where: { Id: idEmpleado, Anulado: false },
+    select: { IdUsuarioVinculado: true },
+  });
+
+  if (!empleado) {
+    throw new Error('Empleado no existe');
+  }
+
+  if (
+    empleado.IdUsuarioVinculado !== null &&
+    (exceptUserId === undefined || empleado.IdUsuarioVinculado !== exceptUserId)
+  ) {
+    throw new Error('El empleado ya está vinculado a otro usuario');
+  }
+}
+
 export async function listUsersAvailableForEmployeeLink(
   input: ListUsersAvailableForEmployeeLinkInput = {},
 ) {
-  let currentEmployeeEntidadId: number | null = null;
+  let currentEmployeeUsuarioId: number | null = null;
 
   if (input.includeEmployeeId !== undefined) {
     const employee = await prisma.empleado.findFirst({
@@ -235,7 +254,7 @@ export async function listUsersAvailableForEmployeeLink(
         Anulado: false,
       },
       select: {
-        IdEntidad: true,
+        IdUsuarioVinculado: true,
       },
     });
 
@@ -243,7 +262,7 @@ export async function listUsersAvailableForEmployeeLink(
       throw new Error('Empleado no existe');
     }
 
-    currentEmployeeEntidadId = employee.IdEntidad;
+    currentEmployeeUsuarioId = employee.IdUsuarioVinculado;
   }
 
   const users = await prisma.usuario.findMany({
@@ -265,29 +284,28 @@ export async function listUsersAvailableForEmployeeLink(
     },
   });
 
-  const employeeEntities = await prisma.empleado.findMany({
+  // Disponible si ningún empleado activo lo tiene como IdUsuarioVinculado, salvo el vínculo actual en edición.
+  const linkedEmpleados = await prisma.empleado.findMany({
     where: {
       Anulado: false,
-      ...(currentEmployeeEntidadId !== null
-        ? { NOT: { IdEntidad: currentEmployeeEntidadId } }
-        : {}),
+      IdUsuarioVinculado: { not: null },
     },
-    select: { IdEntidad: true },
+    select: { IdUsuarioVinculado: true },
   });
 
-  const blockedEntidadIds = new Set<number>(employeeEntities.map((item) => item.IdEntidad));
+  const blockedUserIds = new Set<number>(
+    linkedEmpleados
+      .map((item) => item.IdUsuarioVinculado)
+      .filter((idUsuario): idUsuario is number => idUsuario !== null),
+  );
 
   return users
     .filter((user) => {
-      if (user.IdEntidad === null) {
+      if (currentEmployeeUsuarioId !== null && user.Id === currentEmployeeUsuarioId) {
         return true;
       }
 
-      if (currentEmployeeEntidadId !== null && user.IdEntidad === currentEmployeeEntidadId) {
-        return true;
-      }
-
-      return !blockedEntidadIds.has(user.IdEntidad);
+      return !blockedUserIds.has(user.Id);
     })
     .map(toUserDto);
 }
@@ -369,6 +387,7 @@ export async function createUser(input: CreateUserInput) {
 
   let entidadVinculadaId: number | undefined;
   if (input.idEmpleadoVinculado !== undefined) {
+    await validateEmpleadoDisponibleParaUsuario(input.idEmpleadoVinculado);
     entidadVinculadaId = await getEmployeeEntidadId(input.idEmpleadoVinculado);
     await validateEntidadExists(entidadVinculadaId);
     await validateEntidadNotLinkedToOtherUser(entidadVinculadaId);
@@ -417,6 +436,12 @@ export async function createUser(input: CreateUserInput) {
           Dpi: input.entidad?.dpi,
           FechaModificacion: new Date(),
         },
+      });
+
+      // Empleado.IdUsuarioVinculado es la fuente de verdad autoritativa del vínculo laboral.
+      await tx.empleado.update({
+        where: { Id: input.idEmpleadoVinculado },
+        data: { IdUsuarioVinculado: createdUser.Id },
       });
 
       return tx.usuario.findFirstOrThrow({
@@ -514,6 +539,7 @@ export async function updateUser(id: number, input: UpdateUserInput) {
   }
 
   if (input.idEmpleadoVinculado !== undefined && input.idEmpleadoVinculado !== null) {
+    await validateEmpleadoDisponibleParaUsuario(input.idEmpleadoVinculado, id);
     input.idEntidad = await getEmployeeEntidadId(input.idEmpleadoVinculado);
     await validateEntidadExists(input.idEntidad);
     await validateEntidadNotLinkedToOtherUser(input.idEntidad, id);
@@ -525,34 +551,67 @@ export async function updateUser(id: number, input: UpdateUserInput) {
 
   const claveHash = input.clave ? await bcrypt.hash(input.clave, 10) : undefined;
 
-  const updated = await prisma.usuario.update({
-    where: { Id: id },
-    data: {
-      ...(input.nombre !== undefined ? { Nombre: input.nombre } : {}),
-      ...(input.correo !== undefined ? { Correo: input.correo } : {}),
-      ...(claveHash !== undefined ? { Clave: claveHash } : {}),
-      ...(input.idUsuario !== undefined ? { IdUsuario: input.idUsuario } : {}),
-      ...(input.idRol !== undefined ? { IdRol: input.idRol } : {}),
-      ...(input.idEntidad !== undefined ? { IdEntidad: input.idEntidad } : {}),
-      ...(input.idUsuarioModificador !== undefined
-        ? { IdUsuarioModificador: input.idUsuarioModificador }
-        : {}),
-      FechaModificacion: new Date(),
-    },
-    select: {
-      Id: true,
-      IdUsuario: true,
-      IdEntidad: true,
-      IdRol: true,
-      Nombre: true,
-      Correo: true,
-      FechaRegistro: true,
-      IdUsuarioModificador: true,
-      FechaModificacion: true,
-      Anulado: true,
-      IdUsuarioAnulador: true,
-      FechaAnulacion: true,
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    const updatedUser = await tx.usuario.update({
+      where: { Id: id },
+      data: {
+        ...(input.nombre !== undefined ? { Nombre: input.nombre } : {}),
+        ...(input.correo !== undefined ? { Correo: input.correo } : {}),
+        ...(claveHash !== undefined ? { Clave: claveHash } : {}),
+        ...(input.idUsuario !== undefined ? { IdUsuario: input.idUsuario } : {}),
+        ...(input.idRol !== undefined ? { IdRol: input.idRol } : {}),
+        ...(input.idEntidad !== undefined ? { IdEntidad: input.idEntidad } : {}),
+        ...(input.idUsuarioModificador !== undefined
+          ? { IdUsuarioModificador: input.idUsuarioModificador }
+          : {}),
+        FechaModificacion: new Date(),
+      },
+      select: {
+        Id: true,
+        IdUsuario: true,
+        IdEntidad: true,
+        IdRol: true,
+        Nombre: true,
+        Correo: true,
+        FechaRegistro: true,
+        IdUsuarioModificador: true,
+        FechaModificacion: true,
+        Anulado: true,
+        IdUsuarioAnulador: true,
+        FechaAnulacion: true,
+      },
+    });
+
+    if (input.idEmpleadoVinculado !== undefined) {
+      // Empleado.IdUsuarioVinculado es la fuente de verdad autoritativa del vínculo laboral.
+      const previousEmpleado = await tx.empleado.findFirst({
+        where: { IdUsuarioVinculado: id, Anulado: false },
+        select: { Id: true },
+      });
+
+      if (input.idEmpleadoVinculado === null) {
+        if (previousEmpleado) {
+          await tx.empleado.update({
+            where: { Id: previousEmpleado.Id },
+            data: { IdUsuarioVinculado: null },
+          });
+        }
+      } else {
+        if (previousEmpleado && previousEmpleado.Id !== input.idEmpleadoVinculado) {
+          await tx.empleado.update({
+            where: { Id: previousEmpleado.Id },
+            data: { IdUsuarioVinculado: null },
+          });
+        }
+
+        await tx.empleado.update({
+          where: { Id: input.idEmpleadoVinculado },
+          data: { IdUsuarioVinculado: id },
+        });
+      }
+    }
+
+    return updatedUser;
   });
 
   const shouldUpdateEntidad =

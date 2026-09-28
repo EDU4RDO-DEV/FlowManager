@@ -345,10 +345,11 @@ async function validateProveedorExists(idProveedor: number) {
 async function validateEmpleadoVinculado(idUsuario: number, roleName: 'Chofer' | 'Vendedor') {
   await validateUsuarioExists(idUsuario);
 
+  // Empleado.IdUsuarioVinculado es la única fuente de verdad de la relación laboral.
   const empleado = await prisma.empleado.findFirst({
     where: {
       Anulado: false,
-      OR: [{ IdUsuarioVinculado: idUsuario }, { IdUsuario: idUsuario }],
+      IdUsuarioVinculado: idUsuario,
     },
     select: { Id: true },
   });

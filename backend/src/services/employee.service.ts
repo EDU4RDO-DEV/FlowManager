@@ -140,6 +140,22 @@ async function validateEntidadNotLinkedToOtherEmployee(idEntidad: number, except
   }
 }
 
+// Empleado.IdUsuarioVinculado es la única fuente de verdad de la relación laboral.
+async function validateUsuarioVinculadoDisponible(idUsuarioVinculado: number, exceptEmployeeId?: number) {
+  const existing = await prisma.empleado.findFirst({
+    where: {
+      IdUsuarioVinculado: idUsuarioVinculado,
+      Anulado: false,
+      ...(exceptEmployeeId !== undefined ? { NOT: { Id: exceptEmployeeId } } : {}),
+    },
+    select: { Id: true },
+  });
+
+  if (existing) {
+    throw new Error('El usuario ya está vinculado a otro empleado');
+  }
+}
+
 async function validateConfiguracionComisionExists(id: number) {
   const configuracion = await prisma.configuracionComision.findFirst({
     where: { Id: id, Anulado: false },
@@ -204,24 +220,8 @@ type ListEmployeesAvailableForUserLinkInput = {
 export async function listEmployeesAvailableForUserLink(
   input: ListEmployeesAvailableForUserLinkInput = {},
 ) {
-  let currentUserEntidadId: number | null = null;
-
   if (input.includeUserId !== undefined) {
-    const user = await prisma.usuario.findFirst({
-      where: {
-        Id: input.includeUserId,
-        Anulado: false,
-      },
-      select: {
-        IdEntidad: true,
-      },
-    });
-
-    if (!user) {
-      throw new Error('Usuario no existe');
-    }
-
-    currentUserEntidadId = user.IdEntidad;
+    await validateUsuarioExists(input.includeUserId);
   }
 
   const employees = await prisma.empleado.findMany({
@@ -251,32 +251,14 @@ export async function listEmployeesAvailableForUserLink(
     },
   });
 
-  const linkedUsers = await prisma.usuario.findMany({
-    where: {
-      Anulado: false,
-      IdEntidad: {
-        not: null,
-      },
-      ...(input.includeUserId !== undefined ? { NOT: { Id: input.includeUserId } } : {}),
-    },
-    select: {
-      IdEntidad: true,
-    },
-  });
-
-  const blockedEntidadIds = new Set<number>(
-    linkedUsers
-      .map((item) => item.IdEntidad)
-      .filter((idEntidad): idEntidad is number => idEntidad !== null),
-  );
-
+  // Disponible si no tiene usuario vinculado o si ya es el usuario actual (edición).
   return employees
     .filter((employee) => {
-      if (currentUserEntidadId !== null && employee.IdEntidad === currentUserEntidadId) {
+      if (employee.IdUsuarioVinculado === null) {
         return true;
       }
 
-      return !blockedEntidadIds.has(employee.IdEntidad);
+      return input.includeUserId !== undefined && employee.IdUsuarioVinculado === input.includeUserId;
     })
     .map(toEmployeeDto);
 }
@@ -362,6 +344,7 @@ export async function createEmployee(input: CreateEmployeeInput) {
     let entidadId: number;
 
     if (input.idUsuarioVinculado !== undefined) {
+      await validateUsuarioVinculadoDisponible(input.idUsuarioVinculado);
       const usuarioVinculado = await getActiveUsuario(input.idUsuarioVinculado);
 
       if (usuarioVinculado.IdEntidad) {
@@ -515,6 +498,7 @@ export async function updateEmployee(id: number, input: UpdateEmployeeInput) {
     let entidadIdObjetivo = existing.IdEntidad;
 
     if (input.idUsuarioVinculado !== undefined && input.idUsuarioVinculado !== null) {
+      await validateUsuarioVinculadoDisponible(input.idUsuarioVinculado, id);
       const usuarioVinculado = await getActiveUsuario(input.idUsuarioVinculado);
       if (!usuarioVinculado.IdEntidad) {
         throw new Error('Usuario vinculado no tiene entidad');
