@@ -11,6 +11,7 @@ import clientCatalogRouter from './routes/client-catalog.routes';
 import commercialRuleRouter from './routes/commercial-rule.routes';
 import creditRouter from './routes/credit.routes';
 import employeeRouter from './routes/employee.routes';
+import envaseRouter from './routes/envase.routes';
 import inventoryLogRouter from './routes/inventory-log.routes';
 import logisticsRouter from './routes/logistics.routes';
 import planillaRouter from './routes/planilla.routes';
@@ -40,6 +41,7 @@ export function createApp() {
   app.use('/api/commercial-rules', requireAuth, commercialRuleRouter);
   app.use('/api/credits', requireAuth, creditRouter);
   app.use('/api/employees', requireAuth, employeeRouter);
+  app.use('/api/envases', requireAuth, envaseRouter);
   app.use('/api/inventory-log', requireAuth, inventoryLogRouter);
   app.use('/api/logistics', requireAuth, logisticsRouter);
   app.use('/api/planilla', requireAuth, planillaRouter);

@@ -59,6 +59,8 @@ model Cliente {
   Usuario                 Usuario                   @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Cliente_Usuario")
   ClienteCondicionCredito ClienteCondicionCredito[]
   Venta                   Venta[]
+  MovimientoEnvase        MovimientoEnvase[]
+  EnvaseClienteSaldo      EnvaseClienteSaldo[]
 
   @@index([IdTipoCliente, Anulado], map: "IX_Cliente_TipoCliente_Activo")
 }
@@ -401,6 +403,8 @@ model InventarioItem {
   ReglaBonificacion_ReglaBonificacion_IdInventarioItemCompraToInventarioItem     ReglaBonificacion[]       @relation("ReglaBonificacion_InventarioItemCompra")
   ReglaComision                                                                  ReglaComision[]
   ReglaPrecioCliente                                                             ReglaPrecioCliente[]
+  MovimientoEnvase                                                               MovimientoEnvase[]
+  EnvaseClienteSaldo                                                             EnvaseClienteSaldo[]
 }
 
 model PagoVenta {
@@ -696,6 +700,7 @@ model Usuario {
   Vehiculo                                         Vehiculo[]
   Venta                                            Venta[]
   CuentaPorCobrar                                  CuentaPorCobrar[]
+  MovimientoEnvase                                 MovimientoEnvase[]
 
   @@index([Correo, Anulado], map: "IX_Usuario_Correo_Activo")
   @@index([IdRol, Anulado], map: "IX_Usuario_Rol_Activo")
@@ -783,4 +788,49 @@ model Venta {
   RutaSesion                RutaSesion?      @relation(fields: [IdRutaSesion], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Venta_RutaSesion")
   Talonario                 Talonario?       @relation(fields: [IdTalonario], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Venta_Talonario")
   Usuario                   Usuario          @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Venta_Usuario")
+  MovimientoEnvase          MovimientoEnvase[]
 }
+
+// Ledger de préstamo/devolución de envases retornables. La venta/baja de un envase
+// ya se resuelve con InventarioItem (Categoria = 'ENVASE') + DetalleVenta/BitacoraInventario;
+// aquí solo se audita el ciclo de vida del préstamo al cliente.
+model MovimientoEnvase {
+  Id                   Int             @id(map: "PK_MovimientoEnvase") @default(autoincrement())
+  IdInventarioItem     Int
+  IdCliente            Int
+  IdVenta              Int?
+  IdUsuario            Int
+  TipoMovimiento       String          @db.VarChar(20)
+  Cantidad             Float
+  SaldoAnterior        Float
+  SaldoNuevo           Float
+  RutaFirma            String?         @db.VarChar(255)
+  Observaciones        String?         @db.VarChar(255)
+  FechaMovimiento      DateTime?       @default(now(), map: "DF_MovimientoEnvase_FechaMovimiento") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime?       @db.DateTime
+  Anulado              Boolean         @default(false, map: "DF_MovimientoEnvase_Anulado")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime?       @db.DateTime
+  InventarioItem       InventarioItem  @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_MovimientoEnvase_InventarioItem")
+  Cliente              Cliente         @relation(fields: [IdCliente], references: [Id], onUpdate: NoAction, map: "FK_MovimientoEnvase_Cliente")
+  Venta                Venta?          @relation(fields: [IdVenta], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_MovimientoEnvase_Venta")
+  Usuario              Usuario         @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_MovimientoEnvase_Usuario")
+
+  @@index([IdCliente, IdInventarioItem, Anulado], map: "IX_MovimientoEnvase_ClienteEnvase_Activo")
+  @@index([IdVenta], map: "IX_MovimientoEnvase_Venta")
+}
+
+// Saldo vigente de envases prestados por cliente (derivado del ledger, para consultas rápidas).
+model EnvaseClienteSaldo {
+  Id                 Int            @id(map: "PK_EnvaseClienteSaldo") @default(autoincrement())
+  IdCliente          Int
+  IdInventarioItem   Int
+  CantidadPrestada   Float          @default(0, map: "DF_EnvaseClienteSaldo_Cantidad")
+  FechaActualizacion DateTime?      @default(now(), map: "DF_EnvaseClienteSaldo_Fecha") @db.DateTime
+  Cliente            Cliente        @relation(fields: [IdCliente], references: [Id], onUpdate: NoAction, map: "FK_EnvaseClienteSaldo_Cliente")
+  InventarioItem     InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_EnvaseClienteSaldo_InventarioItem")
+
+  @@unique([IdCliente, IdInventarioItem], map: "UQ_EnvaseClienteSaldo_ClienteEnvase")
+}
+

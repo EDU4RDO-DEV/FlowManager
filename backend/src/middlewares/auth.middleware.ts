@@ -3,6 +3,7 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
+import { rbacModuleKeys } from '../validators/role-permission.validators';
 
 const JWT_ISSUER = process.env.JWT_ISSUER ?? 'flowmanager.api';
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE ?? 'flowmanager.web';
@@ -35,20 +36,8 @@ function parsePositiveInt(value: unknown): number {
 }
 
 type CrudAction = 'read' | 'create' | 'update' | 'delete';
-type BackendModuleKey =
-  | 'resumen'
-  | 'usuarios'
-  | 'roles'
-  | 'clientes'
-  | 'ventas'
-  | 'logistica'
-  | 'empleados'
-  | 'proveedores'
-  | 'compras'
-  | 'inventario'
-  | 'planilla'
-  | 'sesiones'
-  | 'produccion';
+// Única fuente de verdad de módulos válidos: rbacModuleKeys (validators/role-permission.validators.ts).
+type BackendModuleKey = (typeof rbacModuleKeys)[number];
 
 type PersistedDecision = 'allow' | 'deny' | 'not-configured';
 
