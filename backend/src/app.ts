@@ -7,6 +7,8 @@ import { requireAuth } from './middlewares/auth.middleware';
 import adjustmentRouter from './routes/adjustment.routes';
 import authRouter from './routes/auth.routes';
 import clientRouter from './routes/client.routes';
+import clientCatalogRouter from './routes/client-catalog.routes';
+import commercialRuleRouter from './routes/commercial-rule.routes';
 import creditRouter from './routes/credit.routes';
 import employeeRouter from './routes/employee.routes';
 import inventoryLogRouter from './routes/inventory-log.routes';
@@ -34,6 +36,8 @@ export function createApp() {
   app.use('/api/auth', authRouter);
   app.use('/api/adjustments', requireAuth, adjustmentRouter);
   app.use('/api/clients', requireAuth, clientRouter);
+  app.use('/api/client-catalog', requireAuth, clientCatalogRouter);
+  app.use('/api/commercial-rules', requireAuth, commercialRuleRouter);
   app.use('/api/credits', requireAuth, creditRouter);
   app.use('/api/employees', requireAuth, employeeRouter);
   app.use('/api/inventory-log', requireAuth, inventoryLogRouter);

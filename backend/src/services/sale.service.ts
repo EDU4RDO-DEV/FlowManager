@@ -348,7 +348,11 @@ async function buildAutoBonusDetails(
           lte: item.cantidad,
         },
         OR: [{ FechaInicio: null }, { FechaInicio: { lte: now } }],
-        AND: [{ OR: [{ FechaFin: null }, { FechaFin: { gte: now } }] }],
+        AND: [
+          { OR: [{ FechaFin: null }, { FechaFin: { gte: now } }] },
+          // Rango completo: respeta CantidadMaxima cuando está definida.
+          { OR: [{ CantidadMaxima: null }, { CantidadMaxima: { gte: item.cantidad } }] },
+        ],
       },
       orderBy: [{ Prioridad: 'asc' }, { Id: 'asc' }],
       select: {
