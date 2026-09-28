@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const {
-  prismaMock,
-  anulateInventoryMovementByReferenceMock,
-  restoreInventoryMovementByReferenceMock,
-} = vi.hoisted(() => ({
+const { prismaMock, registerInventoryMovementMock } = vi.hoisted(() => ({
   prismaMock: {
     ajusteInventario: {
       findFirst: vi.fn(),
@@ -17,8 +13,7 @@ const {
     },
     $transaction: vi.fn(),
   },
-  anulateInventoryMovementByReferenceMock: vi.fn(),
-  restoreInventoryMovementByReferenceMock: vi.fn(),
+  registerInventoryMovementMock: vi.fn(),
 }));
 
 vi.mock('../config/prisma', () => ({
@@ -26,9 +21,7 @@ vi.mock('../config/prisma', () => ({
 }));
 
 vi.mock('../services/inventory-movement.service', () => ({
-  anulateInventoryMovementByReference: anulateInventoryMovementByReferenceMock,
-  registerInventoryMovement: vi.fn(),
-  restoreInventoryMovementByReference: restoreInventoryMovementByReferenceMock,
+  registerInventoryMovement: registerInventoryMovementMock,
 }));
 
 import { deleteAdjustment, restoreAdjustment } from '../services/adjustment.service';
@@ -67,10 +60,11 @@ describe('adjustment.service business rules', () => {
     prismaMock.ajusteInventario.findFirst.mockResolvedValueOnce({
       Id: 88,
       IdInventarioItem: 20,
+      IdUsuario: 4,
       TipoAjuste: 'ENTRADA',
       CantidadAjustada: 5,
     });
-    prismaMock.inventarioItem.findUnique.mockResolvedValueOnce({ Existencia: 15 });
+    prismaMock.inventarioItem.findUnique.mockResolvedValueOnce({ Id: 20, Nombre: 'Resina', Existencia: 15 });
 
     const tx = {
       ajusteInventario: {
@@ -91,13 +85,15 @@ describe('adjustment.service business rules', () => {
       where: { Id: 20 },
       data: { Existencia: 10 },
     });
-    expect(anulateInventoryMovementByReferenceMock).toHaveBeenCalledWith(
+    expect(registerInventoryMovementMock).toHaveBeenCalledWith(
       tx,
-      {
-        tipoDocumento: 'AJ',
+      expect.objectContaining({
+        tipoDocumento: 'AJAN',
         documento: '88',
-      },
-      undefined,
+        existenciaAnterior: 15,
+        cantidad: 5,
+        nuevaExistencia: 10,
+      }),
     );
   });
 
@@ -110,7 +106,7 @@ describe('adjustment.service business rules', () => {
       CantidadAjustada: 5,
       NumeroAjuste: 500,
     });
-    prismaMock.inventarioItem.findUnique.mockResolvedValueOnce({ Existencia: 10 });
+    prismaMock.inventarioItem.findUnique.mockResolvedValueOnce({ Id: 20, Nombre: 'Resina', Existencia: 10 });
 
     const tx = {
       ajusteInventario: {
@@ -150,10 +146,16 @@ describe('adjustment.service business rules', () => {
       where: { Id: 20 },
       data: { Existencia: 15 },
     });
-    expect(restoreInventoryMovementByReferenceMock).toHaveBeenCalledWith(tx, {
-      tipoDocumento: 'AJ',
-      documento: '101',
-    });
+    expect(registerInventoryMovementMock).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        tipoDocumento: 'AJRE',
+        documento: '101',
+        existenciaAnterior: 10,
+        cantidad: 5,
+        nuevaExistencia: 15,
+      }),
+    );
     expect(restored.anulado).toBe(false);
     expect(restored.id).toBe(101);
   });

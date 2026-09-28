@@ -1,9 +1,5 @@
 import { prisma } from '../config/prisma';
-import {
-  anulateInventoryMovementByReference,
-  registerInventoryMovement,
-  restoreInventoryMovementByReference,
-} from './inventory-movement.service';
+import { registerInventoryMovement } from './inventory-movement.service';
 
 type ListAdjustmentsInput = {
   page?: number;
@@ -330,6 +326,7 @@ export async function deleteAdjustment(id: number, idUsuarioAnulador?: number) {
     select: {
       Id: true,
       IdInventarioItem: true,
+      IdUsuario: true,
       TipoAjuste: true,
       CantidadAjustada: true,
     },
@@ -346,7 +343,7 @@ export async function deleteAdjustment(id: number, idUsuarioAnulador?: number) {
   // Obtener existencia actual
   const item = await prisma.inventarioItem.findUnique({
     where: { Id: existing.IdInventarioItem },
-    select: { Existencia: true },
+    select: { Id: true, Nombre: true, Existencia: true },
   });
 
   if (!item) {
@@ -366,7 +363,7 @@ export async function deleteAdjustment(id: number, idUsuarioAnulador?: number) {
     );
   }
 
-  // Transacción atómica: Anular ajuste + Revertir stock + Anular bitácora correspondiente
+  // Transacción atómica: Anular ajuste + Revertir stock + Registrar reversión en bitácora
   await prisma.$transaction(async (tx) => {
     // 1. Anular el ajuste
     await tx.ajusteInventario.update({
@@ -386,15 +383,18 @@ export async function deleteAdjustment(id: number, idUsuarioAnulador?: number) {
       },
     });
 
-    // 3. Anular el movimiento en bitácora correspondiente
-    await anulateInventoryMovementByReference(
-      tx,
-      {
-        tipoDocumento: 'AJ',
-        documento: existing.Id.toString(),
-      },
-      idUsuarioAnulador,
-    );
+    // 3. Registrar la reversión como una nueva entrada del libro (no se muta el historial original).
+    await registerInventoryMovement(tx, {
+      idInventarioItem: existing.IdInventarioItem,
+      idUsuario: idUsuarioAnulador ?? existing.IdUsuario,
+      tipoDocumento: 'AJAN',
+      documento: existing.Id.toString(),
+      nombre: `Reversión por anulación de ajuste #${existing.Id} - ${item.Nombre}`,
+      tipoMovimiento: existing.TipoAjuste !== 'ENTRADA',
+      existenciaAnterior: item.Existencia,
+      cantidad: existing.CantidadAjustada,
+      nuevaExistencia,
+    });
   });
 }
 
@@ -422,7 +422,7 @@ export async function restoreAdjustment(id: number, idUsuarioModificador?: numbe
   // Obtener existencia actual
   const item = await prisma.inventarioItem.findUnique({
     where: { Id: existing.IdInventarioItem },
-    select: { Existencia: true },
+    select: { Id: true, Nombre: true, Existencia: true },
   });
 
   if (!item) {
@@ -442,7 +442,7 @@ export async function restoreAdjustment(id: number, idUsuarioModificador?: numbe
     );
   }
 
-  // Transacción atómica: Restaurar ajuste + Aplicar stock + Restaurar bitácora
+  // Transacción atómica: Restaurar ajuste + Aplicar stock + Registrar reversión en bitácora
   const result = await prisma.$transaction(async (tx) => {
     // 1. Restaurar el ajuste
     const restored = await tx.ajusteInventario.update({
@@ -473,10 +473,17 @@ export async function restoreAdjustment(id: number, idUsuarioModificador?: numbe
       },
     });
 
-    // 3. Restaurar el movimiento en bitácora
-    await restoreInventoryMovementByReference(tx, {
-      tipoDocumento: 'AJ',
+    // 3. Registrar la restauración como una nueva entrada del libro (no se muta el historial original).
+    await registerInventoryMovement(tx, {
+      idInventarioItem: existing.IdInventarioItem,
+      idUsuario: idUsuarioModificador ?? existing.IdUsuario,
+      tipoDocumento: 'AJRE',
       documento: existing.Id.toString(),
+      nombre: `Reversión por restauración de ajuste #${existing.Id} - ${item.Nombre}`,
+      tipoMovimiento: existing.TipoAjuste === 'ENTRADA',
+      existenciaAnterior: item.Existencia,
+      cantidad: existing.CantidadAjustada,
+      nuevaExistencia,
     });
 
     return restored;
