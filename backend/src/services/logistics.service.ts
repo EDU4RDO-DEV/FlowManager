@@ -438,6 +438,21 @@ async function assertVehicleAvailableForSession(params: {
 }
 
 async function syncVehicleStateBySessions(idVehiculo: number) {
+  const vehiculo = await prisma.vehiculo.findFirst({
+    where: { Id: idVehiculo },
+    select: { Estado: true },
+  });
+
+  if (!vehiculo) {
+    return;
+  }
+
+  // No sobreescribir un estado de indisponibilidad gestionado manualmente
+  // (ej. MANTENIMIENTO) solo porque cambió una sesión de ruta no relacionada.
+  if (vehiculo.Estado === 'MANTENIMIENTO' || vehiculo.Estado === 'NO_DISPONIBLE') {
+    return;
+  }
+
   const hasActiveInRouteSession = await prisma.rutaSesion.findFirst({
     where: {
       IdVehiculo: idVehiculo,
