@@ -504,6 +504,7 @@ model Proveedor {
   InventarioItem       InventarioItem[]
   Entidad              Entidad          @relation(fields: [IdEntidad], references: [Id], onUpdate: NoAction, map: "FK_Proveedor_Entidad")
   Usuario              Usuario          @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Proveedor_Usuario")
+  MantenimientoVehiculo MantenimientoVehiculo[]
 }
 
 model ReglaComision {
@@ -705,6 +706,7 @@ model Usuario {
   MovimientoEnvase                                 MovimientoEnvase[]
   ControlCalidadAgua_ControlCalidadAgua_IdUsuarioToUsuario          ControlCalidadAgua[] @relation("ControlCalidadAgua_IdUsuarioToUsuario")
   ControlCalidadAgua_ControlCalidadAgua_IdUsuarioValidadorToUsuario ControlCalidadAgua[] @relation("ControlCalidadAgua_IdUsuarioValidadorToUsuario")
+  MantenimientoVehiculo                            MantenimientoVehiculo[]
 
   @@index([Correo, Anulado], map: "IX_Usuario_Correo_Activo")
   @@index([IdRol, Anulado], map: "IX_Usuario_Rol_Activo")
@@ -753,6 +755,37 @@ model Vehiculo {
   FechaAnulacion       DateTime?    @db.DateTime
   RutaSesion           RutaSesion[]
   Usuario              Usuario      @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Vehiculo_Usuario")
+  MantenimientoVehiculo MantenimientoVehiculo[]
+}
+
+// Mantenimiento preventivo/correctivo del único activo con identidad propia en el sistema: Vehiculo.
+// No existe modelo de "Maquinaria" de planta; no se inventa uno sin evidencia funcional.
+model MantenimientoVehiculo {
+  Id                   Int       @id(map: "PK_MantenimientoVehiculo") @default(autoincrement())
+  IdVehiculo           Int
+  IdProveedor          Int?
+  IdUsuario            Int
+  TipoMantenimiento    String    @db.VarChar(20)
+  Descripcion          String    @db.VarChar(255)
+  FechaMantenimiento   DateTime  @db.Date
+  Costo                Decimal?  @db.Decimal(10, 2)
+  Estado               String    @default("PROGRAMADO", map: "DF_MantenimientoVehiculo_Estado") @db.VarChar(20)
+  ProximoMantenimiento DateTime? @db.Date
+  Observaciones        String?   @db.VarChar(255)
+  RutaImagen           String?   @db.VarChar(255)
+  FechaRegistro        DateTime? @default(now(), map: "DF_MantenimientoVehiculo_FechaRegistro") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime? @db.DateTime
+  Anulado              Boolean   @default(false, map: "DF_MantenimientoVehiculo_Anulado")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime? @db.DateTime
+
+  Vehiculo  Vehiculo   @relation(fields: [IdVehiculo], references: [Id], onUpdate: NoAction, map: "FK_MantenimientoVehiculo_Vehiculo")
+  Proveedor Proveedor? @relation(fields: [IdProveedor], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_MantenimientoVehiculo_Proveedor")
+  Usuario   Usuario    @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_MantenimientoVehiculo_Usuario")
+
+  @@index([IdVehiculo, Anulado], map: "IX_MantenimientoVehiculo_Vehiculo_Activo")
+  @@index([Estado, Anulado], map: "IX_MantenimientoVehiculo_Estado_Activo")
 }
 
 model Venta {
