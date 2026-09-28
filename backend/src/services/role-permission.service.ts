@@ -58,7 +58,7 @@ async function validateUserExists(idUsuario: number) {
   }
 }
 
-async function ensureCatalogEntries() {
+export async function ensureCatalogEntries() {
   await prisma.$transaction(async (tx) => {
     for (const moduleKey of rbacModuleKeys) {
       const existing = await tx.moduloSistema.findFirst({

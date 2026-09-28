@@ -16,6 +16,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
   "dependencies": {
     "@prisma/client": "6.16.2",
     "bcryptjs": "^3.0.3",
@@ -36,6 +39,7 @@
     "@types/supertest": "^6.0.3",
     "prisma": "6.16.2",
     "supertest": "^7.1.4",
+    "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "5.6.3",
     "vitest": "^3.2.4"
