@@ -225,20 +225,21 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
 }
 
-export async function requireBootstrapOrAuth(
-  req: Request,
-  res: Response,
-  next: NextFunction,
+export function requireBootstrapOrModulePermission(
+  moduleKey: BackendModuleKey,
+  action: CrudAction,
 ) {
-  const usersCount = await prisma.usuario.count({
-    where: { Anulado: false },
-  });
+  return async function guard(req: Request, res: Response, next: NextFunction) {
+    const usersCount = await prisma.usuario.count({
+      where: { Anulado: false },
+    });
 
-  if (usersCount === 0) {
-    return next();
-  }
+    if (usersCount === 0) {
+      return next();
+    }
 
-  return requireAuth(req, res, next);
+    return requireAuth(req, res, () => requireModulePermission(moduleKey, action)(req, res, next));
+  };
 }
 
 export async function requireSelfOrAdmin(req: Request, res: Response, next: NextFunction) {
