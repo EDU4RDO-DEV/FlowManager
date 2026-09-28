@@ -15,6 +15,7 @@ export const rbacModuleKeys = [
   'sesiones',
   'produccion',
   'envases',
+  'calidad',
 ] as const;
 
 export const rbacActionKeys = ['read', 'create', 'update', 'delete'] as const;

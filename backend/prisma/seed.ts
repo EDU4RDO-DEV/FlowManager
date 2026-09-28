@@ -36,11 +36,13 @@ const ROLE_PERMISSIONS: Record<Exclude<(typeof ROLE_ORDER)[number], 'Administrad
     resumen: ['read'],
     produccion: ['read', 'create', 'update', 'delete'],
     inventario: ['read'],
+    calidad: ['read', 'create', 'update', 'delete'],
   },
   'Auxiliar de Planta': {
     resumen: ['read'],
     produccion: ['read'],
     inventario: ['read'],
+    calidad: ['read', 'create'],
   },
 };
 

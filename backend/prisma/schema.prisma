@@ -703,6 +703,8 @@ model Usuario {
   Venta                                            Venta[]
   CuentaPorCobrar                                  CuentaPorCobrar[]
   MovimientoEnvase                                 MovimientoEnvase[]
+  ControlCalidadAgua_ControlCalidadAgua_IdUsuarioToUsuario          ControlCalidadAgua[] @relation("ControlCalidadAgua_IdUsuarioToUsuario")
+  ControlCalidadAgua_ControlCalidadAgua_IdUsuarioValidadorToUsuario ControlCalidadAgua[] @relation("ControlCalidadAgua_IdUsuarioValidadorToUsuario")
 
   @@index([Correo, Anulado], map: "IX_Usuario_Correo_Activo")
   @@index([IdRol, Anulado], map: "IX_Usuario_Rol_Activo")
@@ -792,6 +794,34 @@ model Venta {
   Usuario                   Usuario          @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Venta_Usuario")
   MovimientoEnvase          MovimientoEnvase[]
 }
+
+// Bitácora de control de pH y Cloro Residual (registro diario de planta).
+model ControlCalidadAgua {
+  Id                   Int       @id(map: "PK_ControlCalidadAgua") @default(autoincrement())
+  IdUsuario            Int
+  Fecha                DateTime  @db.Date
+  DiaNoLaborado        Boolean   @default(false, map: "DF_ControlCalidadAgua_DiaNoLaborado")
+  CloroAntesFiltrado   Decimal?  @db.Decimal(5, 2)
+  CloroDespuesFiltrado Decimal?  @db.Decimal(5, 2)
+  PhAntesFiltrado      Decimal?  @db.Decimal(4, 2)
+  PhDespuesFiltrado    Decimal?  @db.Decimal(4, 2)
+  Observaciones        String?   @db.VarChar(255)
+  Validado             Boolean   @default(false, map: "DF_ControlCalidadAgua_Validado")
+  IdUsuarioValidador   Int?
+  FechaValidacion      DateTime? @db.DateTime
+  FechaRegistro        DateTime? @default(now(), map: "DF_ControlCalidadAgua_FechaRegistro") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime? @db.DateTime
+  Anulado              Boolean   @default(false, map: "DF_ControlCalidadAgua_Anulado")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime? @db.DateTime
+
+  Usuario          Usuario  @relation("ControlCalidadAgua_IdUsuarioToUsuario", fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_ControlCalidadAgua_Usuario")
+  UsuarioValidador Usuario? @relation("ControlCalidadAgua_IdUsuarioValidadorToUsuario", fields: [IdUsuarioValidador], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_ControlCalidadAgua_UsuarioValidador")
+
+  @@index([Fecha, Anulado], map: "IX_ControlCalidadAgua_Fecha_Activo")
+}
+
 
 // Ledger de préstamo/devolución de envases retornables. La venta/baja de un envase
 // ya se resuelve con InventarioItem (Categoria = 'ENVASE') + DetalleVenta/BitacoraInventario;
