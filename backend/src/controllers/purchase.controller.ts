@@ -105,6 +105,10 @@ export async function createPurchaseController(req: Request, res: Response) {
       return res.status(404).json({ ok: false, message });
     }
 
+    if (message === 'Ya existe una compra activa con ese numeroFactura para este proveedor') {
+      return res.status(409).json({ ok: false, message });
+    }
+
     return res.status(500).json({ ok: false, message });
   }
 }
@@ -228,6 +232,7 @@ export async function updatePurchaseExpenseController(req: Request, res: Respons
       ...(dataInput.descripcion !== undefined
         ? { descripcion: dataInput.descripcion.trim() }
         : {}),
+      idUsuarioModificador: req.auth?.userId ?? dataInput.idUsuarioModificador,
     });
 
     return res.status(200).json({ ok: true, data, message: 'Gasto actualizado correctamente' });

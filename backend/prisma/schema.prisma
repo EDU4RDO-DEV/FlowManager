@@ -182,16 +182,18 @@ model DetalleCompra {
 }
 
 model DetalleGasto {
-  Id                Int       @id(map: "PK__DetalleG__3214EC07C6F65A29") @default(autoincrement())
-  IdCompra          Int
-  Descripcion       String    @db.VarChar(255)
-  Cantidad          Decimal   @db.Decimal(10, 2)
-  PrecioUnitario    Decimal   @db.Decimal(10, 2)
-  FechaRegistro     DateTime? @default(now(), map: "DF__DetalleGa__Fecha__797309D9") @db.DateTime
-  Anulado           Boolean   @default(false, map: "DF__DetalleGa__Anula__7A672E12")
-  IdUsuarioAnulador Int?
-  FechaAnulacion    DateTime? @db.DateTime
-  Compra            Compra    @relation(fields: [IdCompra], references: [Id], onUpdate: NoAction, map: "FK_DetalleGasto_Compra")
+  Id                   Int       @id(map: "PK__DetalleG__3214EC07C6F65A29") @default(autoincrement())
+  IdCompra             Int
+  Descripcion          String    @db.VarChar(255)
+  Cantidad             Decimal   @db.Decimal(10, 2)
+  PrecioUnitario       Decimal   @db.Decimal(10, 2)
+  FechaRegistro        DateTime? @default(now(), map: "DF__DetalleGa__Fecha__797309D9") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime? @db.DateTime
+  Anulado              Boolean   @default(false, map: "DF__DetalleGa__Anula__7A672E12")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime? @db.DateTime
+  Compra               Compra    @relation(fields: [IdCompra], references: [Id], onUpdate: NoAction, map: "FK_DetalleGasto_Compra")
 }
 
 model DetalleVenta {

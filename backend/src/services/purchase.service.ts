@@ -39,6 +39,7 @@ type UpdatePurchaseExpenseInput = {
   descripcion?: string;
   cantidad?: number;
   precioUnitario?: number;
+  idUsuarioModificador?: number;
 };
 
 function toNumber(value: unknown): number {
@@ -87,6 +88,21 @@ async function validateProveedorExists(idProveedor: number) {
 
   if (!proveedor) {
     throw new Error('Proveedor no existe');
+  }
+}
+
+async function validateNumeroFacturaDisponible(idProveedor: number, numeroFactura: string) {
+  const existing = await prisma.compra.findFirst({
+    where: {
+      IdProveedor: idProveedor,
+      NumeroFactura: numeroFactura,
+      Anulado: false,
+    },
+    select: { Id: true },
+  });
+
+  if (existing) {
+    throw new Error('Ya existe una compra activa con ese numeroFactura para este proveedor');
   }
 }
 
@@ -152,6 +168,8 @@ function toPurchaseDto(purchase: {
     Cantidad: unknown;
     PrecioUnitario: unknown;
     FechaRegistro: Date | null;
+    IdUsuarioModificador: number | null;
+    FechaModificacion: Date | null;
     Anulado: boolean;
     IdUsuarioAnulador: number | null;
     FechaAnulacion: Date | null;
@@ -185,6 +203,8 @@ function toPurchaseDto(purchase: {
     precioUnitario: toNumber(detail.PrecioUnitario),
     subtotal: getSubtotal(toNumber(detail.Cantidad), toNumber(detail.PrecioUnitario)),
     fechaRegistro: detail.FechaRegistro,
+    idUsuarioModificador: detail.IdUsuarioModificador,
+    fechaModificacion: detail.FechaModificacion,
     anulado: detail.Anulado,
     idUsuarioAnulador: detail.IdUsuarioAnulador,
     fechaAnulacion: detail.FechaAnulacion,
@@ -369,6 +389,7 @@ export async function getPurchaseById(id: number) {
 export async function createPurchase(input: CreatePurchaseInput) {
   await validateUsuarioExists(input.idUsuario);
   await validateProveedorExists(input.idProveedor);
+  await validateNumeroFacturaDisponible(input.idProveedor, input.numeroFactura);
 
   const detailItems = input.esGasto ? input.detalleGasto ?? [] : input.detalleCompra ?? [];
   if (detailItems.length === 0) {
@@ -810,6 +831,8 @@ export async function listPurchaseExpenses(idCompra: number) {
     precioUnitario: toNumber(expense.PrecioUnitario),
     subtotal: getSubtotal(toNumber(expense.Cantidad), toNumber(expense.PrecioUnitario)),
     fechaRegistro: expense.FechaRegistro,
+    idUsuarioModificador: expense.IdUsuarioModificador,
+    fechaModificacion: expense.FechaModificacion,
     anulado: expense.Anulado,
     idUsuarioAnulador: expense.IdUsuarioAnulador,
     fechaAnulacion: expense.FechaAnulacion,
@@ -854,6 +877,8 @@ export async function createPurchaseExpense(idCompra: number, input: CreateExpen
     precioUnitario: toNumber(created.PrecioUnitario),
     subtotal: getSubtotal(toNumber(created.Cantidad), toNumber(created.PrecioUnitario)),
     fechaRegistro: created.FechaRegistro,
+    idUsuarioModificador: created.IdUsuarioModificador,
+    fechaModificacion: created.FechaModificacion,
     anulado: created.Anulado,
     idUsuarioAnulador: created.IdUsuarioAnulador,
     fechaAnulacion: created.FechaAnulacion,
@@ -880,6 +905,10 @@ export async function updatePurchaseExpense(
     throw new Error('Detalle de gasto no existe');
   }
 
+  if (input.idUsuarioModificador !== undefined) {
+    await validateUsuarioExists(input.idUsuarioModificador);
+  }
+
   const updated = await prisma.detalleGasto.update({
     where: { Id: idGasto },
     data: {
@@ -888,6 +917,10 @@ export async function updatePurchaseExpense(
       ...(input.precioUnitario !== undefined
         ? { PrecioUnitario: input.precioUnitario }
         : {}),
+      ...(input.idUsuarioModificador !== undefined
+        ? { IdUsuarioModificador: input.idUsuarioModificador }
+        : {}),
+      FechaModificacion: new Date(),
     },
   });
 
@@ -899,6 +932,8 @@ export async function updatePurchaseExpense(
     precioUnitario: toNumber(updated.PrecioUnitario),
     subtotal: getSubtotal(toNumber(updated.Cantidad), toNumber(updated.PrecioUnitario)),
     fechaRegistro: updated.FechaRegistro,
+    idUsuarioModificador: updated.IdUsuarioModificador,
+    fechaModificacion: updated.FechaModificacion,
     anulado: updated.Anulado,
     idUsuarioAnulador: updated.IdUsuarioAnulador,
     fechaAnulacion: updated.FechaAnulacion,
@@ -980,6 +1015,8 @@ export async function restorePurchaseExpense(
     precioUnitario: toNumber(updated.PrecioUnitario),
     subtotal: getSubtotal(toNumber(updated.Cantidad), toNumber(updated.PrecioUnitario)),
     fechaRegistro: updated.FechaRegistro,
+    idUsuarioModificador: updated.IdUsuarioModificador,
+    fechaModificacion: updated.FechaModificacion,
     anulado: updated.Anulado,
     idUsuarioAnulador: updated.IdUsuarioAnulador,
     fechaAnulacion: updated.FechaAnulacion,

@@ -189,6 +189,7 @@ export const updatePurchaseExpenseSchema = z
     descripcion: z.string().trim().min(3, 'descripcion debe tener al menos 3 caracteres').max(255).optional(),
     cantidad: finitePositiveNumber.optional(),
     precioUnitario: finitePositiveNumber.optional(),
+    idUsuarioModificador: positiveInt.optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: 'Debe enviar al menos un campo para actualizar',

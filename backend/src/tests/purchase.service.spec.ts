@@ -12,6 +12,9 @@ const { prismaMock, registerInventoryMovementMock } = vi.hoisted(() => ({
     usuario: {
       findFirst: vi.fn(),
     },
+    proveedor: {
+      findFirst: vi.fn(),
+    },
     $transaction: vi.fn(),
   },
   registerInventoryMovementMock: vi.fn(),
@@ -27,8 +30,10 @@ vi.mock('../services/inventory-movement.service', () => ({
 
 import {
   anulatePurchase,
+  createPurchase,
   restorePurchase,
   restorePurchaseExpense,
+  updatePurchaseExpense,
 } from '../services/purchase.service';
 
 describe('purchase.service business rules', () => {
@@ -215,5 +220,51 @@ describe('purchase.service business rules', () => {
     );
     expect(restored.anulado).toBe(false);
     expect(restored.id).toBe(10);
+  });
+
+  it('createPurchase rechaza numeroFactura duplicada activa para el mismo proveedor', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 1 });
+    prismaMock.proveedor.findFirst.mockResolvedValueOnce({ Id: 2 });
+    prismaMock.compra.findFirst.mockResolvedValueOnce({ Id: 99 });
+
+    await expect(
+      createPurchase({
+        idUsuario: 1,
+        idProveedor: 2,
+        numeroFactura: 'F-001',
+        esGasto: false,
+        fechaFactura: '2026-09-28',
+        detalleCompra: [{ idInventarioItem: 7, cantidad: 1, costoUnitario: 10 }],
+      }),
+    ).rejects.toThrowError('Ya existe una compra activa con ese numeroFactura para este proveedor');
+
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('updatePurchaseExpense registra IdUsuarioModificador y FechaModificacion', async () => {
+    prismaMock.detalleGasto.findFirst.mockResolvedValueOnce({ Id: 55 });
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
+    prismaMock.detalleGasto.update.mockResolvedValueOnce({
+      Id: 55,
+      IdCompra: 10,
+      Descripcion: 'Combustible',
+      Cantidad: 1,
+      PrecioUnitario: 100,
+      FechaRegistro: new Date('2026-09-01'),
+      IdUsuarioModificador: 9,
+      FechaModificacion: new Date('2026-09-28'),
+      Anulado: false,
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
+    });
+
+    const result = await updatePurchaseExpense(10, 55, { precioUnitario: 100, idUsuarioModificador: 9 });
+
+    expect(prismaMock.detalleGasto.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ IdUsuarioModificador: 9 }),
+      }),
+    );
+    expect(result.idUsuarioModificador).toBe(9);
   });
 });
