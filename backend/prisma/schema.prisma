@@ -296,6 +296,8 @@ model EstructuraProducto {
   IdMateriaPrima                                                        Int
   CantidadRequerida                                                     Float
   FechaRegistro                                                         DateTime?      @default(now(), map: "DF__Estructur__Fecha__05D8E0BE") @db.DateTime
+  IdUsuarioModificador                                                  Int?
+  FechaModificacion                                                     DateTime?      @db.DateTime
   Anulado                                                               Boolean        @default(false, map: "DF__Estructur__Anula__06CD04F7")
   IdUsuarioAnulador                                                     Int?
   FechaAnulacion                                                        DateTime?      @db.DateTime
@@ -591,12 +593,18 @@ model Rol {
 }
 
 model Ruta {
-  Id            Int          @id(map: "PK__Ruta__3214EC072A309141") @default(autoincrement())
-  Nombre        String       @db.VarChar(100)
-  Descripcion   String?      @db.VarChar(255)
-  FechaRegistro DateTime?    @default(now(), map: "DF__Ruta__FechaRegis__2645B050") @db.DateTime
-  Anulado       Boolean      @default(false, map: "DF__Ruta__Anulado__2739D489")
-  RutaSesion    RutaSesion[]
+  Id                   Int          @id(map: "PK__Ruta__3214EC072A309141") @default(autoincrement())
+  IdUsuario            Int?
+  Nombre               String       @db.VarChar(100)
+  Descripcion          String?      @db.VarChar(255)
+  FechaRegistro        DateTime?    @default(now(), map: "DF__Ruta__FechaRegis__2645B050") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime?    @db.DateTime
+  Anulado              Boolean      @default(false, map: "DF__Ruta__Anulado__2739D489")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime?    @db.DateTime
+  RutaSesion           RutaSesion[]
+  Usuario              Usuario?     @relation(fields: [IdUsuario], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Ruta_Usuario")
 }
 
 model RutaSesion {
@@ -644,18 +652,20 @@ model Sesion {
 }
 
 model Talonario {
-  Id                 Int       @id(map: "PK__Talonari__3214EC07469884E8") @default(autoincrement())
-  IdUsuario          Int
-  Nombre             String    @db.VarChar(100)
-  CorrelativoInicial Int
-  CorrelativoFinal   Int
-  UltimoUtilizado    Int?
-  FechaRegistro      DateTime? @default(now(), map: "DF__Talonario__Fecha__114A936A") @db.DateTime
-  Anulado            Boolean   @default(false, map: "DF__Talonario__Anula__123EB7A3")
-  IdUsuarioAnulador  Int?
-  FechaAnulacion     DateTime? @db.DateTime
-  Usuario            Usuario   @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Talonario_Usuario")
-  Venta              Venta[]
+  Id                   Int       @id(map: "PK__Talonari__3214EC07469884E8") @default(autoincrement())
+  IdUsuario            Int
+  Nombre               String    @db.VarChar(100)
+  CorrelativoInicial   Int
+  CorrelativoFinal     Int
+  UltimoUtilizado      Int?
+  FechaRegistro        DateTime? @default(now(), map: "DF__Talonario__Fecha__114A936A") @db.DateTime
+  IdUsuarioModificador Int?
+  FechaModificacion    DateTime? @db.DateTime
+  Anulado              Boolean   @default(false, map: "DF__Talonario__Anula__123EB7A3")
+  IdUsuarioAnulador    Int?
+  FechaAnulacion       DateTime? @db.DateTime
+  Usuario              Usuario   @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Talonario_Usuario")
+  Venta                Venta[]
 }
 
 model Usuario {
@@ -707,6 +717,7 @@ model Usuario {
   ControlCalidadAgua_ControlCalidadAgua_IdUsuarioToUsuario          ControlCalidadAgua[] @relation("ControlCalidadAgua_IdUsuarioToUsuario")
   ControlCalidadAgua_ControlCalidadAgua_IdUsuarioValidadorToUsuario ControlCalidadAgua[] @relation("ControlCalidadAgua_IdUsuarioValidadorToUsuario")
   MantenimientoVehiculo                            MantenimientoVehiculo[]
+  Ruta                                             Ruta[]
 
   @@index([Correo, Anulado], map: "IX_Usuario_Correo_Activo")
   @@index([IdRol, Anulado], map: "IX_Usuario_Rol_Activo")

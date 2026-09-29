@@ -13,6 +13,7 @@ type CreateProductStructureInput = {
 
 type UpdateProductStructureInput = {
   cantidadRequerida?: number;
+  idUsuarioModificador?: number;
 };
 
 function toStructureDto(structure: {
@@ -21,7 +22,11 @@ function toStructureDto(structure: {
   IdMateriaPrima: number;
   CantidadRequerida: number;
   FechaRegistro: Date | null;
+  IdUsuarioModificador: number | null;
+  FechaModificacion: Date | null;
   Anulado: boolean;
+  IdUsuarioAnulador: number | null;
+  FechaAnulacion: Date | null;
   InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
     Id: number;
     Nombre: string;
@@ -39,7 +44,11 @@ function toStructureDto(structure: {
     idMateriaPrima: structure.IdMateriaPrima,
     cantidadRequerida: structure.CantidadRequerida,
     fechaRegistro: structure.FechaRegistro,
+    idUsuarioModificador: structure.IdUsuarioModificador,
+    fechaModificacion: structure.FechaModificacion,
     anulado: structure.Anulado,
+    idUsuarioAnulador: structure.IdUsuarioAnulador,
+    fechaAnulacion: structure.FechaAnulacion,
     materiaPrima: {
       id: structure.InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem.Id,
       nombre: structure.InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem.Nombre,
@@ -249,12 +258,20 @@ export async function updateProductStructure(id: number, input: UpdateProductStr
     throw new Error('Componente de estructura no existe');
   }
 
+  if (input.idUsuarioModificador !== undefined) {
+    await validateUsuarioExists(input.idUsuarioModificador);
+  }
+
   const updated = await prisma.estructuraProducto.update({
     where: { Id: id },
     data: {
       ...(input.cantidadRequerida !== undefined
         ? { CantidadRequerida: input.cantidadRequerida }
         : {}),
+      ...(input.idUsuarioModificador !== undefined
+        ? { IdUsuarioModificador: input.idUsuarioModificador }
+        : {}),
+      FechaModificacion: new Date(),
     },
     include: {
       InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
@@ -293,6 +310,8 @@ export async function deleteProductStructure(id: number, idUsuarioAnulador?: num
     where: { Id: id },
     data: {
       Anulado: true,
+      IdUsuarioAnulador: idUsuarioAnulador,
+      FechaAnulacion: new Date(),
     },
   });
 }
@@ -323,6 +342,10 @@ export async function restoreProductStructure(id: number, idUsuarioModificador?:
     where: { Id: id },
     data: {
       Anulado: false,
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
+      ...(idUsuarioModificador !== undefined ? { IdUsuarioModificador: idUsuarioModificador } : {}),
+      FechaModificacion: new Date(),
     },
     include: {
       InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {

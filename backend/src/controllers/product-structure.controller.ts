@@ -129,6 +129,7 @@ export async function updateProductStructureController(req: Request, res: Respon
 
     const data = await updateProductStructure(id, {
       cantidadRequerida: dataInput.cantidadRequerida,
+      idUsuarioModificador: req.auth?.userId,
     });
 
     return res.status(200).json({ ok: true, data });

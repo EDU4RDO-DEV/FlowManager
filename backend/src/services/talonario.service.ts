@@ -24,6 +24,8 @@ function toTalonarioDto(talonario: {
   CorrelativoFinal: number;
   UltimoUtilizado: number | null;
   FechaRegistro: Date | null;
+  IdUsuarioModificador: number | null;
+  FechaModificacion: Date | null;
   Anulado: boolean;
   IdUsuarioAnulador: number | null;
   FechaAnulacion: Date | null;
@@ -41,6 +43,8 @@ function toTalonarioDto(talonario: {
       siguienteCorrelativo <= talonario.CorrelativoFinal ? siguienteCorrelativo : null,
     disponible: siguienteCorrelativo <= talonario.CorrelativoFinal,
     fechaRegistro: talonario.FechaRegistro,
+    idUsuarioModificador: talonario.IdUsuarioModificador,
+    fechaModificacion: talonario.FechaModificacion,
     anulado: talonario.Anulado,
     idUsuarioAnulador: talonario.IdUsuarioAnulador,
     fechaAnulacion: talonario.FechaAnulacion,
@@ -186,6 +190,7 @@ export async function updateTalonario(id: number, input: UpdateTalonarioInput) {
       ...(input.idUsuarioModificador !== undefined
         ? { IdUsuarioModificador: input.idUsuarioModificador }
         : {}),
+      FechaModificacion: new Date(),
     },
   });
 
@@ -254,6 +259,8 @@ export async function restoreTalonario(id: number, idUsuarioModificador?: number
       Anulado: false,
       IdUsuarioAnulador: null,
       FechaAnulacion: null,
+      ...(idUsuarioModificador !== undefined ? { IdUsuarioModificador: idUsuarioModificador } : {}),
+      FechaModificacion: new Date(),
     },
   });
 
