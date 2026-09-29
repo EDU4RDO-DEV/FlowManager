@@ -9,7 +9,7 @@ const dateString = z
 
 const entityCreateSchema = z.object({
   nombreCompleto: z.string().trim().min(1, 'entidad.nombreCompleto es obligatorio').max(255, 'entidad.nombreCompleto demasiado largo'),
-  sexo: z.string().trim().max(1, 'entidad.sexo debe tener un carácter').optional(),
+  sexo: z.enum(['M', 'F'], { message: 'entidad.sexo debe ser M o F' }).optional(),
   fechaNacimiento: dateString.optional(),
   telefono1: z.string().trim().max(20, 'entidad.telefono1 demasiado largo').optional(),
   telefono2: z.string().trim().max(20, 'entidad.telefono2 demasiado largo').optional(),
@@ -21,7 +21,7 @@ const entityCreateSchema = z.object({
 
 const entityUpdateSchema = z.object({
   nombreCompleto: z.string().trim().min(1, 'entidad.nombreCompleto no puede ir vacío').max(255, 'entidad.nombreCompleto demasiado largo').optional(),
-  sexo: z.string().trim().max(1, 'entidad.sexo debe tener un carácter').optional(),
+  sexo: z.enum(['M', 'F'], { message: 'entidad.sexo debe ser M o F' }).optional(),
   fechaNacimiento: dateString.optional(),
   telefono1: z.string().trim().max(20, 'entidad.telefono1 demasiado largo').optional(),
   telefono2: z.string().trim().max(20, 'entidad.telefono2 demasiado largo').optional(),

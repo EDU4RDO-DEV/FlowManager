@@ -43,12 +43,16 @@ import type { ProviderDto } from "@/types/providers";
 
 const PAYMENT_STATES: GastoEstadoPago[] = ["PENDIENTE", "PAGADO"];
 
+type GastoMetodoPago = "EFECTIVO" | "TRANSFERENCIA" | "CHEQUE" | "POS";
+
+const PAYMENT_METHODS: GastoMetodoPago[] = ["EFECTIVO", "TRANSFERENCIA", "CHEQUE", "POS"];
+
 type FormState = {
   idRutaSesion: string;
   idProveedor: string;
   descripcion: string;
   monto: string;
-  metodoPago: string;
+  metodoPago: GastoMetodoPago;
   numeroVale: string;
   estadoPago: GastoEstadoPago;
   referenciaPago: string;
@@ -60,7 +64,7 @@ const EMPTY_FORM: FormState = {
   idProveedor: "",
   descripcion: "",
   monto: "",
-  metodoPago: "",
+  metodoPago: "EFECTIVO",
   numeroVale: "",
   estadoPago: "PAGADO",
   referenciaPago: "",
@@ -132,7 +136,7 @@ export default function LogisticsExpensesPage() {
       idProveedor: item.idProveedor ? String(item.idProveedor) : "",
       descripcion: item.descripcion,
       monto: String(item.monto),
-      metodoPago: item.metodoPago,
+      metodoPago: item.metodoPago as GastoMetodoPago,
       numeroVale: item.numeroVale ? String(item.numeroVale) : "",
       estadoPago: item.estadoPago,
       referenciaPago: item.referenciaPago ?? "",
@@ -332,11 +336,20 @@ export default function LogisticsExpensesPage() {
 
                 <div className="space-y-1.5">
                   <Label htmlFor="expense-method">Método de pago</Label>
-                  <Input
+                  <select
                     id="expense-method"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     value={form.metodoPago}
-                    onChange={(event) => setForm((prev) => ({ ...prev, metodoPago: event.target.value }))}
-                  />
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, metodoPago: event.target.value as GastoMetodoPago }))
+                    }
+                  >
+                    {PAYMENT_METHODS.map((method) => (
+                      <option key={method} value={method}>
+                        {method}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="space-y-1.5">

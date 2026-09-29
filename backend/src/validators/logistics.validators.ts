@@ -17,6 +17,9 @@ const rutaSesionEstadoSchema = z.enum(['PROGRAMADA', 'EN_CURSO', 'CERRADA']);
 
 const gastoEstadoPagoSchema = z.enum(['PENDIENTE', 'PAGADO']);
 
+// Homologado con el mismo dominio de métodos de pago usado en PagoVenta/CreditoPago.
+const gastoMetodoPagoSchema = z.enum(['EFECTIVO', 'TRANSFERENCIA', 'CHEQUE', 'POS']);
+
 const dateOnlySchema = z
   .string()
   .trim()
@@ -157,7 +160,7 @@ export const createGastoVehiculoSchema = z.object({
   idProveedor: positiveInt.optional(),
   descripcion: z.string().trim().min(3, 'descripcion debe tener al menos 3 caracteres').max(255),
   monto: z.number().finite('monto debe ser válido').positive('monto debe ser mayor a 0'),
-  metodoPago: z.string().trim().min(2).max(50),
+  metodoPago: gastoMetodoPagoSchema,
   numeroVale: z.number().int().positive().optional(),
   rutaImagen: z.string().trim().max(255).optional(),
   estadoPago: gastoEstadoPagoSchema.default('PAGADO'),
@@ -172,7 +175,7 @@ export const updateGastoVehiculoSchema = z
     idProveedor: positiveInt.nullable().optional(),
     descripcion: z.string().trim().min(3).max(255).optional(),
     monto: z.number().finite('monto debe ser válido').positive('monto debe ser mayor a 0').optional(),
-    metodoPago: z.string().trim().min(2).max(50).optional(),
+    metodoPago: gastoMetodoPagoSchema.optional(),
     numeroVale: z.number().int().positive().nullable().optional(),
     rutaImagen: z.string().trim().max(255).nullable().optional(),
     estadoPago: gastoEstadoPagoSchema.optional(),

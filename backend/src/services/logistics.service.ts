@@ -3,6 +3,7 @@ import { prisma } from '../config/prisma';
 type VehiculoEstado = 'DISPONIBLE' | 'EN_RUTA' | 'MANTENIMIENTO' | 'NO_DISPONIBLE';
 type RutaSesionEstado = 'PROGRAMADA' | 'EN_CURSO' | 'CERRADA';
 type GastoEstadoPago = 'PENDIENTE' | 'PAGADO';
+type GastoMetodoPago = 'EFECTIVO' | 'TRANSFERENCIA' | 'CHEQUE' | 'POS';
 
 type CreateVehiculoInput = {
   idUsuario: number;
@@ -61,7 +62,7 @@ type CreateGastoVehiculoInput = {
   idProveedor?: number;
   descripcion: string;
   monto: number;
-  metodoPago: string;
+  metodoPago: GastoMetodoPago;
   numeroVale?: number;
   rutaImagen?: string;
   estadoPago: GastoEstadoPago;
@@ -75,7 +76,7 @@ type UpdateGastoVehiculoInput = {
   idProveedor?: number | null;
   descripcion?: string;
   monto?: number;
-  metodoPago?: string;
+  metodoPago?: GastoMetodoPago;
   numeroVale?: number | null;
   rutaImagen?: string | null;
   estadoPago?: GastoEstadoPago;
