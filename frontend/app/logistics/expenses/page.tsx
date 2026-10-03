@@ -358,6 +358,7 @@ export default function LogisticsExpensesPage() {
                     id="expense-voucher"
                     type="number"
                     min="0"
+                    max={2147483647}
                     value={form.numeroVale}
                     onChange={(event) => setForm((prev) => ({ ...prev, numeroVale: event.target.value }))}
                   />

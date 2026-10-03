@@ -20,6 +20,14 @@ const gastoEstadoPagoSchema = z.enum(['PENDIENTE', 'PAGADO']);
 // Homologado con el mismo dominio de métodos de pago usado en PagoVenta/CreditoPago.
 const gastoMetodoPagoSchema = z.enum(['EFECTIVO', 'TRANSFERENCIA', 'CHEQUE', 'POS']);
 
+// Límite real de la columna INT en SQL Server; sin este tope Prisma lanza un error crudo de overflow.
+const SQL_INT_MAX = 2147483647;
+const numeroValeSchema = z
+  .number()
+  .int('numeroVale debe ser entero')
+  .positive('numeroVale debe ser mayor a 0')
+  .max(SQL_INT_MAX, 'numeroVale excede el máximo permitido');
+
 const dateOnlySchema = z
   .string()
   .trim()
@@ -161,7 +169,7 @@ export const createGastoVehiculoSchema = z.object({
   descripcion: z.string().trim().min(3, 'descripcion debe tener al menos 3 caracteres').max(255),
   monto: z.number().finite('monto debe ser válido').positive('monto debe ser mayor a 0'),
   metodoPago: gastoMetodoPagoSchema,
-  numeroVale: z.number().int().positive().optional(),
+  numeroVale: numeroValeSchema.optional(),
   rutaImagen: z.string().trim().max(255).optional(),
   estadoPago: gastoEstadoPagoSchema.default('PAGADO'),
   fechaPago: optionalDateTimeSchema,
@@ -176,7 +184,7 @@ export const updateGastoVehiculoSchema = z
     descripcion: z.string().trim().min(3).max(255).optional(),
     monto: z.number().finite('monto debe ser válido').positive('monto debe ser mayor a 0').optional(),
     metodoPago: gastoMetodoPagoSchema.optional(),
-    numeroVale: z.number().int().positive().nullable().optional(),
+    numeroVale: numeroValeSchema.nullable().optional(),
     rutaImagen: z.string().trim().max(255).nullable().optional(),
     estadoPago: gastoEstadoPagoSchema.optional(),
     fechaPago: optionalDateTimeSchema,
