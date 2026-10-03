@@ -21,6 +21,37 @@ pnpm test
 pnpm run test:watch
 ```
 
+## Base de datos y migraciones
+
+El unico mecanismo oficial de cambios de esquema es **Prisma Migrate** (`prisma/migrations/`).
+No se usa `prisma db push` en ningun flujo (dev, CI ni documentacion): toda migracion debe
+quedar registrada como archivo versionado para poder auditarla y reproducirla.
+
+Flujo estandar para un cambio de esquema:
+
+```bash
+pnpm exec prisma migrate dev --name descripcion_del_cambio
+```
+
+Para reglas que Prisma no expresa en `schema.prisma` (CHECK constraints, indices unicos
+filtrados con `WHERE`), el flujo es:
+
+```bash
+pnpm exec prisma migrate dev --create-only --name descripcion_del_cambio
+# editar a mano prisma/migrations/<timestamp>_descripcion_del_cambio/migration.sql
+pnpm exec prisma migrate dev
+```
+
+En Windows, si el backend esta corriendo (`ts-node-dev`), este bloquea
+`query_engine-windows.dll.node` y la migracion falla con `EPERM` al regenerar el cliente.
+Detener el proceso antes de migrar y volver a levantarlo despues (`pnpm run dev`).
+
+Los scripts sueltos en `backend/scripts/*.sql` son parches manuales previos a la adopcion
+de Prisma Migrate. Quedan congelados como referencia historica; no se ejecutan ni se amplian.
+
+`npx prisma migrate status` debe reportar siempre `Database schema is up to date!` antes de
+cerrar una fase de trabajo.
+
 ## Variables de entorno minimas
 
 ```env
