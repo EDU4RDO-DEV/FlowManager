@@ -15,6 +15,7 @@ import envaseRouter from './routes/envase.routes';
 import inventoryLogRouter from './routes/inventory-log.routes';
 import logisticsRouter from './routes/logistics.routes';
 import maintenanceRouter from './routes/maintenance.routes';
+import notificationRouter from './routes/notification.routes';
 import planillaRouter from './routes/planilla.routes';
 import productRouter from './routes/product.routes';
 import productStructureRouter from './routes/product-structure.routes';
@@ -47,6 +48,7 @@ export function createApp() {
   app.use('/api/inventory-log', requireAuth, inventoryLogRouter);
   app.use('/api/logistics', requireAuth, logisticsRouter);
   app.use('/api/logistics', requireAuth, maintenanceRouter);
+  app.use('/api/notifications', requireAuth, notificationRouter);
   app.use('/api/planilla', requireAuth, planillaRouter);
   app.use('/api/products', requireAuth, productRouter);
   app.use('/api/product-structure', requireAuth, productStructureRouter);
