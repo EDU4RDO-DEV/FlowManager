@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { ZodError } from 'zod';
 
-import { sendNotification } from '../services/notification.service';
+import { NotificationEvents, send } from '../services/notification.service';
 import { testNotificationBodySchema } from '../validators/notification.validators';
 import { getZodErrorMessage } from '../validators/validation';
 
@@ -16,17 +16,15 @@ function statusForFailureReason(reason: string): number {
   }
 }
 
-// Endpoint de prueba (Fase 17): confirma que Backend -> n8n -> Telegram funciona
-// de punta a punta sin acoplar lógica de negocio real todavía.
+// Endpoint de prueba: confirma que Backend -> n8n -> Telegram funciona de punta
+// a punta sin acoplar lógica de negocio real todavía.
 export async function testNotificationController(req: Request, res: Response) {
   try {
     const body = testNotificationBodySchema.parse(req.body ?? {});
 
-    const result = await sendNotification({
-      tipo: 'prueba',
-      titulo: body.titulo ?? 'Prueba de notificación',
-      mensaje: body.mensaje ?? 'Prueba de integración BASAN → n8n → Telegram',
-      metadata: body.metadata,
+    const result = await send(NotificationEvents.PRUEBA, {
+      mensaje: 'Prueba de integración BASAN → n8n → Telegram',
+      ...body.datos,
     });
 
     if (result.ok) {

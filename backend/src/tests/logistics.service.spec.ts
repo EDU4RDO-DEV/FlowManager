@@ -8,11 +8,20 @@ const { prismaMock } = vi.hoisted(() => ({
   },
 }));
 
+const { sendMock } = vi.hoisted(() => ({
+  sendMock: vi.fn(),
+}));
+
 vi.mock('../config/prisma', () => ({
   prisma: prismaMock,
 }));
 
-import { deleteRutaSesion } from '../services/logistics.service';
+vi.mock('../services/notification.service', () => ({
+  NotificationEvents: { VEHICULO_NO_DISPONIBLE: 'VEHICULO_NO_DISPONIBLE' },
+  send: sendMock,
+}));
+
+import { deleteRutaSesion, updateVehiculo } from '../services/logistics.service';
 
 describe('Fase 10 - logística: sincronización de estado de vehículo', () => {
   beforeEach(() => {
@@ -43,5 +52,103 @@ describe('Fase 10 - logística: sincronización de estado de vehículo', () => {
     expect(prismaMock.vehiculo.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ Estado: 'DISPONIBLE' }) }),
     );
+  });
+});
+
+describe('Fase 22 - notificación VEHICULO_NO_DISPONIBLE', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sendMock.mockReset();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  it('notifica cuando el vehículo transiciona de DISPONIBLE a MANTENIMIENTO', async () => {
+    prismaMock.vehiculo.findFirst.mockResolvedValueOnce({ Id: 5, Estado: 'DISPONIBLE' });
+    prismaMock.vehiculo.update.mockResolvedValueOnce({
+      Id: 5,
+      Placa: 'P123ABC',
+      Marca: 'Toyota',
+      Modelo: 'Hilux',
+      Estado: 'MANTENIMIENTO',
+    });
+    sendMock.mockResolvedValueOnce({ ok: true, status: 200 });
+
+    await updateVehiculo(5, { estado: 'MANTENIMIENTO' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(sendMock).toHaveBeenCalledWith('VEHICULO_NO_DISPONIBLE', {
+      placa: 'P123ABC',
+      marca: 'Toyota',
+      modelo: 'Hilux',
+      estado: 'MANTENIMIENTO',
+    });
+  });
+
+  it('no notifica si el vehículo ya estaba en MANTENIMIENTO', async () => {
+    prismaMock.vehiculo.findFirst.mockResolvedValueOnce({ Id: 5, Estado: 'MANTENIMIENTO' });
+    prismaMock.vehiculo.update.mockResolvedValueOnce({
+      Id: 5,
+      Placa: 'P123ABC',
+      Marca: 'Toyota',
+      Modelo: 'Hilux',
+      Estado: 'MANTENIMIENTO',
+    });
+
+    await updateVehiculo(5, { estado: 'MANTENIMIENTO' });
+    await Promise.resolve();
+
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('no notifica cuando el cambio de estado no es hacia MANTENIMIENTO/NO_DISPONIBLE', async () => {
+    prismaMock.vehiculo.findFirst.mockResolvedValueOnce({ Id: 5, Estado: 'MANTENIMIENTO' });
+    prismaMock.vehiculo.update.mockResolvedValueOnce({
+      Id: 5,
+      Placa: 'P123ABC',
+      Marca: 'Toyota',
+      Modelo: 'Hilux',
+      Estado: 'DISPONIBLE',
+    });
+
+    await updateVehiculo(5, { estado: 'DISPONIBLE' });
+    await Promise.resolve();
+
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('no notifica si input.estado no fue enviado (actualización de otros campos)', async () => {
+    prismaMock.vehiculo.findFirst.mockResolvedValueOnce({ Id: 5, Estado: 'DISPONIBLE' });
+    prismaMock.vehiculo.update.mockResolvedValueOnce({
+      Id: 5,
+      Placa: 'P999ZZZ',
+      Marca: 'Toyota',
+      Modelo: 'Hilux',
+      Estado: 'DISPONIBLE',
+    });
+
+    await updateVehiculo(5, { placa: 'P999ZZZ' });
+    await Promise.resolve();
+
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('no afecta la operación principal si la notificación falla', async () => {
+    prismaMock.vehiculo.findFirst.mockResolvedValueOnce({ Id: 5, Estado: 'DISPONIBLE' });
+    prismaMock.vehiculo.update.mockResolvedValueOnce({
+      Id: 5,
+      Placa: 'P123ABC',
+      Marca: 'Toyota',
+      Modelo: 'Hilux',
+      Estado: 'NO_DISPONIBLE',
+    });
+    sendMock.mockRejectedValueOnce(new Error('fallo inesperado de red'));
+
+    const result = await updateVehiculo(5, { estado: 'NO_DISPONIBLE' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(result.estado).toBe('NO_DISPONIBLE');
   });
 });

@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma';
+import { NotificationEvents, send } from './notification.service';
 
 type VehiculoEstado = 'DISPONIBLE' | 'EN_RUTA' | 'MANTENIMIENTO' | 'NO_DISPONIBLE';
 type RutaSesionEstado = 'PROGRAMADA' | 'EN_CURSO' | 'CERRADA';
@@ -551,10 +552,36 @@ export async function createVehiculo(input: CreateVehiculoInput) {
   return toVehiculoDto(created);
 }
 
+function buildVehiculoNoDisponibleDatos(vehiculo: { placa: string; marca: string; modelo: string; estado: string }) {
+  return {
+    placa: vehiculo.placa,
+    marca: vehiculo.marca,
+    modelo: vehiculo.modelo,
+    estado: vehiculo.estado,
+  };
+}
+
+function notifyVehiculoNoDisponible(vehiculo: { placa: string; marca: string; modelo: string; estado: string }): void {
+  send(NotificationEvents.VEHICULO_NO_DISPONIBLE, buildVehiculoNoDisponibleDatos(vehiculo))
+    .then((result) => {
+      if (!result.ok) {
+        console.error(
+          `[notificaciones] No se pudo notificar VEHICULO_NO_DISPONIBLE (placa ${vehiculo.placa}): ${result.reason} - ${result.message}`,
+        );
+      }
+    })
+    .catch((error) => {
+      console.error(
+        `[notificaciones] Error inesperado notificando VEHICULO_NO_DISPONIBLE (placa ${vehiculo.placa}):`,
+        error instanceof Error ? error.message : error,
+      );
+    });
+}
+
 export async function updateVehiculo(id: number, input: UpdateVehiculoInput) {
   const existing = await prisma.vehiculo.findFirst({
     where: { Id: id, Anulado: false },
-    select: { Id: true },
+    select: { Id: true, Estado: true },
   });
 
   if (!existing) {
@@ -583,6 +610,20 @@ export async function updateVehiculo(id: number, input: UpdateVehiculoInput) {
       FechaModificacion: new Date(),
     },
   });
+
+  const esTransicionANoDisponible =
+    input.estado !== undefined &&
+    (input.estado === 'MANTENIMIENTO' || input.estado === 'NO_DISPONIBLE') &&
+    existing.Estado !== updated.Estado;
+
+  if (esTransicionANoDisponible) {
+    notifyVehiculoNoDisponible({
+      placa: updated.Placa,
+      marca: updated.Marca,
+      modelo: updated.Modelo,
+      estado: updated.Estado,
+    });
+  }
 
   return toVehiculoDto(updated);
 }

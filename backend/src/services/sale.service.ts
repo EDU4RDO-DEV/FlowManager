@@ -4,6 +4,7 @@ import { prisma } from '../config/prisma';
 import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
 import { anulateFelInvoice, emitFelInvoice } from './fel.service';
 import { registerInventoryMovement } from './inventory-movement.service';
+import { NotificationEvents, send } from './notification.service';
 
 type ListSalesInput = {
   page?: number;
@@ -772,6 +773,70 @@ export async function previewSaleBonuses(detalle: Array<{ idInventarioItem: numb
   }));
 }
 
+// Datos del evento PEDIDO_CREADO: "id" representa el número de pedido visible
+// para el usuario (Venta.NumeroVenta), no el Id interno de la fila.
+export function buildPedidoCreadoDatos(sale: ReturnType<typeof toSaleDto>) {
+  return {
+    id: sale.numeroVenta,
+    cliente: sale.cliente.nombre,
+    productos: sale.detalle.length,
+    total: sale.total,
+    pago: sale.condicionPago,
+    estado: sale.estadoPago,
+  };
+}
+
+// Notificación fire-and-forget: nunca debe bloquear ni afectar la venta ya creada.
+// send() no lanza excepciones (siempre resuelve un resultado clasificado), pero
+// el fallo se registra sin exponer el secreto del webhook.
+export function notifyPedidoCreado(sale: ReturnType<typeof toSaleDto>): void {
+  send(NotificationEvents.PEDIDO_CREADO, buildPedidoCreadoDatos(sale))
+    .then((result) => {
+      if (!result.ok) {
+        console.error(
+          `[notificaciones] No se pudo notificar PEDIDO_CREADO (venta #${sale.numeroVenta}): ${result.reason} - ${result.message}`,
+        );
+      }
+    })
+    .catch((error) => {
+      console.error(
+        `[notificaciones] Error inesperado notificando PEDIDO_CREADO (venta #${sale.numeroVenta}):`,
+        error instanceof Error ? error.message : error,
+      );
+    });
+}
+
+export function buildFacturaEmitidaDatos(sale: ReturnType<typeof toSaleDto>) {
+  return {
+    numeroVenta: sale.numeroVenta,
+    cliente: sale.cliente.nombre,
+    autorizacionFel: sale.autorizacionFel,
+    numeroFel: sale.numeroFel,
+    serieFel: sale.serieFel,
+    total: sale.total,
+  };
+}
+
+// Se dispara únicamente después del commit de createSale, nunca dentro del
+// callback de la transacción (un rollback posterior no debe generar un aviso
+// de una factura que nunca quedó confirmada).
+export function notifyFacturaEmitida(sale: ReturnType<typeof toSaleDto>): void {
+  send(NotificationEvents.FACTURA_EMITIDA, buildFacturaEmitidaDatos(sale))
+    .then((result) => {
+      if (!result.ok) {
+        console.error(
+          `[notificaciones] No se pudo notificar FACTURA_EMITIDA (venta #${sale.numeroVenta}): ${result.reason} - ${result.message}`,
+        );
+      }
+    })
+    .catch((error) => {
+      console.error(
+        `[notificaciones] Error inesperado notificando FACTURA_EMITIDA (venta #${sale.numeroVenta}):`,
+        error instanceof Error ? error.message : error,
+      );
+    });
+}
+
 export async function createSale(input: CreateSaleInput) {
   await validateUsuarioExists(input.idUsuario);
   const cliente = await getClienteActivo(input.idCliente);
@@ -1071,7 +1136,39 @@ export async function createSale(input: CreateSaleInput) {
     },
   );
 
+  // Efecto secundario: la venta ya quedó confirmada en la transacción anterior.
+  // Un fallo de n8n/Telegram nunca debe afectar la operación de negocio ya exitosa.
+  notifyPedidoCreado(created);
+
+  if (created.autorizacionFel && created.numeroFel && created.serieFel) {
+    notifyFacturaEmitida(created);
+  }
+
   return created;
+}
+
+export function buildPedidoEntregadoDatos(sale: ReturnType<typeof toSaleDto>) {
+  return {
+    numeroVenta: sale.numeroVenta,
+    cliente: sale.cliente.nombre,
+  };
+}
+
+export function notifyPedidoEntregado(sale: ReturnType<typeof toSaleDto>): void {
+  send(NotificationEvents.PEDIDO_ENTREGADO, buildPedidoEntregadoDatos(sale))
+    .then((result) => {
+      if (!result.ok) {
+        console.error(
+          `[notificaciones] No se pudo notificar PEDIDO_ENTREGADO (venta #${sale.numeroVenta}): ${result.reason} - ${result.message}`,
+        );
+      }
+    })
+    .catch((error) => {
+      console.error(
+        `[notificaciones] Error inesperado notificando PEDIDO_ENTREGADO (venta #${sale.numeroVenta}):`,
+        error instanceof Error ? error.message : error,
+      );
+    });
 }
 
 export async function updateSale(id: number, input: UpdateSaleInput) {
@@ -1092,6 +1189,15 @@ export async function updateSale(id: number, input: UpdateSaleInput) {
       RutaSesion: {
         select: {
           Estado: true,
+        },
+      },
+      Cliente: {
+        select: {
+          Entidad: {
+            select: {
+              NombreCompleto: true,
+            },
+          },
         },
       },
     },
@@ -1142,7 +1248,39 @@ export async function updateSale(id: number, input: UpdateSaleInput) {
     throw new Error('Venta no existe');
   }
 
-  return toSaleDto(updated);
+  const updatedDto = toSaleDto(updated);
+
+  // El guard previo ya impide modificar una venta con EstadoEntrega === 'ENTREGADO',
+  // por lo que llegar aquí con este valor siempre representa una transición real.
+  if (input.estadoEntrega === 'ENTREGADO') {
+    notifyPedidoEntregado(updatedDto);
+  }
+
+  return updatedDto;
+}
+
+export function buildVentaAnuladaDatos(sale: { numeroVenta: number; cliente: string }) {
+  return {
+    numeroVenta: sale.numeroVenta,
+    cliente: sale.cliente,
+  };
+}
+
+export function notifyVentaAnulada(sale: { numeroVenta: number; cliente: string }): void {
+  send(NotificationEvents.VENTA_ANULADA, buildVentaAnuladaDatos(sale))
+    .then((result) => {
+      if (!result.ok) {
+        console.error(
+          `[notificaciones] No se pudo notificar VENTA_ANULADA (venta #${sale.numeroVenta}): ${result.reason} - ${result.message}`,
+        );
+      }
+    })
+    .catch((error) => {
+      console.error(
+        `[notificaciones] Error inesperado notificando VENTA_ANULADA (venta #${sale.numeroVenta}):`,
+        error instanceof Error ? error.message : error,
+      );
+    });
 }
 
 export async function anulateSale(id: number, idUsuarioAnulador?: number) {
@@ -1169,6 +1307,15 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
         where: { Anulado: false },
         select: {
           Id: true,
+        },
+      },
+      Cliente: {
+        select: {
+          Entidad: {
+            select: {
+              NombreCompleto: true,
+            },
+          },
         },
       },
     },
@@ -1288,6 +1435,10 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
       },
     });
   });
+
+  // Se notifica solo cuando FEL (si aplicaba) y la transacción de anulación
+  // ya terminaron correctamente; nunca entre ambos pasos.
+  notifyVentaAnulada({ numeroVenta: sale.NumeroVenta, cliente: sale.Cliente.Entidad.NombreCompleto });
 }
 
 export async function listSalePayments(idVenta: number) {
@@ -1400,9 +1551,53 @@ async function recalculateSalePaymentStatus(
   };
 }
 
+export function buildPagoRecibidoDatos(payment: {
+  numeroVenta: number;
+  cliente: string;
+  monto: number;
+  metodoPago: string;
+  estadoPago: string;
+  saldo: number;
+}) {
+  return {
+    numeroVenta: payment.numeroVenta,
+    cliente: payment.cliente,
+    monto: payment.monto,
+    metodoPago: payment.metodoPago,
+    estadoPago: payment.estadoPago,
+    saldo: payment.saldo,
+  };
+}
+
+export function notifyPagoRecibido(payment: {
+  numeroVenta: number;
+  cliente: string;
+  monto: number;
+  metodoPago: string;
+  estadoPago: string;
+  saldo: number;
+}): void {
+  send(NotificationEvents.PAGO_RECIBIDO, buildPagoRecibidoDatos(payment))
+    .then((result) => {
+      if (!result.ok) {
+        console.error(
+          `[notificaciones] No se pudo notificar PAGO_RECIBIDO (venta #${payment.numeroVenta}): ${result.reason} - ${result.message}`,
+        );
+      }
+    })
+    .catch((error) => {
+      console.error(
+        `[notificaciones] Error inesperado notificando PAGO_RECIBIDO (venta #${payment.numeroVenta}):`,
+        error instanceof Error ? error.message : error,
+      );
+    });
+}
+
 export async function createSalePayment(idVenta: number, input: CreateSalePaymentInput) {
   await validateUsuarioExists(input.idUsuario);
   validatePaymentRules(input);
+
+  let saleInfo: { numeroVenta: number; cliente: string } | undefined;
 
   const created = await prisma.$transaction(async (tx) => {
     const sale = await tx.venta.findFirst({
@@ -1412,12 +1607,24 @@ export async function createSalePayment(idVenta: number, input: CreateSalePaymen
       },
       select: {
         Id: true,
+        NumeroVenta: true,
+        Cliente: {
+          select: {
+            Entidad: {
+              select: {
+                NombreCompleto: true,
+              },
+            },
+          },
+        },
       },
     });
 
     if (!sale) {
       throw new Error('Venta no existe');
     }
+
+    saleInfo = { numeroVenta: sale.NumeroVenta, cliente: sale.Cliente.Entidad.NombreCompleto };
 
     const current = await recalculateSalePaymentStatus(tx, idVenta);
     if (input.monto > current.saldo) {
@@ -1457,6 +1664,17 @@ export async function createSalePayment(idVenta: number, input: CreateSalePaymen
       saldo: recalculated.saldo,
     };
   });
+
+  if (saleInfo) {
+    notifyPagoRecibido({
+      numeroVenta: saleInfo.numeroVenta,
+      cliente: saleInfo.cliente,
+      monto: created.monto,
+      metodoPago: created.metodoPago,
+      estadoPago: created.estadoPago,
+      saldo: created.saldo,
+    });
+  }
 
   return created;
 }
