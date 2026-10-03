@@ -185,6 +185,11 @@ export default function PayrollPage() {
     setAjusteMonto("");
   }
 
+  function removeAjuste(index: number) {
+    setAjustes((prev) => prev.filter((_, i) => i !== index));
+  }
+
+
   async function handlePreview() {
     const payload = currentPayload();
     if (!payload) return;
@@ -388,9 +393,21 @@ export default function PayrollPage() {
                 {ajustes.length > 0 ? (
                   <div className="space-y-1 text-sm">
                     {ajustes.map((item, idx) => (
-                      <div key={`ajuste-${idx}`} className="flex justify-between rounded-md border bg-background px-3 py-2">
+                      <div key={`ajuste-${idx}`} className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
                         <span>{item.tipoAjuste} · {item.descripcion}</span>
-                        <span>{money(item.monto)}</span>
+                        <div className="flex items-center gap-2">
+                          <span>{money(item.monto)}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            title="Quitar ajuste"
+                            aria-label="Quitar ajuste"
+                            onClick={() => removeAjuste(idx)}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
