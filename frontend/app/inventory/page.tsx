@@ -62,7 +62,7 @@ function formatMoney(value: number): string {
   });
 }
 
-type CategoryFilter = "" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA" | "INSUMO";
+type CategoryFilter = "" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA" | "INSUMO" | "ENVASE";
 
 export default function InventoryPage() {
   const { user } = useAuth();
@@ -289,6 +289,7 @@ export default function InventoryPage() {
                     <option value="PRODUCTO_TERMINADO">PRODUCTO_TERMINADO</option>
                     <option value="MATERIA_PRIMA">MATERIA_PRIMA</option>
                     <option value="INSUMO">INSUMO</option>
+                    <option value="ENVASE">ENVASE</option>
                   </select>
                 </div>
 

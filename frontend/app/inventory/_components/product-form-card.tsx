@@ -42,6 +42,7 @@ const CATEGORY_OPTIONS: ProductDto["categoria"][] = [
   "PRODUCTO_TERMINADO",
   "MATERIA_PRIMA",
   "INSUMO",
+  "ENVASE",
 ];
 
 function resolveImagePreviewUrl(rutaImagen: string): string {
