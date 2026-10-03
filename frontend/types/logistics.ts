@@ -181,3 +181,67 @@ export type UpdateGastoVehiculoPayload = {
   referenciaPago?: string | null;
   idUsuarioModificador?: number;
 };
+
+export type TipoMantenimiento = "PREVENTIVO" | "CORRECTIVO";
+export type EstadoMantenimiento = "PROGRAMADO" | "REALIZADO" | "CANCELADO";
+
+export interface MantenimientoVehiculoDto {
+  id: number;
+  idVehiculo: number;
+  idProveedor: number | null;
+  idUsuario: number;
+  tipoMantenimiento: TipoMantenimiento;
+  descripcion: string;
+  fechaMantenimiento: string;
+  costo: number | null;
+  estado: EstadoMantenimiento;
+  proximoMantenimiento: string | null;
+  observaciones: string | null;
+  rutaImagen: string | null;
+  fechaRegistro: string | null;
+  idUsuarioModificador: number | null;
+  fechaModificacion: string | null;
+  anulado: boolean;
+  idUsuarioAnulador: number | null;
+  fechaAnulacion: string | null;
+  vehiculo?: {
+    id: number;
+    placa: string;
+    marca: string;
+    modelo: string;
+  };
+  proveedor?: {
+    id: number;
+    nombre: string;
+  } | null;
+  usuario?: {
+    id: number;
+    nombre: string;
+  };
+}
+
+export type CreateMantenimientoPayload = {
+  idVehiculo: number;
+  idProveedor?: number;
+  tipoMantenimiento: TipoMantenimiento;
+  descripcion: string;
+  fechaMantenimiento: string;
+  costo?: number;
+  estado?: EstadoMantenimiento;
+  proximoMantenimiento?: string;
+  observaciones?: string;
+  rutaImagen?: string;
+};
+
+export type UpdateMantenimientoPayload = {
+  idProveedor?: number | null;
+  tipoMantenimiento?: TipoMantenimiento;
+  descripcion?: string;
+  fechaMantenimiento?: string;
+  costo?: number | null;
+  estado?: EstadoMantenimiento;
+  proximoMantenimiento?: string | null;
+  observaciones?: string | null;
+  rutaImagen?: string | null;
+  idUsuarioModificador?: number;
+};

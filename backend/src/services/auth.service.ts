@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
+import { rbacModuleKeys } from '../validators/role-permission.validators';
 
 type LoginInput = {
   correo: string;
@@ -28,20 +29,8 @@ type LoginResult = {
 };
 
 type CrudAction = 'read' | 'create' | 'update' | 'delete';
-type FrontendModuleKey =
-  | 'resumen'
-  | 'usuarios'
-  | 'roles'
-  | 'empleados'
-  | 'clientes'
-  | 'ventas'
-  | 'logistica'
-  | 'proveedores'
-  | 'compras'
-  | 'planilla'
-  | 'sesiones'
-  | 'produccion'
-  | 'inventario';
+// Única fuente de verdad de módulos válidos: rbacModuleKeys (validators/role-permission.validators.ts).
+type FrontendModuleKey = (typeof rbacModuleKeys)[number];
 
 type BackendModuleKey = FrontendModuleKey;
 
@@ -88,37 +77,6 @@ const JWT_AUDIENCE = process.env.JWT_AUDIENCE ?? 'flowmanager.web';
 const BCRYPT_SALT_ROUNDS = Number(process.env.BCRYPT_SALT_ROUNDS ?? '12');
 
 const CRUD_ACTIONS: CrudAction[] = ['read', 'create', 'update', 'delete'];
-const FRONTEND_MODULES: FrontendModuleKey[] = [
-  'resumen',
-  'usuarios',
-  'roles',
-  'empleados',
-  'clientes',
-  'ventas',
-  'logistica',
-  'proveedores',
-  'compras',
-  'planilla',
-  'sesiones',
-  'produccion',
-  'inventario',
-];
-
-const BACKEND_MODULES: BackendModuleKey[] = [
-  'resumen',
-  'usuarios',
-  'roles',
-  'empleados',
-  'clientes',
-  'ventas',
-  'logistica',
-  'proveedores',
-  'compras',
-  'planilla',
-  'sesiones',
-  'produccion',
-  'inventario',
-];
 
 function parseCountValue(row: Record<string, unknown> | undefined): number {
   if (!row) {
@@ -152,7 +110,7 @@ async function persistedPermissionsConfigured(): Promise<boolean> {
 
 function buildDefaultPermissions(): UserPermissionsMap {
   const map: UserPermissionsMap = {};
-  for (const moduleKey of FRONTEND_MODULES) {
+  for (const moduleKey of rbacModuleKeys) {
     map[moduleKey] = [];
   }
   return map;
@@ -178,7 +136,7 @@ async function resolveEffectivePermissions(idRol: number | null): Promise<UserPe
       Permitido: true,
       Anulado: false,
       ModuloSistema: {
-        Clave: { in: [...BACKEND_MODULES] },
+        Clave: { in: [...rbacModuleKeys] },
         Anulado: false,
       },
       AccionSistema: {

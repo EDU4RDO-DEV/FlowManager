@@ -2,14 +2,17 @@ import { api } from "@/lib/api";
 import type { ApiResponse } from "@/types/auth";
 import type {
   CreateGastoVehiculoPayload,
+  CreateMantenimientoPayload,
   CreateRutaPayload,
   CreateRutaSesionPayload,
   CreateVehiculoPayload,
   GastoVehiculoDto,
   LogisticsListResponse,
+  MantenimientoVehiculoDto,
   RutaDto,
   RutaSesionDto,
   UpdateGastoVehiculoPayload,
+  UpdateMantenimientoPayload,
   UpdateRutaPayload,
   UpdateRutaSesionPayload,
   UpdateVehiculoPayload,
@@ -228,5 +231,78 @@ export async function uploadGastoVehiculoImage(file: File): Promise<{ rutaImagen
     throw new Error(data.message || "Respuesta invalida al subir comprobante");
   }
 
+  return data.data;
+}
+
+export async function listMantenimientos(params?: {
+  idVehiculo?: number;
+  estado?: string;
+  tipoMantenimiento?: string;
+  anulado?: boolean;
+}): Promise<MantenimientoVehiculoDto[]> {
+  const { data } = await api.get<LogisticsListResponse<MantenimientoVehiculoDto>>(
+    "/api/logistics/mantenimientos",
+    {
+      params: {
+        ...(params?.idVehiculo !== undefined ? { idVehiculo: params.idVehiculo } : {}),
+        ...(params?.estado ? { estado: params.estado } : {}),
+        ...(params?.tipoMantenimiento ? { tipoMantenimiento: params.tipoMantenimiento } : {}),
+        ...(params?.anulado !== undefined ? { anulado: String(params.anulado) } : {}),
+      },
+    },
+  );
+
+  return data.data ?? [];
+}
+
+export async function listAnulatedMantenimientos(): Promise<MantenimientoVehiculoDto[]> {
+  const { data } = await api.get<LogisticsListResponse<MantenimientoVehiculoDto>>(
+    "/api/logistics/mantenimientos/anulados",
+  );
+  return data.data ?? [];
+}
+
+export async function createMantenimiento(
+  payload: CreateMantenimientoPayload,
+): Promise<MantenimientoVehiculoDto> {
+  const { data } = await api.post<ApiResponse<MantenimientoVehiculoDto>>(
+    "/api/logistics/mantenimientos",
+    payload,
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al crear mantenimiento");
+  }
+  return data.data;
+}
+
+export async function updateMantenimiento(
+  id: number,
+  payload: UpdateMantenimientoPayload,
+): Promise<MantenimientoVehiculoDto> {
+  const { data } = await api.patch<ApiResponse<MantenimientoVehiculoDto>>(
+    `/api/logistics/mantenimientos/${id}`,
+    payload,
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al actualizar mantenimiento");
+  }
+  return data.data;
+}
+
+export async function deleteMantenimiento(id: number, payload?: { idUsuarioAnulador: number }): Promise<void> {
+  await api.delete(`/api/logistics/mantenimientos/${id}`, { data: payload });
+}
+
+export async function restoreMantenimiento(
+  id: number,
+  payload?: { idUsuarioModificador: number },
+): Promise<MantenimientoVehiculoDto> {
+  const { data } = await api.patch<ApiResponse<MantenimientoVehiculoDto>>(
+    `/api/logistics/mantenimientos/${id}/restaurar`,
+    payload,
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al restaurar mantenimiento");
+  }
   return data.data;
 }

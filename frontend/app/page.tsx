@@ -7,6 +7,8 @@ import {
   Building2,
   CalendarDays,
   CreditCard,
+  Droplet,
+  PackageOpen,
   PackageSearch,
   ShieldCheck,
   UserCog,
@@ -77,6 +79,20 @@ const modulesCatalog: Array<{
     path: "/users",
     icon: UserCog,
   },
+  {
+    key: "envases",
+    title: "Envases Retornables",
+    description: "Préstamos y devoluciones de envases a clientes.",
+    path: "/envases",
+    icon: PackageOpen,
+  },
+  {
+    key: "calidad",
+    title: "Control de Calidad",
+    description: "Registro diario de pH y cloro del agua.",
+    path: "/quality",
+    icon: Droplet,
+  },
 ];
 
 const dashboardModules: AppModuleKey[] = [
@@ -91,6 +107,8 @@ const dashboardModules: AppModuleKey[] = [
   "sesiones",
   "produccion",
   "inventario",
+  "envases",
+  "calidad",
 ];
 
 export default function HomePage() {

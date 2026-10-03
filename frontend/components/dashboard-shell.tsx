@@ -24,6 +24,7 @@ import {
   LayoutDashboard,
   Menu,
   LogOut,
+  PackageOpen,
   PackageSearch,
   Receipt,
   ReceiptText,
@@ -124,6 +125,8 @@ export function DashboardShell({ title, description, children }: DashboardShellP
         planilla: allowedModules.includes("planilla"),
         usuarios: allowedModules.includes("usuarios"),
         roles: allowedModules.includes("roles"),
+        envases: allowedModules.includes("envases"),
+        calidad: allowedModules.includes("calidad"),
       };
 
       return [
@@ -209,6 +212,14 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                   icon: Fuel,
                   available: has.logistica,
                   isActive: (currentPath: string) => isPathActive(currentPath, "/logistics/expenses"),
+                },
+                {
+                  id: "logistica-mantenimiento",
+                  name: "Mantenimiento",
+                  path: "/logistics/maintenance",
+                  icon: Wrench,
+                  available: has.logistica,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/logistics/maintenance"),
                 },
               ],
             },
@@ -304,6 +315,34 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                   isActive: (currentPath: string) => isPathActive(currentPath, "/providers"),
                 },
               ],
+            },
+          ],
+        },
+        {
+          id: "calidad-envases",
+          title: "CALIDAD Y ENVASES",
+          items: [
+            {
+              type: "link",
+              item: {
+                id: "envases",
+                name: "Envases Retornables",
+                path: "/envases",
+                icon: PackageOpen,
+                available: has.envases,
+                isActive: (currentPath: string) => isPathActive(currentPath, "/envases"),
+              },
+            },
+            {
+              type: "link",
+              item: {
+                id: "calidad",
+                name: "Control de Calidad",
+                path: "/quality",
+                icon: Droplet,
+                available: has.calidad,
+                isActive: (currentPath: string) => isPathActive(currentPath, "/quality"),
+              },
             },
           ],
         },
