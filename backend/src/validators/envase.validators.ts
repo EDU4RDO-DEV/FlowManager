@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-const positiveInt = z.number().int('debe ser entero').positive('debe ser mayor a 0');
+import { positiveInt } from './validation';
+
 const positiveNumber = z.number().finite('debe ser un número válido').positive('debe ser mayor a 0');
 
 export const movimientoEnvaseIdParamsSchema = z.object({

@@ -1,11 +1,6 @@
 import { z } from 'zod';
 
-const positiveInt = z.number().int('debe ser entero').positive('debe ser mayor a 0');
-
-const dateString = z
-  .string()
-  .trim()
-  .refine((value) => !Number.isNaN(new Date(value).getTime()), 'fecha inválida');
+import { dateString, positiveInt } from './validation';
 
 const cloroValue = z.number().finite('debe ser un número válido').min(0, 'debe ser mayor o igual a 0');
 const phValue = z.number().finite('debe ser un número válido').min(0, 'debe ser mayor o igual a 0').max(14, 'pH debe estar entre 0 y 14');

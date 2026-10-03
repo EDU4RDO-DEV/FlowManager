@@ -1,12 +1,6 @@
 import { z } from 'zod';
 
-const positiveInt = z.number().int('debe ser entero').positive('debe ser mayor a 0');
-const nonNegativeNumber = z.number().finite('debe ser un número válido').nonnegative('debe ser mayor o igual a 0');
-
-const dateString = z
-  .string()
-  .trim()
-  .refine((value) => !Number.isNaN(new Date(value).getTime()), 'fecha inválida');
+import { dateString, nonNegativeNumber, positiveInt } from './validation';
 
 const tipoMantenimientoSchema = z.enum(['PREVENTIVO', 'CORRECTIVO']);
 const estadoMantenimientoSchema = z.enum(['PROGRAMADO', 'REALIZADO', 'CANCELADO']);

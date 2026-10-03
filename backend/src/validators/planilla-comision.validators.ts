@@ -1,18 +1,8 @@
 import { z } from 'zod';
 
-const positiveInt = z.number().int('debe ser entero').positive('debe ser mayor a 0');
-
-const finitePositiveNumber = z
-  .number()
-  .finite('debe ser un número válido')
-  .positive('debe ser mayor a 0');
+import { finitePositiveNumber, optionalBooleanFromQuery, positiveInt } from './validation';
 
 const tipoCalculoSchema = z.enum(['PORCENTAJE_VENTA', 'MONTO_POR_UNIDAD']);
-
-const optionalBooleanFromQuery = z
-  .enum(['true', 'false'])
-  .transform((value) => value === 'true')
-  .optional();
 
 export const comisionConfigIdParamsSchema = z.object({
   id: z.coerce.number().int('id debe ser entero').positive('id debe ser mayor a 0'),

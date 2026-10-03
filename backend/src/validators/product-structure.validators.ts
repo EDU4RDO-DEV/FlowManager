@@ -1,14 +1,6 @@
 import { z } from 'zod';
 
-const positiveInt = z
-  .number()
-  .int('debe ser entero')
-  .positive('debe ser mayor a 0');
-
-const finitePositiveNumber = z
-  .number()
-  .finite('debe ser un número válido')
-  .positive('debe ser mayor a 0');
+import { finitePositiveNumber, positiveInt } from './validation';
 
 export const structureIdParamsSchema = z.object({
   id: z.coerce.number().int('id debe ser entero').positive('id debe ser mayor a 0'),

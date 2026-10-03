@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { positiveInt } from './validation';
+
 export const rbacModuleKeys = [
   'resumen',
   'usuarios',
@@ -19,11 +21,6 @@ export const rbacModuleKeys = [
 ] as const;
 
 export const rbacActionKeys = ['read', 'create', 'update', 'delete'] as const;
-
-const positiveInt = z
-  .number()
-  .int('debe ser entero')
-  .positive('debe ser mayor a 0');
 
 export const roleIdParamsSchema = z.object({
   id: z.coerce.number().int('id debe ser entero').positive('id debe ser mayor a 0'),

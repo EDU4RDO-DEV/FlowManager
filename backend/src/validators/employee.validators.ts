@@ -1,16 +1,6 @@
 import { z } from 'zod';
 
-const positiveInt = z.number().int('debe ser entero').positive('debe ser mayor a 0');
-
-const finitePositiveNumber = z
-  .number()
-  .finite('debe ser un número válido')
-  .positive('debe ser mayor a 0');
-
-const dateString = z
-  .string()
-  .trim()
-  .refine((value) => !Number.isNaN(new Date(value).getTime()), 'fecha inválida');
+import { dateString, finitePositiveNumber, positiveInt } from './validation';
 
 const optionalString255 = z.string().trim().max(255, 'demasiado largo').optional();
 

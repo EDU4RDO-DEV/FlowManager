@@ -1,11 +1,6 @@
 import { z } from 'zod';
 
-const positiveInt = z.number().int('debe ser entero').positive('debe ser mayor a 0');
-
-const dateString = z
-  .string()
-  .trim()
-  .refine((value) => !Number.isNaN(new Date(value).getTime()), 'fecha inválida');
+import { dateString, positiveInt } from './validation';
 
 const entityCreateSchema = z.object({
   nombreCompleto: z.string().trim().min(1, 'entidad.nombreCompleto es obligatorio').max(255, 'entidad.nombreCompleto demasiado largo'),

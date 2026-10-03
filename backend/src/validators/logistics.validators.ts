@@ -1,10 +1,6 @@
 import { z } from 'zod';
 
-const positiveInt = z.number().int('debe ser entero').positive('debe ser mayor a 0');
-const optionalBooleanFromQuery = z
-  .enum(['true', 'false'])
-  .transform((value) => value === 'true')
-  .optional();
+import { dateString, optionalBooleanFromQuery, positiveInt } from './validation';
 
 const vehiculoEstadoSchema = z.enum([
   'DISPONIBLE',
@@ -33,11 +29,7 @@ const dateOnlySchema = z
   .trim()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'fechaSesion debe tener formato YYYY-MM-DD');
 
-const optionalDateTimeSchema = z
-  .string()
-  .trim()
-  .refine((value) => !Number.isNaN(new Date(value).getTime()), 'fecha inválida')
-  .optional();
+const optionalDateTimeSchema = dateString.optional();
 
 export const logisticsIdParamsSchema = z.object({
   id: z.coerce.number().int('id debe ser entero').positive('id debe ser mayor a 0'),

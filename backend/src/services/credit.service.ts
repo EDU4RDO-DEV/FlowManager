@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
+import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
 import { anulateSalePayment, createSalePayment, listSalePayments } from './sale.service';
 
 type ListCreditsInput = {
@@ -171,9 +172,7 @@ async function getCreditSaleId(id: number): Promise<number> {
 }
 
 export async function listCredits(input: ListCreditsInput) {
-  const page = input.page ?? 1;
-  const limit = input.limit ?? 20;
-  const skip = (page - 1) * limit;
+  const { page, limit, skip } = resolvePagination(input);
 
   const where: Prisma.CuentaPorCobrarWhereInput = {
     ...(input.anulado !== undefined ? { Anulado: input.anulado } : { Anulado: false }),
@@ -233,12 +232,7 @@ export async function listCredits(input: ListCreditsInput) {
 
   return {
     items: rows.map(toCreditDto),
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
+    pagination: buildPaginationMeta(page, limit, total),
   };
 }
 

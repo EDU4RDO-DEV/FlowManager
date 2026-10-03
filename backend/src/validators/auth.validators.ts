@@ -1,9 +1,6 @@
 import { z } from 'zod';
 
-const positiveInt = z
-  .number()
-  .int('debe ser entero')
-  .positive('debe ser mayor a 0');
+import { positiveInt } from './validation';
 
 export const loginSchema = z.object({
   correo: z.string().trim().email('correo inválido').max(255, 'correo demasiado largo'),

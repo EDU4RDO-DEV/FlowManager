@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const positiveInt = z.number().int('debe ser entero').positive('debe ser mayor a 0');
+import { optionalBooleanFromQuery, positiveInt } from './validation';
 
 const ajusteTipoSchema = z.enum(['BONO_META', 'VIATICO', 'DESCUENTO']);
 
@@ -13,11 +13,6 @@ const ajusteSchema = z.object({
     .max(255, 'descripcion demasiado larga'),
   monto: z.number().finite('monto inválido').nonnegative('monto debe ser mayor o igual a 0'),
 });
-
-const optionalBooleanFromQuery = z
-  .enum(['true', 'false'])
-  .transform((value) => value === 'true')
-  .optional();
 
 export const planillaIdParamsSchema = z.object({
   id: z.coerce.number().int('id debe ser entero').positive('id debe ser mayor a 0'),

@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma';
+import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
 import {
   anulateInventoryMovementByReference,
   registerInventoryMovement,
@@ -152,9 +153,7 @@ async function validateUniqueNameInCategory(nombre: string, categoria: string, e
 }
 
 export async function listProducts(input: ListProductsInput) {
-  const page = input.page ?? 1;
-  const limit = input.limit ?? 20;
-  const skip = (page - 1) * limit;
+  const { page, limit, skip } = resolvePagination(input);
 
   const where = {
     ...(input.anulado !== undefined ? { Anulado: input.anulado } : { Anulado: false }),
@@ -194,12 +193,7 @@ export async function listProducts(input: ListProductsInput) {
 
   return {
     items: products.map(toProductDto),
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
+    pagination: buildPaginationMeta(page, limit, total),
   };
 }
 

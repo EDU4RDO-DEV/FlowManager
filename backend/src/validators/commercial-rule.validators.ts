@@ -1,13 +1,8 @@
 import { z } from 'zod';
 
-const positiveInt = z.number().int('debe ser entero').positive('debe ser mayor a 0');
-const nonNegativeNumber = z.number().finite('debe ser un número válido').nonnegative('debe ser mayor o igual a 0');
-const positiveNumber = z.number().finite('debe ser un número válido').positive('debe ser mayor a 0');
+import { dateString, nonNegativeNumber, positiveInt } from './validation';
 
-const dateString = z
-  .string()
-  .trim()
-  .refine((value) => !Number.isNaN(new Date(value).getTime()), 'fecha inválida');
+const positiveNumber = z.number().finite('debe ser un número válido').positive('debe ser mayor a 0');
 
 export const tipoCreditoIdParamsSchema = z.object({
   id: z.coerce.number().int('id debe ser entero').positive('id debe ser mayor a 0'),
