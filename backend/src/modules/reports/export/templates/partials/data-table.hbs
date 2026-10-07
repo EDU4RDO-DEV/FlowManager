@@ -1,0 +1,58 @@
+{{#if hasData}}
+<div class="data-table-wrapper">
+  <table class="data-table">
+    <thead>
+      <tr>
+        {{#each columns}}
+        <th class="{{alignClass this}}">{{this.label}}</th>
+        {{/each}}
+      </tr>
+    </thead>
+    <tbody>
+      {{#if groups.length}}
+        {{#each groups}}
+          <tr class="row-group-header">
+            <td colspan="{{../columnCount}}">{{this.label}}</td>
+          </tr>
+          {{#each this.rows}}
+          <tr>
+            {{#each ../../columns}}
+            <td class="{{alignClass this}}">{{formatCell (lookup ../this this.key) this.type}}</td>
+            {{/each}}
+          </tr>
+          {{/each}}
+          {{#if this.subtotals}}
+          <tr class="row-subtotal">
+            {{#each ../columns}}
+            <td class="{{alignClass this}}">{{#if @first}}Subtotal{{else}}{{formatCell (lookup ../subtotals this.key) this.type}}{{/if}}</td>
+            {{/each}}
+          </tr>
+          {{/if}}
+        {{/each}}
+      {{else}}
+        {{#each rows}}
+        <tr>
+          {{#each ../columns}}
+          <td class="{{alignClass this}}">{{formatCell (lookup ../this this.key) this.type}}</td>
+          {{/each}}
+        </tr>
+        {{/each}}
+      {{/if}}
+
+      {{#if totals}}
+      <tr class="row-grand-total">
+        {{#each columns}}
+        <td class="{{alignClass this}}">{{#if @first}}TOTAL GENERAL{{else}}{{formatCell (lookup ../totals this.key) this.type}}{{/if}}</td>
+        {{/each}}
+      </tr>
+      {{/if}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+  {{> empty-state}}
+{{/if}}
+
+{{#if truncado}}
+<p class="truncated-note">Se alcanzó el límite de filas del reporte. Mostrando los primeros {{rows.length}} registros.</p>
+{{/if}}

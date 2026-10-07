@@ -1,0 +1,18 @@
+<header class="report-header">
+  <div class="report-header__brand">
+    {{#if company.logoDataUri}}
+      <img class="report-header__logo" src="{{company.logoDataUri}}" alt="{{company.nombreComercial}}" />
+    {{else}}
+      <div class="report-header__logo-fallback">{{initial company.nombreComercial}}</div>
+    {{/if}}
+    <div>
+      <div class="report-header__company">{{company.nombreComercial}}</div>
+      {{#if company.direccion}}<div class="report-header__company-sub">{{company.direccion}}</div>{{/if}}
+    </div>
+  </div>
+  <div class="report-header__title-block">
+    <div class="report-header__title">{{report.nombre}}</div>
+    {{#if report.descripcion}}<div class="report-header__subtitle">{{report.descripcion}}</div>{{/if}}
+    <span class="report-header__category">{{report.categoriaLabel}}</span>
+  </div>
+</header>

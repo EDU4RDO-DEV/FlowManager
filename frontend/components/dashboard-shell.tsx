@@ -127,6 +127,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
         roles: allowedModules.includes("roles"),
         envases: allowedModules.includes("envases"),
         calidad: allowedModules.includes("calidad"),
+        reportes: allowedModules.includes("reportes"),
       };
 
       return [
@@ -393,8 +394,10 @@ export function DashboardShell({ title, description, children }: DashboardShellP
               item: {
                 id: "reportes",
                 name: "Reportes y Analítica",
+                path: "/reports",
                 icon: BarChart3,
-                available: false,
+                available: has.reportes,
+                isActive: (currentPath: string) => isPathActive(currentPath, "/reports"),
               },
             },
             {

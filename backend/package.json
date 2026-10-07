@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-report-templates.js",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
@@ -24,9 +24,12 @@
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
+    "handlebars": "^4.7.10",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
+    "puppeteer": "^25.12.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

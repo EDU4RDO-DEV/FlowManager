@@ -15,7 +15,8 @@ export type AppModuleKey =
   | 'produccion'
   | 'inventario'
   | 'envases'
-  | 'calidad';
+  | 'calidad'
+  | 'reportes';
 
 export type CrudAction = 'read' | 'create' | 'update' | 'delete';
 
@@ -35,6 +36,7 @@ const ALL_MODULES: AppModuleKey[] = [
   'inventario',
   'envases',
   'calidad',
+  'reportes',
 ];
 
 export const RBAC_PREVIEW_MODE =

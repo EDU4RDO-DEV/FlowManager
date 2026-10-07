@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>{{report.nombre}}</title>
+  <style>{{{css}}}</style>
+</head>
+<body class="layout-financial">
+  <div class="report-document">
+    {{> report-header}}
+    {{> report-meta}}
+    {{> kpi-group}}
+    <section class="report-section">
+      <div class="report-section__title">Detalle financiero</div>
+      {{> data-table}}
+    </section>
+  </div>
+</body>
+</html>

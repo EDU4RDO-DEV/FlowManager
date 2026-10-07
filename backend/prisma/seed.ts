@@ -26,6 +26,7 @@ const ROLE_PERMISSIONS: Record<Exclude<(typeof ROLE_ORDER)[number], 'Administrad
     inventario: ['read'],
     logistica: ['read', 'create', 'update'],
     envases: ['read', 'create'],
+    reportes: ['read'],
   },
   Chofer: {
     resumen: ['read'],

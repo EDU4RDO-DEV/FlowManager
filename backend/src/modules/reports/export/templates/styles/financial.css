@@ -1,0 +1,23 @@
+/* Layout FINANCIAL — reportes de créditos/cartera: jerarquía fuerte en montos. */
+
+.layout-financial .kpi-group {
+  gap: var(--space-4);
+}
+
+.layout-financial .kpi-card {
+  border-left-width: 3.5pt;
+  padding: var(--space-3);
+}
+
+.layout-financial .kpi-card__value {
+  font-size: 13.5pt;
+}
+
+.layout-financial .data-table td.align-right,
+.layout-financial .data-table th.align-right {
+  font-variant-numeric: tabular-nums;
+}
+
+.layout-financial .row-grand-total td {
+  font-size: var(--font-size-base);
+}

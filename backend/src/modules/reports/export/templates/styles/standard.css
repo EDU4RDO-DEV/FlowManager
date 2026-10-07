@@ -1,0 +1,5 @@
+/* Layout STANDARD — uso general (Ventas, Clientes, Envases, Facturación). */
+
+.layout-standard .kpi-card {
+  min-width: 90pt;
+}

@@ -1,3 +1,8 @@
 packages:
   - backend
   - frontend
+
+# Permite que el postinstall de Puppeteer descargue Chromium automáticamente
+# (pnpm bloquea scripts de instalación por defecto por seguridad).
+onlyBuiltDependencies:
+  - puppeteer

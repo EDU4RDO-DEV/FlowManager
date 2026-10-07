@@ -1,0 +1,23 @@
+/* Layout INVENTORY/LANDSCAPE — muchas columnas: densidad mayor, tipografía algo menor. */
+
+.layout-inventory-landscape {
+  font-size: var(--font-size-sm);
+}
+
+.layout-inventory-landscape .data-table th,
+.layout-inventory-landscape .data-table td {
+  padding: 2.5pt 5pt;
+  font-size: var(--font-size-xs);
+}
+
+.layout-inventory-landscape .kpi-group {
+  gap: var(--space-2);
+}
+
+.layout-inventory-landscape .kpi-card {
+  padding: var(--space-2);
+}
+
+.layout-inventory-landscape .kpi-card__value {
+  font-size: var(--font-size-base);
+}

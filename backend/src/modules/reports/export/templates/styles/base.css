@@ -1,0 +1,334 @@
+/*
+  FlowManager — Design System de Reportes (Industrias Basán)
+  Tipografía: pila de fuentes del sistema (Arial/Helvetica/Segoe UI). Se evita cargar
+  fuentes externas por archivo o red para que el PDF se genere igual sin importar dónde
+  corra el backend (sección 25 del requerimiento: nada de rutas frágiles).
+*/
+
+:root {
+  --ink: #111827;
+  --ink-soft: #334155;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --primary: #1e3a5f;
+  --primary-dark: #14283f;
+  --accent: #2563eb;
+  --surface: #ffffff;
+  --surface-muted: #f8fafc;
+  --surface-strip: #eef2f7;
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #b91c1c;
+
+  --font-family: Arial, "Helvetica Neue", Helvetica, "Segoe UI", sans-serif;
+  --font-size-base: 9.5pt;
+  --font-size-sm: 8pt;
+  --font-size-xs: 7.2pt;
+  --font-size-lg: 12pt;
+  --font-size-xl: 16pt;
+
+  --space-1: 3pt;
+  --space-2: 6pt;
+  --space-3: 10pt;
+  --space-4: 14pt;
+  --space-5: 20pt;
+
+  --radius: 3pt;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  color: var(--ink);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.report-document {
+  padding: var(--space-4) var(--space-5);
+}
+
+/* ===== Encabezado (una sola vez, al inicio del documento) ===== */
+
+.report-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 2pt solid var(--primary);
+  break-inside: avoid;
+  break-after: avoid;
+}
+
+.report-header__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.report-header__logo {
+  width: 40pt;
+  height: 40pt;
+  border-radius: var(--radius);
+  object-fit: contain;
+}
+
+.report-header__logo-fallback {
+  width: 40pt;
+  height: 40pt;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+}
+
+.report-header__company {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--primary-dark);
+  line-height: 1.15;
+}
+
+.report-header__company-sub {
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  margin-top: 1pt;
+}
+
+.report-header__title-block {
+  text-align: right;
+}
+
+.report-header__title {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.3pt;
+  text-transform: uppercase;
+}
+
+.report-header__subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--muted);
+  margin-top: 2pt;
+  max-width: 280pt;
+}
+
+.report-header__category {
+  display: inline-block;
+  margin-top: var(--space-2);
+  padding: 1.5pt 7pt;
+  background: var(--surface-strip);
+  color: var(--primary-dark);
+  border-radius: 10pt;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3pt;
+}
+
+/* ===== Metadatos / filtros utilizados ===== */
+
+.report-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) 0 var(--space-3);
+  margin-bottom: var(--space-3);
+  border-bottom: 0.75pt solid var(--border);
+  break-inside: avoid;
+}
+
+.report-meta__item {
+  min-width: 110pt;
+}
+
+.report-meta__label {
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3pt;
+  font-weight: 700;
+}
+
+.report-meta__value {
+  font-size: var(--font-size-sm);
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+/* ===== KPIs ===== */
+
+.kpi-group {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  break-inside: avoid;
+}
+
+.kpi-card {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-muted);
+  border: 0.75pt solid var(--border);
+  border-left: 2.5pt solid var(--primary);
+  border-radius: var(--radius);
+}
+
+.kpi-card__label {
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3pt;
+  font-weight: 700;
+}
+
+.kpi-card__value {
+  font-size: var(--font-size-lg);
+  color: var(--primary-dark);
+  font-weight: 700;
+  margin-top: 1.5pt;
+}
+
+/* ===== Tablas ===== */
+
+.data-table-wrapper {
+  margin-bottom: var(--space-4);
+}
+
+table.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table thead {
+  display: table-header-group;
+}
+
+.data-table tr {
+  break-inside: avoid;
+}
+
+.data-table th {
+  background: var(--primary);
+  color: var(--surface);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2pt;
+  padding: var(--space-2) var(--space-2);
+  text-align: left;
+  border-bottom: 1pt solid var(--primary-dark);
+}
+
+.data-table th.align-right,
+.data-table td.align-right {
+  text-align: right;
+}
+
+.data-table th.align-center,
+.data-table td.align-center {
+  text-align: center;
+}
+
+.data-table td {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--ink-soft);
+  border-bottom: 0.5pt solid var(--border);
+  vertical-align: top;
+}
+
+.data-table tbody tr:nth-child(even):not(.row-group-header):not(.row-subtotal):not(.row-grand-total) td {
+  background: var(--surface-muted);
+}
+
+.data-table .row-group-header td {
+  background: var(--surface-strip);
+  color: var(--primary-dark);
+  font-weight: 700;
+  font-size: var(--font-size-sm);
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-top: 0.75pt solid var(--border-strong);
+  break-after: avoid;
+}
+
+.data-table .row-subtotal td {
+  background: #dbeafe;
+  color: var(--primary-dark);
+  font-weight: 700;
+  border-top: 0.75pt solid var(--border-strong);
+}
+
+.data-table .row-subtotal {
+  /* Evita que el subtotal quede huérfano al inicio de la página siguiente,
+     separado de las filas de su propio grupo. */
+  break-before: avoid;
+}
+
+.data-table .row-grand-total td {
+  background: var(--primary-dark);
+  color: var(--surface);
+  font-weight: 700;
+  font-size: var(--font-size-sm);
+  border-top: 1.5pt solid var(--ink);
+}
+
+.badge {
+  display: inline-block;
+  padding: 1pt 6pt;
+  border-radius: 8pt;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  background: var(--surface-strip);
+  color: var(--primary-dark);
+}
+
+/* ===== Estado vacío ===== */
+
+.empty-state {
+  padding: var(--space-5) var(--space-4);
+  text-align: center;
+  color: var(--muted);
+  border: 0.75pt dashed var(--border-strong);
+  border-radius: var(--radius);
+  font-size: var(--font-size-sm);
+}
+
+/* ===== Nota de truncado ===== */
+
+.truncated-note {
+  margin-top: var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--warning);
+  font-style: italic;
+}
+
+/* ===== Secciones genéricas ===== */
+
+.report-section {
+  margin-bottom: var(--space-4);
+}
+
+.report-section__title {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  color: var(--primary-dark);
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 0.75pt solid var(--border);
+}

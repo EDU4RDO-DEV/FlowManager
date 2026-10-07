@@ -1,0 +1,10 @@
+{{#if indicators.length}}
+<section class="kpi-group">
+  {{#each indicators}}
+  <div class="kpi-card">
+    <div class="kpi-card__label">{{this.label}}</div>
+    <div class="kpi-card__value">{{this.value}}</div>
+  </div>
+  {{/each}}
+</section>
+{{/if}}

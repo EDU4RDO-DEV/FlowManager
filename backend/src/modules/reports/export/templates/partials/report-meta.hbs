@@ -1,0 +1,10 @@
+{{#if metaItems.length}}
+<section class="report-meta">
+  {{#each metaItems}}
+  <div class="report-meta__item">
+    <div class="report-meta__label">{{this.label}}</div>
+    <div class="report-meta__value">{{this.value}}</div>
+  </div>
+  {{/each}}
+</section>
+{{/if}}

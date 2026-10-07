@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>{{report.nombre}}</title>
+  <style>{{{css}}}</style>
+</head>
+<body class="layout-standard">
+  <div class="report-document">
+    {{> report-header}}
+    {{> report-meta}}
+    {{> kpi-group}}
+    {{> data-table}}
+  </div>
+</body>
+</html>
