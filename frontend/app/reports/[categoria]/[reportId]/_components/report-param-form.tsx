@@ -12,7 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { api } from "@/lib/api";
+import { api, getApiErrorMessage } from "@/lib/api";
+import type { ReportsAccentKey } from "@/lib/reports-accent";
 import type { ReportParamField, ReportParamOption } from "@/types/reports";
 
 type RemoteOption = Record<string, unknown>;
@@ -35,18 +36,18 @@ function extractOptionValue(item: RemoteOption): string {
   return String(item.id ?? "");
 }
 
-function useRemoteOptions(endpoint?: string): { options: ReportParamOption[]; isLoading: boolean } {
-  const [options, setOptions] = useState<ReportParamOption[]>([]);
-  const [isLoading, setIsLoading] = useState(Boolean(endpoint));
+function useRemoteOptions(endpoint?: string): { options: ReportParamOption[]; isLoading: boolean; error: string | null } {
+  const [remote, setRemote] = useState<{
+    endpoint: string | undefined;
+    options: ReportParamOption[];
+    isLoading: boolean;
+    error: string | null;
+  }>({ endpoint, options: [], isLoading: Boolean(endpoint), error: null });
 
   useEffect(() => {
-    if (!endpoint) {
-      setOptions([]);
-      return;
-    }
+    if (!endpoint) return;
 
     let cancelled = false;
-    setIsLoading(true);
 
     api
       .get<{ data?: unknown }>(endpoint)
@@ -57,13 +58,17 @@ function useRemoteOptions(endpoint?: string): { options: ReportParamOption[]; is
           value: extractOptionValue(item),
           label: extractOptionLabel(item),
         }));
-        setOptions(parsed);
+        setRemote({ endpoint, options: parsed, isLoading: false, error: null });
       })
-      .catch(() => {
-        if (!cancelled) setOptions([]);
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
+      .catch((requestError: unknown) => {
+        if (!cancelled) {
+          setRemote({
+            endpoint,
+            options: [],
+            isLoading: false,
+            error: getApiErrorMessage(requestError, "No se pudieron cargar las opciones."),
+          });
+        }
       });
 
     return () => {
@@ -71,7 +76,12 @@ function useRemoteOptions(endpoint?: string): { options: ReportParamOption[]; is
     };
   }, [endpoint]);
 
-  return { options, isLoading };
+  const matchesEndpoint = remote.endpoint === endpoint;
+  return {
+    options: endpoint && matchesEndpoint ? remote.options : [],
+    isLoading: Boolean(endpoint) && (!matchesEndpoint || remote.isLoading),
+    error: endpoint && matchesEndpoint ? remote.error : null,
+  };
 }
 
 function SelectField({
@@ -87,18 +97,26 @@ function SelectField({
   const options = field.options ?? remote.options;
 
   return (
-    <Select value={value || undefined} onValueChange={onChange}>
-      <SelectTrigger>
-        <SelectValue placeholder={remote.isLoading ? "Cargando..." : "Selecciona una opción"} />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <>
+      <Select value={value || undefined} onValueChange={onChange}>
+        <SelectTrigger
+          disabled={remote.isLoading || Boolean(remote.error)}
+          className="border-[color:var(--reports-accent-soft)] bg-[color:var(--reports-accent-muted)] focus:ring-[color:var(--reports-accent-ring)]"
+        >
+          <SelectValue
+            placeholder={remote.isLoading ? "Cargando..." : remote.error ? "No se pudieron cargar las opciones" : "Selecciona una opción"}
+          />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {remote.error ? <p className="text-xs text-destructive" role="status">{remote.error}</p> : null}
+    </>
   );
 }
 
@@ -111,12 +129,14 @@ type ReportParamFormProps = {
   onSubmit: () => void;
   onClear: () => void;
   isSubmitting: boolean;
+  accent: ReportsAccentKey;
 };
 
-export function ReportParamForm({ parametros, values, onChange, onSubmit, onClear, isSubmitting }: ReportParamFormProps) {
+export function ReportParamForm({ parametros, values, onChange, onSubmit, onClear, isSubmitting, accent }: ReportParamFormProps) {
   return (
     <form
       className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+      data-accent={accent}
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit();
@@ -133,7 +153,7 @@ export function ReportParamForm({ parametros, values, onChange, onSubmit, onClea
             <SelectField field={field} value={values[field.key] ?? ""} onChange={(v) => onChange(field.key, v)} />
           ) : field.type === "boolean" ? (
             <Select value={values[field.key] ?? ""} onValueChange={(v) => onChange(field.key, v)}>
-              <SelectTrigger>
+              <SelectTrigger className="border-[color:var(--reports-accent-soft)] bg-[color:var(--reports-accent-muted)] focus:ring-[color:var(--reports-accent-ring)]">
                 <SelectValue placeholder="Selecciona" />
               </SelectTrigger>
               <SelectContent>
@@ -148,6 +168,7 @@ export function ReportParamForm({ parametros, values, onChange, onSubmit, onClea
               placeholder={field.placeholder}
               value={values[field.key] ?? ""}
               onChange={(event) => onChange(field.key, event.target.value)}
+              className="border-[color:var(--reports-accent-soft)] bg-[color:var(--reports-accent-muted)] focus-visible:ring-[color:var(--reports-accent-ring)]"
             />
           )}
 
@@ -156,10 +177,20 @@ export function ReportParamForm({ parametros, values, onChange, onSubmit, onClea
       ))}
 
       <div className="col-span-full flex flex-wrap gap-2 pt-2">
-        <Button type="submit" disabled={isSubmitting}>
+        <Button
+          type="submit"
+          disabled={isSubmitting}
+          className="bg-[color:var(--reports-accent)] text-white hover:bg-[color:var(--reports-accent-strong)]"
+        >
           {isSubmitting ? "Generando..." : "Generar reporte"}
         </Button>
-        <Button type="button" variant="outline" onClick={onClear} disabled={isSubmitting}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onClear}
+          disabled={isSubmitting}
+          className="border-[color:var(--reports-accent-soft)] hover:bg-[color:var(--reports-accent-muted)]"
+        >
           Limpiar filtros
         </Button>
       </div>

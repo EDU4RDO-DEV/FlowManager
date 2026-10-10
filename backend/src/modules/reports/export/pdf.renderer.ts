@@ -10,7 +10,6 @@ import { detectImageMimeFromBuffer } from '../../../utils/image-signature';
 
 export type RenderPdfInput = {
   reportNombre: string;
-  reportDescripcion: string;
   categoriaLabel: string;
   parametrosResumen: string[];
   result: ReportResult;
@@ -84,7 +83,6 @@ export async function buildReportPdfBuffer(input: RenderPdfInput): Promise<Buffe
     },
     report: {
       nombre: input.reportNombre,
-      descripcion: input.reportDescripcion,
       categoriaLabel: input.categoriaLabel,
     },
     metaItems: parseMetaItems(input.parametrosResumen),

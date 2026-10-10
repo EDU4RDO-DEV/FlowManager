@@ -45,14 +45,6 @@ export interface ReportCatalogResponse {
   reportes: ReportCatalogEntry[];
 }
 
-export interface ReportCompanySettings {
-  id: number;
-  nombre: string;
-  nombreComercial: string;
-  rutaLogo: string | null;
-  logoUrl?: string | null;
-}
-
 export type ReportColumnType = "text" | "number" | "currency" | "date" | "percent" | "badge";
 
 export interface ReportColumn {

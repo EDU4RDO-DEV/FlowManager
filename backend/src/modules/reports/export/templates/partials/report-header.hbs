@@ -1,7 +1,9 @@
 <header class="report-header">
   <div class="report-header__brand">
     {{#if company.logoDataUri}}
-      <img class="report-header__logo" src="{{company.logoDataUri}}" alt="{{company.nombreComercial}}" />
+      <div class="report-header__logo-frame">
+        <img class="report-header__logo" src="{{company.logoDataUri}}" alt="{{company.nombreComercial}}" />
+      </div>
     {{else}}
       <div class="report-header__logo-fallback">{{initial company.nombreComercial}}</div>
     {{/if}}
@@ -12,7 +14,6 @@
   </div>
   <div class="report-header__title-block">
     <div class="report-header__title">{{report.nombre}}</div>
-    {{#if report.descripcion}}<div class="report-header__subtitle">{{report.descripcion}}</div>{{/if}}
     <span class="report-header__category">{{report.categoriaLabel}}</span>
   </div>
 </header>

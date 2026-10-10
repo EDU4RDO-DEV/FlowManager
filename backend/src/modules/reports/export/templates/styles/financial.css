@@ -5,7 +5,7 @@
 }
 
 .layout-financial .kpi-card {
-  border-left-width: 3.5pt;
+  border-top-width: 1.5pt;
   padding: var(--space-3);
 }
 

@@ -6,12 +6,9 @@ import {
   exportReportPdfController,
   getCatalogController,
   getCategoryReportsController,
-  getReportCompanySettingsController,
   getReportHistoryController,
-  uploadReportCompanyLogoController,
 } from '../controllers/reports.controller';
 import { requireModulePermission } from '../middlewares/auth.middleware';
-import { uploadCompanyLogo } from '../middlewares/upload.middleware';
 import { getReportModulePermission, reportExists } from '../services/reports.service';
 
 const reportsRouter = Router();
@@ -38,14 +35,6 @@ reportsRouter.get(
   getCategoryReportsController,
 );
 reportsRouter.get('/history', requireModulePermission('reportes', 'read'), getReportHistoryController);
-reportsRouter.get('/company/settings', requireModulePermission('reportes', 'read'), getReportCompanySettingsController);
-reportsRouter.post(
-  '/company/logo',
-  requireModulePermission('reportes', 'update'),
-  uploadCompanyLogo.single('file'),
-  uploadReportCompanyLogoController,
-);
-
 reportsRouter.post(
   '/:id/execute',
   requireModulePermission('reportes', 'read'),

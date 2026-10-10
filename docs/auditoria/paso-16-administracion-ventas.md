@@ -86,7 +86,7 @@ Entrega **vertical por submódulo**: primero Ventas (back + front), luego Pagos,
 - Reutilizar campos existentes en `Venta` (`AutorizacionFel`, `NumeroFel`, `SerieFel`,
   `QrFel`, `FechaEmisionFel`, `NitFacturado`, `NombreClienteFacturado`,
   `DireccionClienteFacturado`).
-- Config FEL vive en `Empresa` (`UsuarioFel`, `ContrasenaFel`, `ServidorFel`).
+- Las credenciales FEL se configuran mediante variables de entorno del backend.
 - Sin cambios de tabla adicionales salvo, de ser necesario, columnas de estado FEL
   (`EstadoFel`, `MotivoAnulacionFel`).
 

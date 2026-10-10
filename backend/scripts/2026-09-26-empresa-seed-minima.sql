@@ -1,6 +1,6 @@
 -- Inserta una fila minima en Empresa si la tabla esta vacia.
--- Los campos ServidorFel/UsuarioFel/ContrasenaFel quedan NULL porque las
--- credenciales FEL se configuran por variables de entorno (FEL_*) en backend/.env.
+-- Las credenciales FEL se configuran exclusivamente por variables de entorno
+-- (FEL_BASE_URL, FEL_USUARIO y FEL_CLAVE) en el entorno del backend.
 -- IMPORTANTE: reemplazar Nit/Nombre/NombreComercial/Direccion/Frase/RegimenIsr
 -- con los datos reales de la empresa cuando esten disponibles.
 IF NOT EXISTS (SELECT 1 FROM Empresa)

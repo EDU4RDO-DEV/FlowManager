@@ -124,6 +124,13 @@ el endpoint de emisión para una prueba técnica: cada emisión puede tener efec
 - `POST /api/auth/logout`
 - `POST /api/auth/register` (libre solo en bootstrap)
 - `PATCH /api/auth/users/:idUsuario/assignment`
+- `GET /api/dashboard?fechaInicio=AAAA-MM-DD&fechaFin=AAAA-MM-DD`
+
+El dashboard requiere autenticacion y permiso `ventas:read`. Resume registros no anulados
+con `TipoRegistro = VENTA` mediante `Venta`, `DetalleVenta` y `EstadoEntrega`; excluye
+proformas y bonificaciones de los importes y unidades vendidos. El rango es inclusivo,
+admite hasta 366 dias y alimenta los indicadores, el ticket promedio, las tendencias y los diez
+productos y clientes principales, además de la distribucion por estado de entrega.
 
 ## Pruebas de integracion
 

@@ -51,6 +51,7 @@ import { Card, CardContent } from "@/components/ui/card";
 type DashboardShellProps = {
   title: string;
   description: string;
+  printContentOnly?: boolean;
   children?: ReactNode;
 };
 
@@ -94,7 +95,7 @@ function isInventoryStructureActive(currentPath: string): boolean {
   return currentPath === "/inventory/structure" || /^\/inventory\/\d+\/structure(?:\/|$)/.test(currentPath);
 }
 
-export function DashboardShell({ title, description, children }: DashboardShellProps) {
+export function DashboardShell({ title, description, printContentOnly = false, children }: DashboardShellProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -128,6 +129,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
         envases: allowedModules.includes("envases"),
         calidad: allowedModules.includes("calidad"),
         reportes: allowedModules.includes("reportes"),
+        empresa: allowedModules.includes("empresa"),
       };
 
       return [
@@ -144,6 +146,17 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                 icon: BarChart3,
                 available: has.resumen,
                 isActive: (currentPath: string) => currentPath === "/",
+              },
+            },
+            {
+              type: "link",
+              item: {
+                id: "analytics-dashboard",
+                name: "Dashboard analítico",
+                path: "/analytics",
+                icon: BarChart3,
+                available: has.ventas,
+                isActive: (currentPath: string) => isPathActive(currentPath, "/analytics"),
               },
             },
           ],
@@ -430,6 +443,14 @@ export function DashboardShell({ title, description, children }: DashboardShellP
                   available: has.sesiones,
                   isActive: (currentPath: string) => isPathActive(currentPath, "/sessions"),
                 },
+                {
+                  id: "config-empresa",
+                  name: "Empresa",
+                  path: "/company",
+                  icon: Building2,
+                  available: has.empresa,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/company"),
+                },
               ],
             },
           ],
@@ -519,7 +540,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
           type="button"
           aria-label="Cerrar menu"
           onClick={closeMobileMenu}
-          className="fixed inset-0 z-40 bg-black/30 lg:hidden"
+          className={`fixed inset-0 z-40 bg-black/30 lg:hidden ${printContentOnly ? "print:hidden" : ""}`}
         />
       ) : null}
 
@@ -528,14 +549,14 @@ export function DashboardShell({ title, description, children }: DashboardShellP
           type="button"
           aria-label="Cerrar panel de usuario"
           onClick={() => setUserPanelOpen(false)}
-          className="fixed inset-0 z-40 bg-black/30"
+          className={`fixed inset-0 z-40 bg-black/30 ${printContentOnly ? "print:hidden" : ""}`}
         />
       ) : null}
 
       <aside
         className={`fixed inset-y-0 left-0 z-50 hidden border-r border-border bg-background transition-all duration-300 dark:border-slate-800 dark:bg-slate-950 lg:flex lg:flex-col ${
           sidebarCollapsed ? "lg:w-20" : "lg:w-76 xl:w-80"
-        }`}
+        } ${printContentOnly ? "print:hidden" : ""}`}
       >
         <div className="flex h-16 items-center justify-between border-b border-border px-3">
           <div className={`flex items-center gap-3 ${sidebarCollapsed ? "justify-center" : ""}`}>
@@ -861,9 +882,13 @@ export function DashboardShell({ title, description, children }: DashboardShellP
       <div
         className={`flex min-h-dvh min-w-0 flex-1 flex-col transition-all duration-300 ${
           sidebarCollapsed ? "lg:pl-20" : "lg:pl-76 xl:pl-80"
-        }`}
+        } ${printContentOnly ? "print:min-h-0 print:pl-0" : ""}`}
       >
-        <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/75">
+        <header
+          className={`sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/75 ${
+            printContentOnly ? "print:hidden" : ""
+          }`}
+        >
           <div className="flex h-16 w-full items-center gap-3 px-3 sm:px-4 md:px-6 xl:px-8">
             <Button
               variant="outline"
@@ -904,11 +929,19 @@ export function DashboardShell({ title, description, children }: DashboardShellP
           </div>
         </header>
 
-        <main className="flex-1 min-w-0 w-full px-3 py-4 sm:px-4 sm:py-5 md:px-6 md:py-6 xl:px-8">
+        <main
+          className={`flex-1 min-w-0 w-full px-3 py-4 sm:px-4 sm:py-5 md:px-6 md:py-6 xl:px-8 ${
+            printContentOnly ? "print:px-0 print:py-0" : ""
+          }`}
+        >
           <section className="min-w-0">{children}</section>
         </main>
 
-        <footer className="border-t border-border bg-background/80 dark:border-slate-800 dark:bg-slate-900/85">
+        <footer
+          className={`border-t border-border bg-background/80 dark:border-slate-800 dark:bg-slate-900/85 ${
+            printContentOnly ? "print:hidden" : ""
+          }`}
+        >
           <div className="flex h-12 w-full items-center justify-between gap-3 px-3 text-xs text-muted-foreground sm:px-4 md:px-6 xl:px-8">
             <p className="truncate">FlowManager · Plataforma Operativa</p>
             <p className="truncate text-right">Industrias Basan · Gestion de planta purificadora</p>
@@ -919,7 +952,7 @@ export function DashboardShell({ title, description, children }: DashboardShellP
       <aside
         className={`fixed inset-y-0 right-0 z-50 w-[min(26rem,95vw)] border-l border-border bg-background shadow-xl transition-transform duration-300 ${
           userPanelOpen ? "translate-x-0" : "translate-x-full"
-        }`}
+        } ${printContentOnly ? "print:hidden" : ""}`}
       >
         <div className="flex h-16 items-center justify-between border-b border-border px-4">
           <div className="flex items-center gap-2">

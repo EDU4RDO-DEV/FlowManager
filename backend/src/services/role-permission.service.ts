@@ -30,6 +30,7 @@ const MODULE_LABELS: Record<BackendModuleKey, string> = {
   envases: 'Envases',
   calidad: 'Calidad',
   reportes: 'Reportes',
+  empresa: 'Empresa',
 };
 
 const ACTION_LABELS: Record<CrudAction, string> = {

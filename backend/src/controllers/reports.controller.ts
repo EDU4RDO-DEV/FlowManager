@@ -5,11 +5,9 @@ import {
   executeReport,
   exportReportExcel,
   exportReportPdf,
-  getReportCompanySettings,
   listCatalog,
   listCatalogByCategory,
   ReportNotFoundError,
-  updateReportCompanyLogo,
 } from '../services/reports.service';
 import { listReportHistory } from '../modules/reports/history.service';
 import {
@@ -26,62 +24,6 @@ function resolveGeneratedByName(req: Request): string {
 
 export async function getCatalogController(_req: Request, res: Response) {
   return res.status(200).json({ ok: true, data: listCatalog() });
-}
-
-export async function getReportCompanySettingsController(_req: Request, res: Response) {
-  try {
-    const data = await getReportCompanySettings();
-    return res.status(200).json({ ok: true, data });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Error interno';
-    if (message === 'No existe configuración de empresa activa') {
-      return res.status(404).json({ ok: false, message });
-    }
-    return res.status(500).json({ ok: false, message });
-  }
-}
-
-export async function uploadReportCompanyLogoController(req: Request, res: Response) {
-  try {
-    if (!req.auth?.userId) {
-      return res.status(401).json({ ok: false, message: 'Sesión inválida' });
-    }
-
-    if (!req.file?.buffer || !req.file.originalname) {
-      return res.status(400).json({ ok: false, message: 'Debe adjuntar una imagen en el campo file' });
-    }
-
-    const data = await updateReportCompanyLogo({
-      fileBuffer: req.file.buffer,
-      originalName: req.file.originalname,
-      declaredMimeType: req.file.mimetype,
-      modifiedByUserId: req.auth.userId,
-    });
-
-    const host = req.get('host');
-    const logoUrl = data.rutaLogo && host ? `${req.protocol}://${host}${data.rutaLogo}` : data.rutaLogo;
-
-    return res.status(200).json({
-      ok: true,
-      message: 'Logotipo actualizado correctamente',
-      data: {
-        ...data,
-        logoUrl,
-      },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Error interno';
-    if (message === 'No existe configuración de empresa activa') {
-      return res.status(404).json({ ok: false, message });
-    }
-    if (
-      message === 'El archivo no contiene una imagen válida (PNG, JPG o WEBP)' ||
-      message === 'El tipo declarado no coincide con el contenido real de la imagen'
-    ) {
-      return res.status(400).json({ ok: false, message });
-    }
-    return res.status(500).json({ ok: false, message });
-  }
 }
 
 export async function getCategoryReportsController(req: Request, res: Response) {

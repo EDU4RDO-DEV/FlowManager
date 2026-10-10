@@ -1,15 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, FileSpreadsheet, FileText, Printer } from "lucide-react";
 import { toast } from "sonner";
 
+import { useAuth } from "@/components/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getApiErrorMessage } from "@/lib/api";
+import {
+  DEFAULT_REPORTS_ACCENT,
+  isReportsAccentKey,
+  reportsAccentStorageKey,
+  reportsAccentVariables,
+  type ReportsAccentKey,
+} from "@/lib/reports-accent";
 import { downloadReportExcel, downloadReportPdf, executeReport, getReportsByCategory } from "@/services/reports.service";
 import type { ReportCatalogEntry, ReportParamField, ReportResult } from "@/types/reports";
 
@@ -37,6 +45,7 @@ function buildExecutionParams(parametros: ReportParamField[], values: ReportPara
 }
 
 export default function ReportRunnerPage() {
+  const { user } = useAuth();
   const params = useParams<{ categoria: string; reportId: string }>();
   const router = useRouter();
   const categoria = decodeURIComponent(params.categoria);
@@ -49,6 +58,7 @@ export default function ReportRunnerPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [accent, setAccent] = useState<ReportsAccentKey>(DEFAULT_REPORTS_ACCENT);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,6 +86,15 @@ export default function ReportRunnerPage() {
       cancelled = true;
     };
   }, [categoria, reportId]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const stored = window.localStorage.getItem(reportsAccentStorageKey(user.id));
+    if (stored && isReportsAccentKey(stored)) {
+      setAccent(stored);
+    }
+  }, [user?.id]);
 
   const executionParams = useMemo(
     () => (report ? buildExecutionParams(report.parametros, values) : {}),
@@ -143,9 +162,10 @@ export default function ReportRunnerPage() {
       <DashboardShell
         title={report?.nombre ?? "Reporte"}
         description={report?.descripcion ?? "Configura los parámetros y genera el reporte."}
+        printContentOnly
       >
-        <div className="flex flex-col gap-6">
-          <Button variant="ghost" className="w-fit" onClick={() => router.push("/reports")}>
+        <div className="flex flex-col gap-6" style={reportsAccentVariables(accent) as CSSProperties}>
+          <Button variant="ghost" className="w-fit print:hidden" onClick={() => router.push("/reports")}>
             <ArrowLeft className="mr-2 size-4" /> Volver al catálogo
           </Button>
 
@@ -159,7 +179,7 @@ export default function ReportRunnerPage() {
             </Card>
           ) : (
             <>
-              <Card className="rounded-xl border border-border bg-background">
+              <Card className="rounded-xl border border-border bg-background print:hidden">
                 <CardContent className="p-4">
                   <ReportParamForm
                     parametros={report.parametros}
@@ -168,12 +188,20 @@ export default function ReportRunnerPage() {
                     onSubmit={() => void handleSubmit()}
                     onClear={handleClear}
                     isSubmitting={isGenerating}
+                    accent={accent}
                   />
                 </CardContent>
               </Card>
 
               {result ? (
                 <>
+                  <header className="hidden print:block">
+                    <h2 className="text-lg font-semibold">{result.reportNombre}</h2>
+                    <p className="text-xs text-muted-foreground">{result.categoriaLabel}</p>
+                    {result.parametrosResumen.length > 0 ? (
+                      <p className="mt-1 text-xs">{result.parametrosResumen.join(" · ")}</p>
+                    ) : null}
+                  </header>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs text-muted-foreground">
                       {result.meta.totalRegistros} registro(s) · generado el{" "}
@@ -187,17 +215,17 @@ export default function ReportRunnerPage() {
                         <FileText className="mr-2 size-4" /> {isExportingPdf ? "Generando PDF..." : "Exportar PDF"}
                       </Button>
                       <Button
-                        variant="outline"
                         size="sm"
                         onClick={() => void handleExportExcel()}
                         disabled={isExportingExcel}
+                        className="bg-[color:var(--reports-accent)] text-white hover:bg-[color:var(--reports-accent-strong)]"
                       >
                         <FileSpreadsheet className="mr-2 size-4" />
                         {isExportingExcel ? "Generando Excel..." : "Exportar Excel"}
                       </Button>
                     </div>
                   </div>
-                  <ReportResults result={result} />
+                  <ReportResults result={result} accent={accent} />
                 </>
               ) : isGenerating ? (
                 <ReportResultsSkeleton />

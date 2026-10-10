@@ -250,9 +250,6 @@ model Empresa {
   CorreoElectronico    String?   @db.VarChar(100)
   Frase                String    @db.VarChar(255)
   RutaLogo             String?   @db.VarChar(255)
-  UsuarioFel           String?   @db.VarChar(255)
-  ContrasenaFel        String?   @db.VarChar(255)
-  ServidorFel          String?   @db.VarChar(255)
   FechaInicioFel       DateTime? @db.Date
   FechaFinFel          DateTime? @db.Date
   RegimenIsr           String    @db.VarChar(255)

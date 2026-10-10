@@ -25,7 +25,8 @@ export type PermissionModule =
   | "inventario"
   | "envases"
   | "calidad"
-  | "reportes";
+  | "reportes"
+  | "empresa";
 
 export type UserPermissionsMap = Partial<Record<PermissionModule, PermissionAction[]>>;
 
