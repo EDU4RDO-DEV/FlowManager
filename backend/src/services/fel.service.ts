@@ -1,5 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest, type RequestOptions as HttpsRequestOptions } from 'node:https';
+import type { IncomingMessage } from 'node:http';
 
 import type { Prisma } from '@prisma/client';
 
@@ -44,6 +47,7 @@ type FelIssueResult = {
 };
 
 type ActiveFelConfig = {
+  environment: 'production' | 'sandbox';
   servidor: string;
   cliente: string;
   usuario: string;
@@ -54,34 +58,84 @@ type ActiveFelConfig = {
   formato: string;
   tipoDocumento: string;
   nombreEmpresa: string;
+  emitPath: string;
+  anulatePath: string;
+  validateNitPath: string;
+  soapActionDocument: string;
+  soapActionAnulate: string;
+  soapActionValidateNit: string;
+  requireSsl: boolean;
+  pfx: Buffer | null;
+  pfxPassword: string | null;
+  timeoutMs: number;
 };
 
-function isTruthy(value: string | undefined): boolean {
-  if (!value) {
+function getFelEnvironment(): ActiveFelConfig['environment'] {
+  const environment = (process.env.FEL_ENVIRONMENT ?? 'sandbox').trim().toLowerCase();
+  if (environment === 'production' || environment === 'sandbox') {
+    return environment;
+  }
+
+  throw new Error('FEL: FEL_ENVIRONMENT debe ser production o sandbox');
+}
+
+function getFelEnvironmentValue(name: string): string | undefined {
+  const environment = getFelEnvironment();
+  const suffix = environment === 'production' ? 'PROD' : 'SANDBOX';
+  const modeValue = process.env[`FEL_${name}_${suffix}`];
+
+  if (modeValue !== undefined) {
+    return modeValue;
+  }
+
+  return environment === 'sandbox' ? process.env[`FEL_${name}`] : undefined;
+}
+
+function getFelBoolean(name: string, defaultValue: boolean): boolean {
+  const value = getFelEnvironmentValue(name);
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'si', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
     return false;
   }
 
-  return ['1', 'true', 'yes', 'si', 'on'].includes(value.toLowerCase());
+  throw new Error(`FEL: FEL_${name} tiene un valor booleano inválido`);
 }
 
 function shouldUseMockByDefault(): boolean {
-  if (process.env.FEL_USE_MOCK !== undefined) {
-    return isTruthy(process.env.FEL_USE_MOCK);
+  const environment = getFelEnvironment();
+  const useMock = getFelBoolean('USE_MOCK', false);
+
+  if (environment === 'production' && useMock) {
+    throw new Error('FEL: FEL_USE_MOCK_PROD no puede estar habilitado en producción');
   }
 
-  return false;
+  return useMock;
 }
 
-function getEmitPath() {
-  return process.env.FEL_EMIT_PATH ?? '/fel/adocumento';
+function shouldAllowFelFallback(): boolean {
+  return getFelEnvironment() === 'sandbox' && getFelBoolean('ALLOW_FALLBACK', false);
 }
 
-function getAnulatePath() {
-  return process.env.FEL_ANULATE_PATH ?? '/fel/aanulacion';
+function getEmitPath(): string {
+  return getFelEnvironmentValue('EMIT_PATH') ??
+    (getFelEnvironment() === 'production' ? '/adocumento' : '/fel/adocumento');
 }
 
-function getValidateNitPath() {
-  return process.env.FEL_VALIDATE_NIT_PATH ?? '/fel/areceptorinfo';
+function getAnulatePath(): string {
+  return getFelEnvironmentValue('ANULATE_PATH') ??
+    (getFelEnvironment() === 'production' ? '/aanulacion' : '/fel/aanulacion');
+}
+
+function getValidateNitPath(): string {
+  return getFelEnvironmentValue('VALIDATE_NIT_PATH') ??
+    (getFelEnvironment() === 'production' ? '/areceptorinfo' : '/fel/areceptorinfo');
 }
 
 function normalizeUrl(baseUrl: string, path: string): string {
@@ -183,7 +237,7 @@ function extractXmlAttributeValue(xml: string, tag: string, attribute: string): 
 
 function getQrBaseUrl(): string {
   return (
-    process.env.FEL_QR_BASE_URL ??
+    getFelEnvironmentValue('QR_BASE_URL') ??
     'https://felpub.c.sat.gob.gt/verificador-web/publico/vistas/verificacionDte.jsp'
   ).trim();
 }
@@ -210,6 +264,7 @@ function savePdfFile(pdfBase64: string | null, fileName: string): string | null 
 
     return `/uploads/sales/fel/${fileName}`;
   } catch {
+    console.error('[FEL] No se pudo guardar el PDF recibido del proveedor');
     return null;
   }
 }
@@ -262,11 +317,7 @@ function buildMockIssueResult(input: IssueFelInput): FelIssueResult {
 }
 
 function shouldValidateNitBeforeEmit(): boolean {
-  if (process.env.FEL_VALIDATE_NIT_BEFORE_EMIT !== undefined) {
-    return isTruthy(process.env.FEL_VALIDATE_NIT_BEFORE_EMIT);
-  }
-
-  return true;
+  return getFelBoolean('VALIDATE_NIT_BEFORE_EMIT', true);
 }
 
 function isConsumidorFinalNit(nit: string): boolean {
@@ -328,8 +379,97 @@ function parseReceptorInfoResponse(rawResponse: string): ReceptorInfoResult {
   return { nit, nombre, direccion: direccion || null };
 }
 
+export async function postFelSoap(
+  endpoint: string,
+  soapAction: string,
+  envelope: string,
+  config: Pick<ActiveFelConfig, 'requireSsl' | 'pfx' | 'pfxPassword' | 'timeoutMs'>,
+): Promise<string> {
+  const url = new URL(endpoint);
+  if (config.requireSsl && url.protocol !== 'https:') {
+    throw new Error('FEL: La configuración requiere un endpoint HTTPS');
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error('FEL: Protocolo de endpoint no permitido');
+  }
+  if (config.pfx && url.protocol !== 'https:') {
+    throw new Error('FEL: El certificado cliente requiere un endpoint HTTPS');
+  }
+
+  const headers = {
+    'Content-Type': 'text/xml; charset=utf-8',
+    SOAPAction: soapAction,
+    'Content-Length': Buffer.byteLength(envelope, 'utf8'),
+  };
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (error: Error) => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    };
+
+    const handleResponse = (response: IncomingMessage) => {
+      const chunks: Buffer[] = [];
+      let responseBytes = 0;
+
+      response.on('data', (chunk: Buffer | string) => {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        responseBytes += buffer.length;
+        if (responseBytes > 10 * 1024 * 1024) {
+          response.destroy(new Error('FEL: La respuesta del proveedor excede el límite permitido'));
+          return;
+        }
+        chunks.push(buffer);
+      });
+      response.on('error', fail);
+      response.on('end', () => {
+        if (settled) {
+          return;
+        }
+        const statusCode = response.statusCode ?? 0;
+        if (statusCode < 200 || statusCode >= 300) {
+          fail(new Error(`HTTP ${statusCode}`));
+          return;
+        }
+        settled = true;
+        resolve(Buffer.concat(chunks).toString('utf8'));
+      });
+    };
+
+    const options = {
+      method: 'POST',
+      headers,
+      timeout: config.timeoutMs,
+    };
+
+    const request = url.protocol === 'https:'
+      ? httpsRequest(
+          url,
+          {
+            ...options,
+            rejectUnauthorized: true,
+            ...(config.pfx
+              ? {
+                  pfx: config.pfx,
+                  passphrase: config.pfxPassword ?? undefined,
+                }
+              : {}),
+          } satisfies HttpsRequestOptions,
+          handleResponse,
+        )
+      : httpRequest(url, options, handleResponse);
+
+    request.on('timeout', () => request.destroy(new Error('FEL: Tiempo de espera agotado al contactar al proveedor')));
+    request.on('error', fail);
+    request.end(envelope, 'utf8');
+  });
+}
+
 async function fetchReceptorInfoRaw(nitReceptor: string, config: ActiveFelConfig): Promise<string> {
-  const endpoint = normalizeUrl(config.servidor, getValidateNitPath());
+  const endpoint = normalizeUrl(config.servidor, config.validateNitPath);
 
   const envelope = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
@@ -343,20 +483,7 @@ async function fetchReceptorInfoRaw(nitReceptor: string, config: ActiveFelConfig
   </soap:Body>
 </soap:Envelope>`;
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/xml; charset=utf-8',
-      SOAPAction: 'FELaction/ARECEPTORINFO.Execute',
-    },
-    body: envelope,
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-
-  return response.text();
+  return postFelSoap(endpoint, config.soapActionValidateNit, envelope, config);
 }
 
 export async function getReceptorInfo(nitReceptor: string): Promise<ReceptorInfoResult> {
@@ -399,7 +526,9 @@ async function validateReceiverNit(nitReceptor: string, config: ActiveFelConfig)
   try {
     await getReceptorInfo(nitReceptor);
   } catch (error) {
-    if (isTruthy(process.env.FEL_ALLOW_NIT_VALIDATION_FALLBACK ?? 'true')) {
+    const mayContinueWithoutValidation =
+      getFelEnvironment() === 'sandbox' && getFelBoolean('ALLOW_NIT_VALIDATION_FALLBACK', true);
+    if (mayContinueWithoutValidation) {
       return;
     }
 
@@ -409,6 +538,7 @@ async function validateReceiverNit(nitReceptor: string, config: ActiveFelConfig)
 
 async function getActiveFelConfig(tx?: Prisma.TransactionClient): Promise<ActiveFelConfig> {
   const db = tx ?? prisma;
+  const environment = getFelEnvironment();
 
   const empresa = await db.empresa.findFirst({
     where: {
@@ -416,9 +546,6 @@ async function getActiveFelConfig(tx?: Prisma.TransactionClient): Promise<Active
     },
     orderBy: { Id: 'asc' },
     select: {
-      ServidorFel: true,
-      UsuarioFel: true,
-      ContrasenaFel: true,
       Nit: true,
       NombreComercial: true,
       Nombre: true,
@@ -429,30 +556,118 @@ async function getActiveFelConfig(tx?: Prisma.TransactionClient): Promise<Active
     throw new Error('FEL: No existe configuración de empresa activa');
   }
 
-  const servidor = (process.env.FEL_BASE_URL ?? empresa.ServidorFel ?? '').trim();
-  const usuario = (process.env.FEL_USUARIO ?? empresa.UsuarioFel ?? '').trim();
-  const clave = (process.env.FEL_CLAVE ?? empresa.ContrasenaFel ?? '').trim();
+  const servidor = (getFelEnvironmentValue('BASE_URL') ?? '').trim();
+  const usuario = (getFelEnvironmentValue('USUARIO') ?? '').trim();
+  const clave = (getFelEnvironmentValue('CLAVE') ?? '').trim();
 
-  const cliente = (process.env.FEL_CLIENTE ?? empresa.Nit ?? '').trim();
-  const nitEmisor = (process.env.FEL_NIT_EMISOR ?? empresa.Nit ?? '').trim();
-  const afiliacionIva = (process.env.FEL_AFILIACION_IVA ?? 'PEQ').trim();
-  const establecimiento = Number(process.env.FEL_ESTABLECIMIENTO ?? '1');
-  const formato = (process.env.FEL_FORMAT ?? 'STD_TWS').trim();
-  const tipoDocumento = (process.env.FEL_TIPO_DOCUMENTO ?? resolveDefaultTipoDocumento(afiliacionIva)).trim();
+  const cliente = (getFelEnvironmentValue('CLIENTE') ?? (environment === 'sandbox' ? empresa.Nit : '')).trim();
+  const nitEmisor = (getFelEnvironmentValue('NIT_EMISOR') ?? (environment === 'sandbox' ? empresa.Nit : '')).trim();
+  const afiliacionIva = (getFelEnvironmentValue('AFILIACION_IVA') ?? 'PEQ').trim();
+  const establecimiento = Number(getFelEnvironmentValue('ESTABLECIMIENTO') ?? '1');
+  const formato = (getFelEnvironmentValue('FORMAT') ?? 'STD_TWS').trim().toUpperCase();
+  const tipoDocumento = (
+    getFelEnvironmentValue('TIPO_DOCUMENTO') ?? resolveDefaultTipoDocumento(afiliacionIva)
+  ).trim();
 
   if (!servidor || !usuario || !clave) {
-    throw new Error('FEL: Configuración incompleta (ServidorFel, UsuarioFel, ContrasenaFel)');
+    throw new Error(`FEL: Configuración incompleta para el entorno ${environment}`);
   }
 
   if (!cliente || !nitEmisor) {
-    throw new Error('FEL: Configuración incompleta (cliente/nit emisor)');
+    throw new Error(`FEL: Cliente o NIT emisor no configurado para el entorno ${environment}`);
   }
 
   if (!Number.isFinite(establecimiento) || establecimiento <= 0) {
-    throw new Error('FEL: FEL_ESTABLECIMIENTO inválido');
+    throw new Error(`FEL: Establecimiento inválido para el entorno ${environment}`);
+  }
+
+  if (formato !== 'STD_TWS') {
+    throw new Error('FEL: El formato configurado no es compatible con el generador STD_TWS');
+  }
+
+  const emitPath = getEmitPath();
+  const anulatePath = getAnulatePath();
+  const validateNitPath = getValidateNitPath();
+  const soapActionDocument =
+    getFelEnvironmentValue('SOAP_ACTION_DOCUMENTO') ?? 'FELaction/ADOCUMENTO.Execute';
+  const soapActionAnulate =
+    getFelEnvironmentValue('SOAP_ACTION_ANULACION') ?? 'FELaction/AANULACION.Execute';
+  const soapActionValidateNit =
+    getFelEnvironmentValue('SOAP_ACTION_VALIDAR_NIT') ?? 'FELaction/ARECEPTORINFO.Execute';
+  const requireSsl = getFelBoolean('REQUIRE_SSL', environment === 'production');
+  const useClientCertificate = getFelBoolean(
+    'USE_CLIENT_CERTIFICATE',
+    environment === 'production',
+  );
+  const timeoutSeconds = Number(getFelEnvironmentValue('HTTP_TIMEOUT_SECONDS') ?? '60');
+
+  if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 300) {
+    throw new Error('FEL: El timeout HTTP debe estar entre 1 y 300 segundos');
+  }
+
+  let pfx: Buffer | null = null;
+  let pfxPassword: string | null = null;
+  if (environment === 'production') {
+    let baseUrl: URL;
+    try {
+      baseUrl = new URL(servidor);
+    } catch {
+      throw new Error('FEL: URL base de producción inválida');
+    }
+
+    if (
+      baseUrl.protocol !== 'https:' ||
+      !['www.facturaenlineagt.com', 'facturaenlineagt.com'].includes(baseUrl.hostname.toLowerCase())
+    ) {
+      throw new Error('FEL: Producción requiere el endpoint HTTPS oficial de Factura en Línea GT');
+    }
+
+    if (!requireSsl || !useClientCertificate) {
+      throw new Error('FEL: Producción requiere TLS y certificado cliente');
+    }
+    if (
+      getFelBoolean('ALLOW_FALLBACK', false) ||
+      getFelBoolean('ALLOW_NIT_VALIDATION_FALLBACK', false) ||
+      !getFelBoolean('VALIDATE_NIT_BEFORE_EMIT', true)
+    ) {
+      throw new Error('FEL: Producción requiere validación de NIT y no permite continuar con fallback');
+    }
+
+    const pfxPath = getFelEnvironmentValue('PFX_PATH')?.trim();
+    pfxPassword = getFelEnvironmentValue('PFX_PASSWORD') ?? '';
+    if (!pfxPath || !pfxPassword) {
+      throw new Error('FEL: Configure FEL_PFX_PATH_PROD y FEL_PFX_PASSWORD_PROD antes de emitir');
+    }
+
+    try {
+      const absolutePfxPath = path.resolve(process.cwd(), pfxPath);
+      const certificate = fs.statSync(absolutePfxPath);
+      if (!certificate.isFile() || certificate.size === 0 || certificate.size > 10 * 1024 * 1024) {
+        throw new Error('invalid certificate size');
+      }
+      pfx = fs.readFileSync(absolutePfxPath);
+    } catch {
+      throw new Error('FEL: No se pudo cargar el certificado cliente configurado');
+    }
+  } else if (useClientCertificate) {
+    const pfxPath = getFelEnvironmentValue('PFX_PATH')?.trim();
+    pfxPassword = getFelEnvironmentValue('PFX_PASSWORD') ?? '';
+    if (!pfxPath || !pfxPassword) {
+      throw new Error('FEL: Configure la ruta y contraseña del certificado cliente');
+    }
+    try {
+      pfx = fs.readFileSync(path.resolve(process.cwd(), pfxPath));
+    } catch {
+      throw new Error('FEL: No se pudo cargar el certificado cliente configurado');
+    }
+  }
+
+  if (environment === 'production' && shouldUseMockByDefault()) {
+    throw new Error('FEL: El modo simulado no está permitido en producción');
   }
 
   return {
+    environment,
     servidor,
     cliente,
     usuario,
@@ -463,11 +678,21 @@ async function getActiveFelConfig(tx?: Prisma.TransactionClient): Promise<Active
     formato,
     tipoDocumento,
     nombreEmpresa: empresa.NombreComercial || empresa.Nombre,
+    emitPath,
+    anulatePath,
+    validateNitPath,
+    soapActionDocument,
+    soapActionAnulate,
+    soapActionValidateNit,
+    requireSsl,
+    pfx,
+    pfxPassword,
+    timeoutMs: timeoutSeconds * 1000,
   };
 }
 
 async function fetchDocumentoRaw(xmldoc: string, config: ActiveFelConfig): Promise<string> {
-  const endpoint = normalizeUrl(config.servidor, getEmitPath());
+  const endpoint = normalizeUrl(config.servidor, config.emitPath);
 
   const envelope = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
@@ -482,20 +707,7 @@ async function fetchDocumentoRaw(xmldoc: string, config: ActiveFelConfig): Promi
   </soap:Body>
 </soap:Envelope>`;
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/xml; charset=utf-8',
-      SOAPAction: 'FELaction/ADOCUMENTO.Execute',
-    },
-    body: envelope,
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-
-  return response.text();
+  return postFelSoap(endpoint, config.soapActionDocument, envelope, config);
 }
 
 export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.TransactionClient): Promise<FelIssueResult> {
@@ -524,11 +736,10 @@ export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.Transacti
       rutaPdfFel,
     };
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith('FEL:') && !isTruthy(process.env.FEL_ALLOW_FALLBACK)) {
-      throw error;
-    }
-
-    if (!isTruthy(process.env.FEL_ALLOW_FALLBACK)) {
+    if (!shouldAllowFelFallback()) {
+      if (error instanceof Error && error.message.startsWith('FEL:')) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : 'falló conexión';
       throw new Error(`FEL: Error al emitir documento (${message})`);
     }
@@ -560,7 +771,7 @@ async function fetchAnulacionRaw(
   motivo: string,
   config: ActiveFelConfig,
 ): Promise<string> {
-  const endpoint = normalizeUrl(config.servidor, getAnulatePath());
+  const endpoint = normalizeUrl(config.servidor, config.anulatePath);
 
   const envelope = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
@@ -576,20 +787,7 @@ async function fetchAnulacionRaw(
   </soap:Body>
 </soap:Envelope>`;
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/xml; charset=utf-8',
-      SOAPAction: 'FELaction/AANULACION.Execute',
-    },
-    body: envelope,
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-
-  return response.text();
+  return postFelSoap(endpoint, config.soapActionAnulate, envelope, config);
 }
 
 export async function anulateFelInvoice(
@@ -628,6 +826,7 @@ export async function pingFelProvider(input?: {
 }): Promise<{
   ok: boolean;
   entorno: 'mock' | 'real';
+  modoFel: 'production' | 'sandbox';
   servidor: string;
   endpointDocumento: string;
   endpointAnulacion: string;
@@ -647,10 +846,11 @@ export async function pingFelProvider(input?: {
   return {
     ok: true,
     entorno: mock ? 'mock' : 'real',
+    modoFel: config.environment,
     servidor: config.servidor,
-    endpointDocumento: normalizeUrl(config.servidor, getEmitPath()),
-    endpointAnulacion: normalizeUrl(config.servidor, getAnulatePath()),
-    endpointValidarNit: normalizeUrl(config.servidor, getValidateNitPath()),
+    endpointDocumento: normalizeUrl(config.servidor, config.emitPath),
+    endpointAnulacion: normalizeUrl(config.servidor, config.anulatePath),
+    endpointValidarNit: normalizeUrl(config.servidor, config.validateNitPath),
     nitValidado: Boolean(validarNit && nitReceptor),
   };
 }

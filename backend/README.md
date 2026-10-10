@@ -65,6 +65,23 @@ JWT_REFRESH_EXPIRES_IN_DAYS="7"
 BCRYPT_SALT_ROUNDS="12"
 ```
 
+## Integración FEL de producción
+
+La emisión se ejecuta desde el flujo normal de venta únicamente cuando `requiereFactura` es
+`true`. El servicio FEL usa `FEL_ENVIRONMENT=production` para seleccionar exclusivamente las
+variables con sufijo `_PROD`; el entorno de pruebas conserva las variables legadas sin sufijo
+o puede usar `_SANDBOX`.
+
+Producción requiere `FEL_BASE_URL_PROD`, credenciales y datos del emisor, `FEL_USE_MOCK_PROD=false`,
+validación de NIT habilitada, fallback deshabilitado y un certificado cliente PFX. Configure
+`FEL_PFX_PATH_PROD` con la ruta segura del archivo y `FEL_PFX_PASSWORD_PROD` mediante un gestor
+de secretos o el entorno protegido del servidor. No envíe el PFX por chat ni lo agregue al
+repositorio; los formatos `.pfx` y `.p12` están ignorados por Git.
+
+El servicio falla antes de contactar al proveedor si faltan el certificado, su contraseña o la
+configuración TLS requerida. En producción no genera respuestas simuladas ante fallos. No use
+el endpoint de emisión para una prueba técnica: cada emisión puede tener efecto fiscal real.
+
 ## Seguridad implementada
 
 ### Autenticacion

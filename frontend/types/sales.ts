@@ -135,6 +135,7 @@ export interface FelPingRequest {
 export interface FelPingResult {
   ok: boolean;
   entorno: "mock" | "real";
+  modoFel: "production" | "sandbox";
   servidor: string;
   endpointDocumento: string;
   endpointAnulacion: string;

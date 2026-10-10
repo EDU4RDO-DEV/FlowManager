@@ -5,3 +5,7 @@ backend/uploads/
 
 # Documentación / insumos locales
 Info-Ecofactura/
+
+# Certificados FEL: nunca versionar credenciales privadas.
+*.pfx
+*.p12
