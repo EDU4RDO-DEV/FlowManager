@@ -3,12 +3,17 @@ import { clientsReports } from './definitions/clients.reports';
 import { creditReports } from './definitions/credit.reports';
 import { envasesReports } from './definitions/envases.reports';
 import { inventoryReports } from './definitions/inventory.reports';
+import { administrationReports } from './definitions/administration.reports';
 import { invoicingReports } from './definitions/invoicing.reports';
+import { logisticsReports } from './definitions/logistics.reports';
+import { payrollReports } from './definitions/payroll.reports';
+import { productionQualityReports } from './definitions/production-quality.reports';
+import { providersReports } from './definitions/providers.reports';
+import { purchasesReports } from './definitions/purchases.reports';
 import { salesReports } from './definitions/sales.reports';
 
-// Catálogo central del módulo de reportes (Fase 2: Ventas, Clientes, Créditos,
-// Facturación, Envases e Inventario). Las siguientes categorías (Compras, Rutas, etc.)
-// se agregan creando un archivo en ./definitions y sumándolo a este arreglo.
+// Catálogo central del módulo de reportes. Cada categoría vive en su propio archivo en
+// ./definitions; para agregar una nueva categoría, crear el archivo y sumarlo aquí.
 const ALL_REPORTS: AnyReportDefinition[] = [
   ...salesReports,
   ...clientsReports,
@@ -16,6 +21,12 @@ const ALL_REPORTS: AnyReportDefinition[] = [
   ...invoicingReports,
   ...envasesReports,
   ...inventoryReports,
+  ...purchasesReports,
+  ...providersReports,
+  ...productionQualityReports,
+  ...logisticsReports,
+  ...payrollReports,
+  ...administrationReports,
 ] as unknown as AnyReportDefinition[];
 
 const REPORTS_BY_ID = new Map<string, AnyReportDefinition>(ALL_REPORTS.map((report) => [report.id, report]));
