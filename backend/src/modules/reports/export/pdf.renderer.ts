@@ -1,5 +1,4 @@
 import fs from 'fs';
-import path from 'path';
 
 import type { Response } from 'express';
 
@@ -7,6 +6,7 @@ import type { ReportResult } from '../types';
 import type { CompanyInfo } from './company-info';
 import { renderHtmlToPdf, type PdfPaperFormat } from './browser';
 import { renderReportHtml, renderRunningFooter, renderRunningHeader, type ReportLayoutName } from './templates/handlebars';
+import { detectImageMimeFromBuffer } from '../../../utils/image-signature';
 
 export type RenderPdfInput = {
   reportNombre: string;
@@ -21,14 +21,6 @@ export type RenderPdfInput = {
   layout?: ReportLayoutName;
 };
 
-const MIME_BY_EXTENSION: Record<string, string> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
-  '.webp': 'image/webp',
-};
-
 // Convierte el logo guardado en disco a data URI para que Chromium lo pueda renderizar
 // sin depender de una ruta de archivo o de que el servidor estático esté accesible
 // (sección 24: el PDF debe funcionar sin importar dónde corra el backend).
@@ -36,13 +28,16 @@ function resolveLogoDataUri(logoPath: string | null): string | null {
   if (!logoPath) return null;
 
   try {
-    const extension = path.extname(logoPath).toLowerCase();
-    const mime = MIME_BY_EXTENSION[extension];
+    const buffer = fs.readFileSync(logoPath);
+    const mime = detectImageMimeFromBuffer(buffer);
     if (!mime) return null;
 
-    const buffer = fs.readFileSync(logoPath);
     return `data:${mime};base64,${buffer.toString('base64')}`;
-  } catch {
+  } catch (error) {
+    console.warn('[reports] No se pudo cargar el logotipo de empresa para PDF, se usará placeholder', {
+      logoPath,
+      reason: error instanceof Error ? error.message : 'unknown',
+    });
     return null;
   }
 }

@@ -1,6 +1,11 @@
 import { api } from "@/lib/api";
 import type { ApiResponse } from "@/types/auth";
-import type { ReportCatalogEntry, ReportCatalogResponse, ReportResult } from "@/types/reports";
+import type {
+  ReportCatalogEntry,
+  ReportCatalogResponse,
+  ReportCompanySettings,
+  ReportResult,
+} from "@/types/reports";
 
 export async function getReportsCatalog(): Promise<ReportCatalogResponse> {
   const { data } = await api.get<ApiResponse<ReportCatalogResponse>>("/api/reports/catalog");
@@ -20,6 +25,35 @@ export async function executeReport(
   if (!data.data) {
     throw new Error(data.message || "Respuesta inválida al generar el reporte");
   }
+  return data.data;
+}
+
+export async function getReportCompanySettings(): Promise<ReportCompanySettings> {
+  const { data } = await api.get<ApiResponse<ReportCompanySettings>>("/api/reports/company/settings");
+  if (!data.data) {
+    throw new Error(data.message || "No se pudo cargar la configuración de la empresa");
+  }
+  return data.data;
+}
+
+export async function uploadReportCompanyLogo(file: File): Promise<ReportCompanySettings> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const { data } = await api.post<ApiResponse<ReportCompanySettings>>(
+    "/api/reports/company/logo",
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    },
+  );
+
+  if (!data.data) {
+    throw new Error(data.message || "No se pudo actualizar el logotipo");
+  }
+
   return data.data;
 }
 
