@@ -29,18 +29,21 @@ import { deleteAdjustment, restoreAdjustment } from '../services/adjustment.serv
 describe('adjustment.service business rules', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    prismaMock.$transaction.mockImplementation(async (callback: (tx: typeof prismaMock) => unknown) =>
+      callback(prismaMock),
+    );
   });
 
   it('deleteAdjustment fails when adjustment does not exist', async () => {
     prismaMock.ajusteInventario.findFirst.mockResolvedValueOnce(null);
 
-    await expect(deleteAdjustment(88, 1)).rejects.toThrowError('Ajuste de inventario no existe');
+    await expect(deleteAdjustment(88)).rejects.toThrowError('Ajuste de inventario no existe');
   });
 
   it('restoreAdjustment fails when anulated adjustment does not exist', async () => {
     prismaMock.ajusteInventario.findFirst.mockResolvedValueOnce(null);
 
-    await expect(restoreAdjustment(101, 1)).rejects.toThrowError('Ajuste anulado no existe');
+    await expect(restoreAdjustment(101)).rejects.toThrowError('Ajuste anulado no existe');
   });
 
   it('deleteAdjustment validates auditing user before stock operations', async () => {
@@ -68,9 +71,17 @@ describe('adjustment.service business rules', () => {
 
     const tx = {
       ajusteInventario: {
+        findFirst: vi.fn().mockResolvedValue({
+          Id: 88,
+          IdInventarioItem: 20,
+          IdUsuario: 4,
+          TipoAjuste: 'ENTRADA',
+          CantidadAjustada: 5,
+        }),
         update: vi.fn().mockResolvedValue({ Id: 88 }),
       },
       inventarioItem: {
+        findUnique: vi.fn().mockResolvedValue({ Id: 20, Nombre: 'Resina', Existencia: 15 }),
         update: vi.fn().mockResolvedValue({ Id: 20 }),
       },
     };
@@ -81,6 +92,10 @@ describe('adjustment.service business rules', () => {
 
     await deleteAdjustment(88);
 
+    expect(prismaMock.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { isolationLevel: 'Serializable' },
+    );
     expect(tx.inventarioItem.update).toHaveBeenCalledWith({
       where: { Id: 20 },
       data: { Existencia: 10 },
@@ -110,6 +125,14 @@ describe('adjustment.service business rules', () => {
 
     const tx = {
       ajusteInventario: {
+        findFirst: vi.fn().mockResolvedValue({
+          Id: 101,
+          IdInventarioItem: 20,
+          IdUsuario: 1,
+          TipoAjuste: 'ENTRADA',
+          CantidadAjustada: 5,
+          NumeroAjuste: 500,
+        }),
         update: vi.fn().mockResolvedValue({
           Id: 101,
           IdInventarioItem: 20,
@@ -132,6 +155,7 @@ describe('adjustment.service business rules', () => {
         }),
       },
       inventarioItem: {
+        findUnique: vi.fn().mockResolvedValue({ Id: 20, Nombre: 'Resina', Existencia: 10 }),
         update: vi.fn().mockResolvedValue({ Id: 20 }),
       },
     };
@@ -142,6 +166,10 @@ describe('adjustment.service business rules', () => {
 
     const restored = await restoreAdjustment(101);
 
+    expect(prismaMock.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { isolationLevel: 'Serializable' },
+    );
     expect(tx.inventarioItem.update).toHaveBeenCalledWith({
       where: { Id: 20 },
       data: { Existencia: 15 },

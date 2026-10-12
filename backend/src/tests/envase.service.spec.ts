@@ -72,6 +72,10 @@ describe('Fase 5 - envases retornables (préstamo/devolución)', () => {
       cantidad: 3,
     });
 
+    expect(prismaMock.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { isolationLevel: 'Serializable' },
+    );
     expect(result.saldoNuevo).toBe(3);
     expect(prismaMock.envaseClienteSaldo.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ CantidadPrestada: 3 }) }),

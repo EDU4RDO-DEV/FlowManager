@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 import { prisma } from '../config/prisma';
 import { registerInventoryMovement } from './inventory-movement.service';
 
@@ -123,8 +125,8 @@ async function validateClienteActivo(idCliente: number) {
   }
 }
 
-async function getEnvaseItem(idInventarioItem: number) {
-  const item = await prisma.inventarioItem.findFirst({
+async function getEnvaseItem(tx: Prisma.TransactionClient, idInventarioItem: number) {
+  const item = await tx.inventarioItem.findFirst({
     where: { Id: idInventarioItem, Anulado: false },
     select: { Id: true, Nombre: true, Categoria: true, Existencia: true },
   });
@@ -224,13 +226,13 @@ export async function registrarPrestamoEnvase(input: RegistrarPrestamoInput) {
     await validateVentaDeCliente(input.idVenta, input.idCliente);
   }
 
-  const item = await getEnvaseItem(input.idInventarioItem);
-
-  if (item.Existencia < input.cantidad) {
-    throw new Error(`Stock insuficiente de ${item.Nombre}. Existencia actual ${item.Existencia}`);
-  }
-
   const result = await prisma.$transaction(async (tx) => {
+    const item = await getEnvaseItem(tx, input.idInventarioItem);
+
+    if (item.Existencia < input.cantidad) {
+      throw new Error(`Stock insuficiente de ${item.Nombre}. Existencia actual ${item.Existencia}`);
+    }
+
     const saldoExistente = await tx.envaseClienteSaldo.findFirst({
       where: { IdCliente: input.idCliente, IdInventarioItem: input.idInventarioItem },
       select: { Id: true, CantidadPrestada: true },
@@ -294,7 +296,7 @@ export async function registrarPrestamoEnvase(input: RegistrarPrestamoInput) {
     });
 
     return created;
-  });
+  }, { isolationLevel: 'Serializable' });
 
   return toMovimientoDto(result);
 }
@@ -313,9 +315,9 @@ export async function registrarDevolucionEnvase(input: RegistrarDevolucionInput)
     await validateVentaDeCliente(input.idVenta, input.idCliente);
   }
 
-  const item = await getEnvaseItem(input.idInventarioItem);
-
   const result = await prisma.$transaction(async (tx) => {
+    const item = await getEnvaseItem(tx, input.idInventarioItem);
+
     const saldoExistente = await tx.envaseClienteSaldo.findFirst({
       where: { IdCliente: input.idCliente, IdInventarioItem: input.idInventarioItem },
       select: { Id: true, CantidadPrestada: true },
@@ -374,7 +376,7 @@ export async function registrarDevolucionEnvase(input: RegistrarDevolucionInput)
     });
 
     return created;
-  });
+  }, { isolationLevel: 'Serializable' });
 
   return toMovimientoDto(result);
 }
@@ -386,16 +388,16 @@ export async function anulateMovimientoEnvase(id: number, idUsuarioAnulador?: nu
     await validateUsuarioExists(idUsuarioAnulador);
   }
 
-  const movimiento = await prisma.movimientoEnvase.findFirst({
-    where: { Id: id, Anulado: false },
-    select: { Id: true, IdCliente: true, IdInventarioItem: true, TipoMovimiento: true, Cantidad: true },
-  });
-
-  if (!movimiento) {
-    throw new Error('Movimiento de envase no existe');
-  }
-
   await prisma.$transaction(async (tx) => {
+    const movimiento = await tx.movimientoEnvase.findFirst({
+      where: { Id: id, Anulado: false },
+      select: { Id: true, IdCliente: true, IdInventarioItem: true, TipoMovimiento: true, Cantidad: true },
+    });
+
+    if (!movimiento) {
+      throw new Error('Movimiento de envase no existe');
+    }
+
     const saldoExistente = await tx.envaseClienteSaldo.findFirst({
       where: { IdCliente: movimiento.IdCliente, IdInventarioItem: movimiento.IdInventarioItem },
       select: { Id: true, CantidadPrestada: true },
@@ -461,7 +463,7 @@ export async function anulateMovimientoEnvase(id: number, idUsuarioAnulador?: nu
         FechaAnulacion: new Date(),
       },
     });
-  });
+  }, { isolationLevel: 'Serializable' });
 }
 
 export async function restoreMovimientoEnvase(id: number, idUsuarioModificador?: number) {
@@ -469,16 +471,16 @@ export async function restoreMovimientoEnvase(id: number, idUsuarioModificador?:
     await validateUsuarioExists(idUsuarioModificador);
   }
 
-  const movimiento = await prisma.movimientoEnvase.findFirst({
-    where: { Id: id, Anulado: true },
-    select: { Id: true, IdCliente: true, IdInventarioItem: true, TipoMovimiento: true, Cantidad: true },
-  });
-
-  if (!movimiento) {
-    throw new Error('Movimiento de envase anulado no existe');
-  }
-
   await prisma.$transaction(async (tx) => {
+    const movimiento = await tx.movimientoEnvase.findFirst({
+      where: { Id: id, Anulado: true },
+      select: { Id: true, IdCliente: true, IdInventarioItem: true, TipoMovimiento: true, Cantidad: true },
+    });
+
+    if (!movimiento) {
+      throw new Error('Movimiento de envase anulado no existe');
+    }
+
     const saldoExistente = await tx.envaseClienteSaldo.findFirst({
       where: { IdCliente: movimiento.IdCliente, IdInventarioItem: movimiento.IdInventarioItem },
       select: { Id: true, CantidadPrestada: true },
@@ -552,7 +554,7 @@ export async function restoreMovimientoEnvase(id: number, idUsuarioModificador?:
         FechaModificacion: new Date(),
       },
     });
-  });
+  }, { isolationLevel: 'Serializable' });
 
   return getMovimientoEnvaseById(id);
 }

@@ -315,6 +315,13 @@ export async function anulateSaleController(req: Request, res: Response) {
 
     const message = error instanceof Error ? error.message : 'Error interno';
 
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({
+        ok: false,
+        message: 'Conflicto concurrente al anular la venta; verifique el resultado antes de reintentar',
+      });
+    }
+
     if (
       message === 'Venta no existe o ya está anulada' ||
       message === 'Usuario no existe' ||

@@ -39,6 +39,9 @@ import {
 describe('purchase.service business rules', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    prismaMock.$transaction.mockImplementation(async (callback: (tx: typeof prismaMock) => unknown) =>
+      callback(prismaMock),
+    );
   });
 
   function buildPurchaseAggregate(anulado: boolean) {
@@ -100,7 +103,7 @@ describe('purchase.service business rules', () => {
   it('anulatePurchase fails when purchase does not exist', async () => {
     prismaMock.compra.findFirst.mockResolvedValueOnce(null);
 
-    await expect(anulatePurchase(77, 1)).rejects.toThrowError('Compra no existe o ya está anulada');
+    await expect(anulatePurchase(77)).rejects.toThrowError('Compra no existe o ya está anulada');
   });
 
   it('restorePurchaseExpense fails when expense does not exist', async () => {
@@ -117,15 +120,6 @@ describe('purchase.service business rules', () => {
   });
 
   it('anulatePurchase applies stock reversal and marks records as anulated', async () => {
-    prismaMock.compra.findFirst.mockResolvedValueOnce({
-      Id: 10,
-      IdUsuario: 4,
-      NumeroCompra: 123,
-      EsGasto: false,
-      DetalleCompra: [{ Id: 22, IdInventarioItem: 7, Cantidad: 3 }],
-      DetalleGasto: [],
-    });
-
     const tx = {
       inventarioItem: {
         findFirst: vi.fn().mockResolvedValue({ Id: 7, Nombre: 'Resina', Existencia: 13 }),
@@ -138,6 +132,14 @@ describe('purchase.service business rules', () => {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       compra: {
+        findFirst: vi.fn().mockResolvedValue({
+          Id: 10,
+          IdUsuario: 4,
+          NumeroCompra: 123,
+          EsGasto: false,
+          DetalleCompra: [{ Id: 22, IdInventarioItem: 7, Cantidad: 3 }],
+          DetalleGasto: [],
+        }),
         update: vi.fn().mockResolvedValue({ Id: 10 }),
       },
     };
@@ -148,6 +150,10 @@ describe('purchase.service business rules', () => {
 
     await anulatePurchase(10);
 
+    expect(prismaMock.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { isolationLevel: 'Serializable' },
+    );
     expect(tx.inventarioItem.update).toHaveBeenCalledWith({
       where: { Id: 7 },
       data: { Existencia: 10 },
@@ -166,14 +172,6 @@ describe('purchase.service business rules', () => {
   });
 
   it('restorePurchase reapplies stock and clears anulation flags', async () => {
-    prismaMock.compra.findFirst.mockResolvedValueOnce({
-      Id: 10,
-      IdUsuario: 4,
-      NumeroCompra: 123,
-      EsGasto: false,
-      DetalleCompra: [{ Id: 22, IdInventarioItem: 7, Cantidad: 3 }],
-      DetalleGasto: [],
-    });
     prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
 
     const tx = {
@@ -189,7 +187,17 @@ describe('purchase.service business rules', () => {
       },
       compra: {
         update: vi.fn().mockResolvedValue({ Id: 10 }),
-        findFirst: vi.fn().mockResolvedValue(buildPurchaseAggregate(false)),
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce({
+            Id: 10,
+            IdUsuario: 4,
+            NumeroCompra: 123,
+            EsGasto: false,
+            DetalleCompra: [{ Id: 22, IdInventarioItem: 7, Cantidad: 3 }],
+            DetalleGasto: [],
+          })
+          .mockResolvedValueOnce(buildPurchaseAggregate(false)),
       },
     };
 
@@ -238,7 +246,10 @@ describe('purchase.service business rules', () => {
       }),
     ).rejects.toThrowError('Ya existe una compra activa con ese numeroFactura para este proveedor');
 
-    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(prismaMock.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { isolationLevel: 'Serializable' },
+    );
   });
 
   it('updatePurchaseExpense registra IdUsuarioModificador y FechaModificacion', async () => {

@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 
 import {
@@ -91,6 +92,13 @@ export async function createAdjustmentController(req: Request, res: Response) {
 
     const message = error instanceof Error ? error.message : 'Error interno';
 
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({
+        ok: false,
+        message: 'Conflicto concurrente de inventario; consulte las existencias antes de reintentar',
+      });
+    }
+
     if (message === 'Usuario no existe' || message === 'Item de inventario no existe') {
       return res.status(404).json({ ok: false, message });
     }
@@ -118,6 +126,13 @@ export async function deleteAdjustmentController(req: Request, res: Response) {
 
     const message = error instanceof Error ? error.message : 'Error interno';
 
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({
+        ok: false,
+        message: 'Conflicto concurrente de inventario; consulte las existencias antes de reintentar',
+      });
+    }
+
     if (message === 'Ajuste de inventario no existe' || message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
     }
@@ -144,6 +159,13 @@ export async function restoreAdjustmentController(req: Request, res: Response) {
     }
 
     const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({
+        ok: false,
+        message: 'Conflicto concurrente de inventario; consulte las existencias antes de reintentar',
+      });
+    }
 
     if (
       message === 'Ajuste anulado no existe' ||

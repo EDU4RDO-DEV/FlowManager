@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 import { prisma } from '../config/prisma';
 import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
 import { registerInventoryMovement } from './inventory-movement.service';
@@ -92,8 +94,12 @@ async function validateProveedorExists(idProveedor: number) {
   }
 }
 
-async function validateNumeroFacturaDisponible(idProveedor: number, numeroFactura: string) {
-  const existing = await prisma.compra.findFirst({
+async function validateNumeroFacturaDisponible(
+  tx: Prisma.TransactionClient,
+  idProveedor: number,
+  numeroFactura: string,
+) {
+  const existing = await tx.compra.findFirst({
     where: {
       IdProveedor: idProveedor,
       NumeroFactura: numeroFactura,
@@ -107,8 +113,8 @@ async function validateNumeroFacturaDisponible(idProveedor: number, numeroFactur
   }
 }
 
-async function getNextNumeroCompra(): Promise<number> {
-  const lastPurchase = await prisma.compra.findFirst({
+async function getNextNumeroCompra(tx: Prisma.TransactionClient): Promise<number> {
+  const lastPurchase = await tx.compra.findFirst({
     orderBy: { NumeroCompra: 'desc' },
     select: { NumeroCompra: true },
   });
@@ -383,16 +389,16 @@ export async function getPurchaseById(id: number) {
 export async function createPurchase(input: CreatePurchaseInput) {
   await validateUsuarioExists(input.idUsuario);
   await validateProveedorExists(input.idProveedor);
-  await validateNumeroFacturaDisponible(input.idProveedor, input.numeroFactura);
 
   const detailItems = input.esGasto ? input.detalleGasto ?? [] : input.detalleCompra ?? [];
   if (detailItems.length === 0) {
     throw new Error('Debe enviar al menos un detalle para registrar la compra');
   }
 
-  const numeroCompra = await getNextNumeroCompra();
-
   const created = await prisma.$transaction(async (tx) => {
+    await validateNumeroFacturaDisponible(tx, input.idProveedor, input.numeroFactura);
+    const numeroCompra = await getNextNumeroCompra(tx);
+
     const compra = await tx.compra.create({
       data: {
         IdProveedor: input.idProveedor,
@@ -520,7 +526,7 @@ export async function createPurchase(input: CreatePurchaseInput) {
         DetalleGasto: true,
       },
     });
-  });
+  }, { isolationLevel: 'Serializable' });
 
   if (!created) {
     throw new Error('No se pudo registrar la compra');
@@ -530,38 +536,38 @@ export async function createPurchase(input: CreatePurchaseInput) {
 }
 
 export async function anulatePurchase(id: number, idUsuarioAnulador?: number) {
-  const purchase = await prisma.compra.findFirst({
-    where: {
-      Id: id,
-      Anulado: false,
-    },
-    include: {
-      DetalleCompra: {
-        where: { Anulado: false },
-        select: {
-          Id: true,
-          IdInventarioItem: true,
-          Cantidad: true,
-        },
-      },
-      DetalleGasto: {
-        where: { Anulado: false },
-        select: {
-          Id: true,
-        },
-      },
-    },
-  });
-
-  if (!purchase) {
-    throw new Error('Compra no existe o ya está anulada');
-  }
-
   if (idUsuarioAnulador !== undefined) {
     await validateUsuarioExists(idUsuarioAnulador);
   }
 
   await prisma.$transaction(async (tx) => {
+    const purchase = await tx.compra.findFirst({
+      where: {
+        Id: id,
+        Anulado: false,
+      },
+      include: {
+        DetalleCompra: {
+          where: { Anulado: false },
+          select: {
+            Id: true,
+            IdInventarioItem: true,
+            Cantidad: true,
+          },
+        },
+        DetalleGasto: {
+          where: { Anulado: false },
+          select: {
+            Id: true,
+          },
+        },
+      },
+    });
+
+    if (!purchase) {
+      throw new Error('Compra no existe o ya está anulada');
+    }
+
     const fechaAnulacion = new Date();
 
     if (!purchase.EsGasto) {
@@ -640,42 +646,42 @@ export async function anulatePurchase(id: number, idUsuarioAnulador?: number) {
         FechaAnulacion: fechaAnulacion,
       },
     });
-  });
+  }, { isolationLevel: 'Serializable' });
 }
 
 export async function restorePurchase(id: number, idUsuarioModificador?: number) {
-  const purchase = await prisma.compra.findFirst({
-    where: {
-      Id: id,
-      Anulado: true,
-    },
-    include: {
-      DetalleCompra: {
-        where: { Anulado: true },
-        select: {
-          Id: true,
-          IdInventarioItem: true,
-          Cantidad: true,
-        },
-      },
-      DetalleGasto: {
-        where: { Anulado: true },
-        select: {
-          Id: true,
-        },
-      },
-    },
-  });
-
-  if (!purchase) {
-    throw new Error('Compra anulada no existe');
-  }
-
   if (idUsuarioModificador !== undefined) {
     await validateUsuarioExists(idUsuarioModificador);
   }
 
   const restored = await prisma.$transaction(async (tx) => {
+    const purchase = await tx.compra.findFirst({
+      where: {
+        Id: id,
+        Anulado: true,
+      },
+      include: {
+        DetalleCompra: {
+          where: { Anulado: true },
+          select: {
+            Id: true,
+            IdInventarioItem: true,
+            Cantidad: true,
+          },
+        },
+        DetalleGasto: {
+          where: { Anulado: true },
+          select: {
+            Id: true,
+          },
+        },
+      },
+    });
+
+    if (!purchase) {
+      throw new Error('Compra anulada no existe');
+    }
+
     const fechaModificacion = new Date();
 
     if (!purchase.EsGasto) {
@@ -788,7 +794,7 @@ export async function restorePurchase(id: number, idUsuarioModificador?: number)
         DetalleGasto: true,
       },
     });
-  });
+  }, { isolationLevel: 'Serializable' });
 
   if (!restored) {
     throw new Error('No se pudo restaurar la compra');

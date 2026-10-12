@@ -192,46 +192,25 @@ export async function createAdjustment(input: CreateAdjustmentInput) {
     throw new Error('Debes agregar al menos un item al ajuste');
   }
 
-  const productIds = Array.from(new Set(input.items.map((item) => item.idInventarioItem)));
-  const itemsInventario = await prisma.inventarioItem.findMany({
-    where: {
-      Id: { in: productIds },
-      Anulado: false,
-    },
-    select: {
-      Id: true,
-      Existencia: true,
-    },
-  });
+  const numeroAjuste = await getNextNumeroAjuste();
 
-  if (itemsInventario.length !== productIds.length) {
-    throw new Error('Item de inventario no existe');
-  }
+  const result = await prisma.$transaction(async (tx) => {
+    const productIds = Array.from(new Set(input.items.map((item) => item.idInventarioItem)));
+    const itemsInventario = await tx.inventarioItem.findMany({
+      where: {
+        Id: { in: productIds },
+        Anulado: false,
+      },
+      select: {
+        Id: true,
+        Existencia: true,
+      },
+    });
 
-  const stockMap = new Map(itemsInventario.map((item) => [item.Id, item.Existencia]));
-
-  for (const item of input.items) {
-    const current = stockMap.get(item.idInventarioItem);
-    if (current === undefined) {
+    if (itemsInventario.length !== productIds.length) {
       throw new Error('Item de inventario no existe');
     }
 
-    const next =
-      item.tipoAjuste === 'ENTRADA' ? current + item.cantidadAjustada : current - item.cantidadAjustada;
-
-    if (next < 0) {
-      throw new Error(
-        `Stock insuficiente. Existencia actual: ${current}, Cantidad a descontar: ${item.cantidadAjustada}`,
-      );
-    }
-
-    stockMap.set(item.idInventarioItem, next);
-  }
-
-  const numeroAjuste = await getNextNumeroAjuste();
-
-  // Transacción atómica: Ajuste + Stock + Bitácora
-  const result = await prisma.$transaction(async (tx) => {
     const createdAdjustments = [] as Array<
       Awaited<ReturnType<typeof tx.ajusteInventario.create>> & {
         InventarioItem: {
@@ -304,7 +283,7 @@ export async function createAdjustment(input: CreateAdjustmentInput) {
     }
 
     return createdAdjustments;
-  });
+  }, { isolationLevel: 'Serializable' });
 
   return {
     numeroAjuste,
@@ -315,51 +294,46 @@ export async function createAdjustment(input: CreateAdjustmentInput) {
 }
 
 export async function deleteAdjustment(id: number, idUsuarioAnulador?: number) {
-  const existing = await prisma.ajusteInventario.findFirst({
-    where: { Id: id, Anulado: false },
-    select: {
-      Id: true,
-      IdInventarioItem: true,
-      IdUsuario: true,
-      TipoAjuste: true,
-      CantidadAjustada: true,
-    },
-  });
-
-  if (!existing) {
-    throw new Error('Ajuste de inventario no existe');
-  }
-
   if (idUsuarioAnulador !== undefined) {
     await validateUsuarioExists(idUsuarioAnulador);
   }
 
-  // Obtener existencia actual
-  const item = await prisma.inventarioItem.findUnique({
-    where: { Id: existing.IdInventarioItem },
-    select: { Id: true, Nombre: true, Existencia: true },
-  });
-
-  if (!item) {
-    throw new Error('Item de inventario no encontrado');
-  }
-
-  // Calcular reversión: si el ajuste fue entrada, la anulación resta; si fue salida, la anulación suma
-  const nuevaExistencia =
-    existing.TipoAjuste === 'ENTRADA'
-      ? item.Existencia - existing.CantidadAjustada
-      : item.Existencia + existing.CantidadAjustada;
-
-  // Validar que reversión no deje stock negativo
-  if (nuevaExistencia < 0) {
-    throw new Error(
-      `No se puede anular: la reversión dejaría stock negativo (Stock actual: ${item.Existencia}, Reversión: ${existing.TipoAjuste === 'ENTRADA' ? '-' : '+'}${existing.CantidadAjustada})`,
-    );
-  }
-
-  // Transacción atómica: Anular ajuste + Revertir stock + Registrar reversión en bitácora
   await prisma.$transaction(async (tx) => {
-    // 1. Anular el ajuste
+    const existing = await tx.ajusteInventario.findFirst({
+      where: { Id: id, Anulado: false },
+      select: {
+        Id: true,
+        IdInventarioItem: true,
+        IdUsuario: true,
+        TipoAjuste: true,
+        CantidadAjustada: true,
+      },
+    });
+
+    if (!existing) {
+      throw new Error('Ajuste de inventario no existe');
+    }
+
+    const item = await tx.inventarioItem.findUnique({
+      where: { Id: existing.IdInventarioItem },
+      select: { Id: true, Nombre: true, Existencia: true },
+    });
+
+    if (!item) {
+      throw new Error('Item de inventario no encontrado');
+    }
+
+    const nuevaExistencia =
+      existing.TipoAjuste === 'ENTRADA'
+        ? item.Existencia - existing.CantidadAjustada
+        : item.Existencia + existing.CantidadAjustada;
+
+    if (nuevaExistencia < 0) {
+      throw new Error(
+        `No se puede anular: la reversión dejaría stock negativo (Stock actual: ${item.Existencia}, Reversión: ${existing.TipoAjuste === 'ENTRADA' ? '-' : '+'}${existing.CantidadAjustada})`,
+      );
+    }
+
     await tx.ajusteInventario.update({
       where: { Id: id },
       data: {
@@ -369,7 +343,6 @@ export async function deleteAdjustment(id: number, idUsuarioAnulador?: number) {
       },
     });
 
-    // 2. Revertir existencia del item
     await tx.inventarioItem.update({
       where: { Id: existing.IdInventarioItem },
       data: {
@@ -377,7 +350,6 @@ export async function deleteAdjustment(id: number, idUsuarioAnulador?: number) {
       },
     });
 
-    // 3. Registrar la reversión como una nueva entrada del libro (no se muta el historial original).
     await registerInventoryMovement(tx, {
       idInventarioItem: existing.IdInventarioItem,
       idUsuario: idUsuarioAnulador ?? existing.IdUsuario,
@@ -389,56 +361,51 @@ export async function deleteAdjustment(id: number, idUsuarioAnulador?: number) {
       cantidad: existing.CantidadAjustada,
       nuevaExistencia,
     });
-  });
+  }, { isolationLevel: 'Serializable' });
 }
 
 export async function restoreAdjustment(id: number, idUsuarioModificador?: number) {
-  const existing = await prisma.ajusteInventario.findFirst({
-    where: { Id: id, Anulado: true },
-    select: {
-      Id: true,
-      IdInventarioItem: true,
-      IdUsuario: true,
-      TipoAjuste: true,
-      CantidadAjustada: true,
-      NumeroAjuste: true,
-    },
-  });
-
-  if (!existing) {
-    throw new Error('Ajuste anulado no existe');
-  }
-
   if (idUsuarioModificador !== undefined) {
     await validateUsuarioExists(idUsuarioModificador);
   }
 
-  // Obtener existencia actual
-  const item = await prisma.inventarioItem.findUnique({
-    where: { Id: existing.IdInventarioItem },
-    select: { Id: true, Nombre: true, Existencia: true },
-  });
-
-  if (!item) {
-    throw new Error('Item de inventario no encontrado');
-  }
-
-  // Calcular nueva existencia al restaurar
-  const nuevaExistencia =
-    existing.TipoAjuste === 'ENTRADA'
-      ? item.Existencia + existing.CantidadAjustada
-      : item.Existencia - existing.CantidadAjustada;
-
-  // Validar que restauración no deje stock negativo
-  if (nuevaExistencia < 0) {
-    throw new Error(
-      `No se puede restaurar: dejaría stock negativo (Stock actual: ${item.Existencia}, Ajuste: ${existing.TipoAjuste === 'ENTRADA' ? '+' : '-'}${existing.CantidadAjustada})`,
-    );
-  }
-
-  // Transacción atómica: Restaurar ajuste + Aplicar stock + Registrar reversión en bitácora
   const result = await prisma.$transaction(async (tx) => {
-    // 1. Restaurar el ajuste
+    const existing = await tx.ajusteInventario.findFirst({
+      where: { Id: id, Anulado: true },
+      select: {
+        Id: true,
+        IdInventarioItem: true,
+        IdUsuario: true,
+        TipoAjuste: true,
+        CantidadAjustada: true,
+        NumeroAjuste: true,
+      },
+    });
+
+    if (!existing) {
+      throw new Error('Ajuste anulado no existe');
+    }
+
+    const item = await tx.inventarioItem.findUnique({
+      where: { Id: existing.IdInventarioItem },
+      select: { Id: true, Nombre: true, Existencia: true },
+    });
+
+    if (!item) {
+      throw new Error('Item de inventario no encontrado');
+    }
+
+    const nuevaExistencia =
+      existing.TipoAjuste === 'ENTRADA'
+        ? item.Existencia + existing.CantidadAjustada
+        : item.Existencia - existing.CantidadAjustada;
+
+    if (nuevaExistencia < 0) {
+      throw new Error(
+        `No se puede restaurar: dejaría stock negativo (Stock actual: ${item.Existencia}, Ajuste: ${existing.TipoAjuste === 'ENTRADA' ? '+' : '-'}${existing.CantidadAjustada})`,
+      );
+    }
+
     const restored = await tx.ajusteInventario.update({
       where: { Id: id },
       data: {
@@ -459,7 +426,6 @@ export async function restoreAdjustment(id: number, idUsuarioModificador?: numbe
       },
     });
 
-    // 2. Aplicar existencia del item
     await tx.inventarioItem.update({
       where: { Id: existing.IdInventarioItem },
       data: {
@@ -467,7 +433,6 @@ export async function restoreAdjustment(id: number, idUsuarioModificador?: numbe
       },
     });
 
-    // 3. Registrar la restauración como una nueva entrada del libro (no se muta el historial original).
     await registerInventoryMovement(tx, {
       idInventarioItem: existing.IdInventarioItem,
       idUsuario: idUsuarioModificador ?? existing.IdUsuario,
@@ -481,7 +446,7 @@ export async function restoreAdjustment(id: number, idUsuarioModificador?: numbe
     });
 
     return restored;
-  });
+  }, { isolationLevel: 'Serializable' });
 
   return toAdjustmentDto(result);
 }

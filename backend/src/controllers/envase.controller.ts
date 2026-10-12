@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 
 import {
@@ -52,7 +53,8 @@ const CONFLICT_MESSAGES = new Set([
   'No es posible restaurar: la existencia en bodega quedaría negativa',
 ]);
 
-function mapErrorStatus(message: string): number {
+function mapErrorStatus(error: unknown, message: string): number {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') return 409;
   if (NOT_FOUND_MESSAGES.has(message)) return 404;
   if (CONFLICT_MESSAGES.has(message)) return 409;
   if (message.startsWith('Stock insuficiente')) return 409;
@@ -79,7 +81,7 @@ export async function getMovimientoEnvaseByIdController(req: Request, res: Respo
   } catch (error) {
     if (handleZodOr500(error, res)) return;
     const message = getMessage(error);
-    return res.status(mapErrorStatus(message)).json({ ok: false, message });
+    return res.status(mapErrorStatus(error, message)).json({ ok: false, message });
   }
 }
 
@@ -107,7 +109,7 @@ export async function registrarPrestamoEnvaseController(req: Request, res: Respo
   } catch (error) {
     if (handleZodOr500(error, res)) return;
     const message = getMessage(error);
-    return res.status(mapErrorStatus(message)).json({ ok: false, message });
+    return res.status(mapErrorStatus(error, message)).json({ ok: false, message });
   }
 }
 
@@ -124,7 +126,7 @@ export async function registrarDevolucionEnvaseController(req: Request, res: Res
   } catch (error) {
     if (handleZodOr500(error, res)) return;
     const message = getMessage(error);
-    return res.status(mapErrorStatus(message)).json({ ok: false, message });
+    return res.status(mapErrorStatus(error, message)).json({ ok: false, message });
   }
 }
 
@@ -138,7 +140,7 @@ export async function anulateMovimientoEnvaseController(req: Request, res: Respo
   } catch (error) {
     if (handleZodOr500(error, res)) return;
     const message = getMessage(error);
-    return res.status(mapErrorStatus(message)).json({ ok: false, message });
+    return res.status(mapErrorStatus(error, message)).json({ ok: false, message });
   }
 }
 
@@ -152,6 +154,6 @@ export async function restoreMovimientoEnvaseController(req: Request, res: Respo
   } catch (error) {
     if (handleZodOr500(error, res)) return;
     const message = getMessage(error);
-    return res.status(mapErrorStatus(message)).json({ ok: false, message });
+    return res.status(mapErrorStatus(error, message)).json({ ok: false, message });
   }
 }

@@ -1342,9 +1342,31 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
   }
 
   await prisma.$transaction(async (tx) => {
+    const saleToAnulate = await tx.venta.findFirst({
+      where: {
+        Id: id,
+        Anulado: false,
+      },
+      include: {
+        DetalleVenta: {
+          where: { Anulado: false },
+          select: {
+            Id: true,
+            IdInventarioItem: true,
+            Cantidad: true,
+            Nombre: true,
+          },
+        },
+      },
+    });
+
+    if (!saleToAnulate) {
+      throw new Error('Venta no existe o ya está anulada');
+    }
+
     const fechaAnulacion = new Date();
 
-    for (const detail of sale.DetalleVenta) {
+    for (const detail of saleToAnulate.DetalleVenta) {
       const item = await tx.inventarioItem.findFirst({
         where: {
           Id: detail.IdInventarioItem,
@@ -1372,10 +1394,10 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
 
       await registerInventoryMovement(tx, {
         idInventarioItem: detail.IdInventarioItem,
-        idUsuario: idUsuarioAnulador ?? sale.IdUsuario,
+        idUsuario: idUsuarioAnulador ?? saleToAnulate.IdUsuario,
         tipoDocumento: 'VENAN',
-        documento: sale.Id.toString(),
-        nombre: `Entrada por anulación venta #${sale.NumeroVenta} - ${detail.Nombre}`,
+        documento: saleToAnulate.Id.toString(),
+        nombre: `Entrada por anulación venta #${saleToAnulate.NumeroVenta} - ${detail.Nombre}`,
         tipoMovimiento: true,
         existenciaAnterior,
         cantidad: detail.Cantidad,
@@ -1385,7 +1407,7 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
 
     await tx.detalleVenta.updateMany({
       where: {
-        IdVenta: sale.Id,
+        IdVenta: saleToAnulate.Id,
         Anulado: false,
       },
       data: {
@@ -1397,7 +1419,7 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
 
     await tx.pagoVenta.updateMany({
       where: {
-        IdVenta: sale.Id,
+        IdVenta: saleToAnulate.Id,
         Anulado: false,
       },
       data: {
@@ -1409,7 +1431,7 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
 
     await tx.venta.update({
       where: {
-        Id: sale.Id,
+        Id: saleToAnulate.Id,
       },
       data: {
         Anulado: true,
@@ -1421,12 +1443,12 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
 
     await tx.cuentaPorCobrar.updateMany({
       where: {
-        IdVenta: sale.Id,
+        IdVenta: saleToAnulate.Id,
         Anulado: false,
       },
       data: {
         Estado: 'ANULADO',
-        MotivoCierre: `ANULACION_VENTA_${sale.NumeroVenta}`,
+        MotivoCierre: `ANULACION_VENTA_${saleToAnulate.NumeroVenta}`,
         Anulado: true,
         IdUsuarioAnulador: idUsuarioAnulador,
         FechaAnulacion: fechaAnulacion,
@@ -1434,7 +1456,7 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
         IdUsuarioModificador: idUsuarioAnulador,
       },
     });
-  });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
   // Se notifica solo cuando FEL (si aplicaba) y la transacción de anulación
   // ya terminaron correctamente; nunca entre ambos pasos.

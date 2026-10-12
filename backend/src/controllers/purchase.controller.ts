@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 
 import {
@@ -96,6 +97,13 @@ export async function createPurchaseController(req: Request, res: Response) {
 
     const message = error instanceof Error ? error.message : 'Error interno';
 
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({
+        ok: false,
+        message: 'Conflicto concurrente al registrar la compra; verifique el resultado antes de reintentar',
+      });
+    }
+
     if (
       message === 'Usuario no existe' ||
       message === 'Proveedor no existe' ||
@@ -128,6 +136,13 @@ export async function anulatePurchaseController(req: Request, res: Response) {
 
     const message = error instanceof Error ? error.message : 'Error interno';
 
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({
+        ok: false,
+        message: 'Conflicto concurrente al anular la compra; verifique el resultado antes de reintentar',
+      });
+    }
+
     if (
       message === 'Compra no existe o ya está anulada' ||
       message === 'Usuario no existe' ||
@@ -158,6 +173,13 @@ export async function restorePurchaseController(req: Request, res: Response) {
     }
 
     const message = error instanceof Error ? error.message : 'Error interno';
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({
+        ok: false,
+        message: 'Conflicto concurrente al restaurar la compra; verifique el resultado antes de reintentar',
+      });
+    }
 
     if (
       message === 'Compra anulada no existe' ||

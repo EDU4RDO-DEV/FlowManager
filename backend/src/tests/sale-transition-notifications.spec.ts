@@ -62,7 +62,9 @@ describe('Fase 23 - VENTA_ANULADA (anulateSale)', () => {
 
   it('notifica VENTA_ANULADA una sola vez, después de completar la transacción de anulación', async () => {
     prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
-    prismaMock.venta.findFirst.mockResolvedValueOnce(buildAnulateSaleRow());
+    prismaMock.venta.findFirst
+      .mockResolvedValueOnce(buildAnulateSaleRow())
+      .mockResolvedValueOnce(buildAnulateSaleRow());
     prismaMock.detalleVenta.updateMany.mockResolvedValueOnce({});
     prismaMock.pagoVenta.updateMany.mockResolvedValueOnce({});
     prismaMock.venta.update.mockResolvedValueOnce({});
@@ -72,6 +74,10 @@ describe('Fase 23 - VENTA_ANULADA (anulateSale)', () => {
     await Promise.resolve();
     await Promise.resolve();
 
+    expect(prismaMock.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { isolationLevel: 'Serializable' },
+    );
     expect(sendMock).toHaveBeenCalledTimes(1);
     expect(sendMock).toHaveBeenCalledWith('VENTA_ANULADA', {
       numeroVenta: 1007,
@@ -81,7 +87,9 @@ describe('Fase 23 - VENTA_ANULADA (anulateSale)', () => {
 
   it('no afecta la anulación ya confirmada si la notificación falla', async () => {
     prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
-    prismaMock.venta.findFirst.mockResolvedValueOnce(buildAnulateSaleRow());
+    prismaMock.venta.findFirst
+      .mockResolvedValueOnce(buildAnulateSaleRow())
+      .mockResolvedValueOnce(buildAnulateSaleRow());
     prismaMock.detalleVenta.updateMany.mockResolvedValueOnce({});
     prismaMock.pagoVenta.updateMany.mockResolvedValueOnce({});
     prismaMock.venta.update.mockResolvedValueOnce({});
