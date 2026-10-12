@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 
 import {
@@ -81,11 +82,7 @@ export async function previewPayrollController(req: Request, res: Response) {
       return res.status(400).json({ ok: false, message });
     }
 
-    if (
-      message === 'Empleado no existe' ||
-      message.includes('no tiene usuario vinculado') ||
-      message.includes('no tiene configuración de comisión')
-    ) {
+    if (message === 'Empleado no existe') {
       return res.status(404).json({ ok: false, message });
     }
 
@@ -113,24 +110,31 @@ export async function generatePayrollController(req: Request, res: Response) {
 
     const message = error instanceof Error ? error.message : 'Error interno';
 
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return res.status(409).json({
+        ok: false,
+        message: 'Conflicto de unicidad al generar; vuelva a previsualizar y verifique el período antes de reintentar.',
+      });
+    }
+
     if (
       message === 'Mes inválido' ||
       message === 'Año inválido' ||
-      message === 'Monto de ajuste inválido'
+      message === 'Monto de ajuste inválido' ||
+      message === 'No hay empleados activos para incluir en el período.'
     ) {
       return res.status(400).json({ ok: false, message });
     }
 
-    if (
-      message === 'Usuario no existe' ||
-      message === 'Empleado no existe' ||
-      message.includes('no tiene usuario vinculado') ||
-      message.includes('no tiene configuración de comisión')
-    ) {
+    if (message === 'Usuario no existe' || message === 'Empleado no existe') {
       return res.status(404).json({ ok: false, message });
     }
 
-    if (message.includes('Ya existe planilla activa para empleado')) {
+    if (
+      message.includes('Ya existe planilla activa para empleado') ||
+      message === 'La previsualización cambió; vuelva a previsualizar antes de generar.' ||
+      message === 'Hay validaciones pendientes; corrija los datos indicados antes de generar.'
+    ) {
       return res.status(409).json({ ok: false, message });
     }
 

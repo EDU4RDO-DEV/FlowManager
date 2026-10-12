@@ -45,7 +45,18 @@ import {
   previewPayroll,
   restorePayroll,
 } from "@/services/payroll.service";
-import type { PayrollAdjustmentPayload, PayrollDto, PayrollPreviewResult } from "@/types/payroll";
+import type {
+  PayrollAdjustmentPayload,
+  PayrollDetailDto,
+  PayrollDto,
+  PreviewPayrollPayload,
+  PayrollPreviewResult,
+} from "@/types/payroll";
+
+const MONTH_NAMES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
 
 function currentMonth() {
   const now = new Date();
@@ -58,6 +69,10 @@ function currentYear() {
 
 function money(value: number) {
   return `Q${value.toFixed(2)}`;
+}
+
+function previewPayloadKey(payload: PreviewPayrollPayload) {
+  return JSON.stringify(payload);
 }
 
 export default function PayrollPage() {
@@ -80,11 +95,13 @@ export default function PayrollPage() {
   const [ajusteMonto, setAjusteMonto] = useState("");
   const [ajustes, setAjustes] = useState<PayrollAdjustmentPayload[]>([]);
   const [preview, setPreview] = useState<PayrollPreviewResult | null>(null);
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedPayrollId, setSelectedPayrollId] = useState<number | null>(null);
-  const [selectedPayrollDetail, setSelectedPayrollDetail] = useState<any | null>(null);
+  const [selectedPayrollDetail, setSelectedPayrollDetail] = useState<PayrollDetailDto | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<PayrollDto | null>(null);
+  const [closeCandidate, setCloseCandidate] = useState<PayrollDto | null>(null);
 
   async function loadData() {
     setIsLoading(true);
@@ -166,6 +183,21 @@ export default function PayrollPage() {
     };
   }
 
+  function invalidatePreview() {
+    setPreview(null);
+    setPreviewKey(null);
+  }
+
+  function currentPreviewKey() {
+    const payload: PreviewPayrollPayload = {
+      mes: Number(mes),
+      anio: Number(anio),
+      ...(idEmpleado ? { idEmpleado: Number(idEmpleado) } : {}),
+      ...(ajustes.length > 0 ? { ajustes } : {}),
+    };
+    return previewPayloadKey(payload);
+  }
+
   function addAjuste() {
     const monto = Number(ajusteMonto);
     if (!ajusteDescripcion.trim() || !Number.isFinite(monto) || monto < 0) {
@@ -173,6 +205,7 @@ export default function PayrollPage() {
       return;
     }
 
+    invalidatePreview();
     setAjustes((prev) => [
       ...prev,
       {
@@ -186,6 +219,7 @@ export default function PayrollPage() {
   }
 
   function removeAjuste(index: number) {
+    invalidatePreview();
     setAjustes((prev) => prev.filter((_, i) => i !== index));
   }
 
@@ -194,11 +228,21 @@ export default function PayrollPage() {
     const payload = currentPayload();
     if (!payload) return;
 
+    const requestKey = previewPayloadKey(payload);
+    invalidatePreview();
     setIsPreviewing(true);
     try {
       const result = await previewPayroll(payload);
+      if (requestKey !== currentPreviewKey()) {
+        return;
+      }
       setPreview(result);
-      toast.success("Previsualización calculada");
+      setPreviewKey(requestKey);
+      if (result.validaciones.length > 0) {
+        toast.warning("La previsualización contiene validaciones pendientes");
+      } else {
+        toast.success("Previsualización lista para revisión");
+      }
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo previsualizar"));
     } finally {
@@ -214,26 +258,37 @@ export default function PayrollPage() {
 
     const payload = currentPayload();
     if (!payload) return;
+    if (!preview || previewKey !== previewPayloadKey(payload)) {
+      toast.error("Previsualice y revise el período actual antes de generar");
+      return;
+    }
+    if (preview.validaciones.length > 0) {
+      toast.error("Corrija las validaciones de la previsualización antes de generar");
+      return;
+    }
 
     setIsGenerating(true);
     try {
-      await generatePayroll(payload);
-      setPreview(null);
+      await generatePayroll({ ...payload, previewId: preview.previewId });
+      invalidatePreview();
       toast.success("Planilla generada correctamente");
       await loadData();
     } catch (error) {
+      invalidatePreview();
       toast.error(getApiErrorMessage(error, "No se pudo generar la planilla"));
     } finally {
       setIsGenerating(false);
     }
   }
 
-  async function handleClosePayroll(id: number) {
+  async function handleClosePayroll() {
+    if (!closeCandidate) return;
     try {
-      await closePayroll(id, { idUsuarioModificador: user?.id });
+      await closePayroll(closeCandidate.id, { idUsuarioModificador: user?.id });
       toast.success("Planilla cerrada");
       await loadData();
-      setSelectedPayrollId(id);
+      setSelectedPayrollId(closeCandidate.id);
+      setCloseCandidate(null);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cerrar la planilla"));
     }
@@ -287,14 +342,38 @@ export default function PayrollPage() {
               <CardTitle>Generación de planilla</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                1. Selecciona el período y el personal que vas a preparar.
+              </p>
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-1.5">
-                  <Label>Mes</Label>
-                  <Input type="number" min={1} max={12} value={mes} onChange={(e) => setMes(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Año</Label>
-                  <Input type="number" min={2000} value={anio} onChange={(e) => setAnio(e.target.value)} />
+                <Label htmlFor="payroll-month">Mes</Label>
+                <select
+                  id="payroll-month"
+                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  value={mes}
+                  onChange={(e) => {
+                    invalidatePreview();
+                    setMes(e.target.value);
+                  }}
+                >
+                  {MONTH_NAMES.map((name, index) => (
+                    <option key={name} value={index + 1}>{name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="payroll-year">Año</Label>
+                <Input
+                  id="payroll-year"
+                  type="number"
+                  min={2000}
+                  value={anio}
+                  onChange={(e) => {
+                    invalidatePreview();
+                    setAnio(e.target.value);
+                  }}
+                />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Empleado (opcional)</Label>
@@ -318,6 +397,7 @@ export default function PayrollPage() {
                           <CommandItem
                             value="0 Todos los empleados"
                             onSelect={() => {
+                              invalidatePreview();
                               setIdEmpleado("");
                               setEmployeePickerOpen(false);
                             }}
@@ -330,6 +410,7 @@ export default function PayrollPage() {
                               key={employee.id}
                               value={`${employee.id} ${employee.nombre}`}
                               onSelect={() => {
+                                invalidatePreview();
                                 setIdEmpleado(String(employee.id));
                                 setEmployeePickerOpen(false);
                               }}
@@ -350,7 +431,12 @@ export default function PayrollPage() {
               </div>
 
               <div className="rounded-xl border bg-muted/40 p-4 space-y-3">
-                <p className="text-sm font-medium">Ajustes del período</p>
+                <div>
+                  <p className="text-sm font-medium">Ajustes del período</p>
+                  <p className="text-xs text-muted-foreground">
+                    Los ajustes configurados se aplican a cada empleado seleccionado.
+                  </p>
+                </div>
                 <div className="grid gap-3 md:grid-cols-4">
                   <select
                     className="h-10 rounded-md border bg-background px-3 text-sm"
@@ -377,12 +463,21 @@ export default function PayrollPage() {
                 <div className="flex justify-between">
                   <Button variant="outline" onClick={addAjuste}>Agregar ajuste</Button>
                   <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => void handlePreview()} disabled={isPreviewing}>
+                    <Button variant="outline" onClick={() => void handlePreview()} disabled={isPreviewing || isGenerating}>
                       {isPreviewing ? <Loader2 className="size-4 animate-spin" /> : <Eye className="size-4" />}
                       Previsualizar
                     </Button>
                     {canCreate ? (
-                      <Button onClick={() => void handleGenerate()} disabled={isGenerating}>
+                      <Button
+                        onClick={() => void handleGenerate()}
+                        disabled={
+                          isGenerating ||
+                          isPreviewing ||
+                          !preview ||
+                          previewKey !== currentPreviewKey() ||
+                          preview.validaciones.length > 0
+                        }
+                      >
                         {isGenerating ? <Loader2 className="size-4 animate-spin" /> : <FileCheck2 className="size-4" />}
                         Generar
                       </Button>
@@ -415,17 +510,81 @@ export default function PayrollPage() {
               </div>
 
               {preview ? (
-                <div className="rounded-xl border bg-sky-50/60 p-4">
-                  <p className="text-sm font-semibold text-sky-800">Previsualización {preview.mes}/{preview.anio}</p>
-                  <p className="text-xs text-slate-700">Empleados calculados: {preview.planillas.length}</p>
-                  <div className="mt-2 space-y-1 text-sm">
-                    {preview.planillas.slice(0, 4).map((item) => (
-                      <div key={item.idEmpleado} className="flex justify-between rounded bg-white px-3 py-2">
-                        <span>{item.nombreEmpleado}</span>
-                        <span className="font-medium">{money(item.sueldoLiquido)}</span>
-                      </div>
-                    ))}
+                <div className="rounded-xl border bg-background p-4 space-y-4">
+                  <div>
+                    <p className="text-sm font-semibold">
+                      2. Revisión: {MONTH_NAMES[preview.mes - 1]} {preview.anio}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {preview.planillas.length} empleados calculados · {preview.validaciones.length} validaciones · Estado al generar: BORRADOR
+                    </p>
                   </div>
+                  {preview.validaciones.length > 0 ? (
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                      <p className="text-sm font-semibold text-amber-900">Debe resolver estos puntos antes de generar</p>
+                      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">
+                        {preview.validaciones.map((issue, index) => (
+                          <li key={`${issue.codigo}-${issue.idEmpleado}-${issue.idInventarioItem ?? index}`}>
+                            {issue.nombreEmpleado} — {issue.mensaje}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {preview.planillas.length > 0 ? (
+                    <div className="max-h-[32rem] overflow-auto rounded-lg border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Empleado / conceptos</TableHead>
+                            <TableHead className="text-right">Base</TableHead>
+                            <TableHead className="text-right">Comisión</TableHead>
+                            <TableHead className="text-right">Bonos</TableHead>
+                            <TableHead className="text-right">Viáticos</TableHead>
+                            <TableHead className="text-right">Descuentos</TableHead>
+                            <TableHead className="text-right">Líquido</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {preview.planillas.map((item) => (
+                            <TableRow key={item.idEmpleado}>
+                              <TableCell className="min-w-56">
+                                <p className="font-medium">{item.nombreEmpleado}</p>
+                                <details className="mt-1 text-xs">
+                                  <summary className="cursor-pointer text-primary">
+                                    Ver comisiones ({item.detalleComisiones.length}) y ajustes ({item.detalleAjustes.length})
+                                  </summary>
+                                  <div className="mt-2 space-y-1">
+                                    {item.detalleComisiones.map((commission) => (
+                                      <p key={`${commission.idReglaComision}-${commission.idInventarioItem}`}>
+                                        {commission.nombreProducto}: {commission.cantidad} × base {money(commission.baseCalculo)} · regla #{commission.idReglaComision} · {money(commission.montoComision)}
+                                      </p>
+                                    ))}
+                                    {item.detalleAjustes.map((adjustment, index) => (
+                                      <p key={`${adjustment.tipoAjuste}-${index}`}>
+                                        {adjustment.tipoAjuste}: {adjustment.descripcion} · {money(adjustment.monto)}
+                                      </p>
+                                    ))}
+                                  </div>
+                                </details>
+                              </TableCell>
+                              <TableCell className="text-right">{money(item.sueldoBase)}</TableCell>
+                              <TableCell className="text-right">{money(item.totalComisiones)}</TableCell>
+                              <TableCell className="text-right">{money(item.totalBonosMetas)}</TableCell>
+                              <TableCell className="text-right">{money(item.totalViaticos)}</TableCell>
+                              <TableCell className="text-right">{money(item.totalDescuentos)}</TableCell>
+                              <TableCell className="text-right font-semibold">{money(item.sueldoLiquido)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : null}
+                  {preview.validaciones.length === 0 ? (
+                    <p className="text-sm text-green-700">
+                      3. Revise todos los importes. La generación guardará estos cálculos como borradores; no ejecuta pagos ni cierra la planilla.
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
             </CardContent>
@@ -465,9 +624,9 @@ export default function PayrollPage() {
                         <TableBody>
                           {payrolls.map((item) => (
                             <TableRow key={item.id}>
-                              <TableCell className="font-medium">{item.mes}/{item.anio}</TableCell>
+                              <TableCell className="font-medium">{MONTH_NAMES[item.mes - 1]} {item.anio}</TableCell>
                               <TableCell>{item.empleado?.entidad.nombreCompleto ?? `Empleado #${item.idEmpleado}`}</TableCell>
-                              <TableCell>{item.estado}</TableCell>
+                              <TableCell>{item.estado === "CERRADA" ? "Cerrada" : "Borrador"}</TableCell>
                               <TableCell>{money(item.sueldoLiquido)}</TableCell>
                               <TableCell className="text-right">
                                 <div className="flex justify-end gap-2">
@@ -486,7 +645,7 @@ export default function PayrollPage() {
                                       size="xs"
                                       title="Cerrar planilla"
                                       aria-label="Cerrar planilla"
-                                      onClick={() => void handleClosePayroll(item.id)}
+                                      onClick={() => setCloseCandidate(item)}
                                     >
                                       <FileCheck2 className="size-4" />
                                     </Button>
@@ -515,7 +674,7 @@ export default function PayrollPage() {
                     {trashPayrolls.map((item) => (
                       <div key={item.id} className="rounded-lg border border-dashed bg-muted/40 p-3 flex items-center justify-between">
                         <div>
-                          <p className="font-medium">{item.mes}/{item.anio} · {item.empleado?.entidad.nombreCompleto ?? `Empleado #${item.idEmpleado}`}</p>
+                          <p className="font-medium">{MONTH_NAMES[item.mes - 1]} {item.anio} · {item.empleado?.entidad.nombreCompleto ?? `Empleado #${item.idEmpleado}`}</p>
                           <p className="text-xs text-muted-foreground">Líquido {money(item.sueldoLiquido)}</p>
                         </div>
                         {canUpdate ? (
@@ -561,10 +720,29 @@ export default function PayrollPage() {
                     </div>
                     <div className="space-y-1">
                       <p className="font-medium">Comisiones por producto</p>
-                      {selectedPayrollDetail.detalleComisiones.map((item: any) => (
+                      {selectedPayrollDetail.detalleComisiones.map((item) => (
+                        <div key={item.id} className="rounded border px-3 py-2 space-y-1">
+                          <div className="flex justify-between">
+                            <span>{item.nombreProducto} · {item.cantidad} unidades · {item.tipoCalculo === "PORCENTAJE_VENTA" ? `${item.valorAplicado}% sobre ${money(item.baseCalculo)}` : `${money(item.valorAplicado)} por unidad`}</span>
+                            <span>{money(item.montoComision)}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Regla #{item.idReglaComision ?? "sin snapshot"} · Configuración #{item.idConfiguracionComision ?? "anterior"} · rango {item.cantidadMinimaAplicada ?? "—"}–{item.cantidadMaximaAplicada ?? "sin máximo"}
+                          </p>
+                          {item.fuentes.map((source) => (
+                            <p key={source.idDetalleVenta} className="text-xs text-muted-foreground">
+                              Venta #{source.idVenta} {source.estadoPago}, detalle #{source.idDetalleVenta}, sesión #{source.idRutaSesion} ({source.rolAtribucion}, {new Date(source.fechaSesion).toLocaleDateString("es-GT", { timeZone: "UTC" })}) · {source.cantidad} × {money(source.precioUnitario)}
+                            </p>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="space-y-1">
+                      <p className="font-medium">Ajustes</p>
+                      {selectedPayrollDetail.detalleAjustes.map((item) => (
                         <div key={item.id} className="rounded border px-3 py-2 flex justify-between">
-                          <span>{item.nombreProducto}</span>
-                          <span>{money(item.montoComision)}</span>
+                          <span>{item.tipoAjuste} · {item.descripcion}</span>
+                          <span>{money(item.monto)}</span>
                         </div>
                       ))}
                     </div>
@@ -582,6 +760,14 @@ export default function PayrollPage() {
           description="Se anulará la planilla para permitir una nueva generación del período."
           confirmLabel="Anular"
           onConfirm={handleDeletePayroll}
+        />
+        <ConfirmActionDialog
+          open={!!closeCandidate}
+          onOpenChange={(open) => !open && setCloseCandidate(null)}
+          title="Cerrar planilla"
+          description="Al cerrar, la planilla quedará inmutable. Esta acción no aprueba ni ejecuta pagos."
+          confirmLabel="Cerrar planilla"
+          onConfirm={handleClosePayroll}
         />
       </DashboardShell>
     </RequireAuth>

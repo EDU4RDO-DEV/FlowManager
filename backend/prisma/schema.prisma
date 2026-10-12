@@ -450,27 +450,60 @@ model PlanillaMensual {
   PlanillaDetalleAjuste   PlanillaDetalleAjuste[]
   PlanillaDetalleComision PlanillaDetalleComision[]
 
-  @@unique([IdEmpleado, Mes, Anio, Anulado], map: "UQ_PlanillaMensual_EmpleadoPeriodoEstado")
+  @@index([IdEmpleado, Mes, Anio, Anulado], map: "IX_PlanillaMensual_EmpleadoPeriodoEstado")
   @@index([Mes, Anio, Anulado], map: "IX_PlanillaMensual_Periodo_Activo")
 }
 
 model PlanillaDetalleComision {
-  Id                Int             @id(map: "PK__Planilla__3214EC07DCOM001") @default(autoincrement())
-  IdPlanillaMensual Int
-  IdInventarioItem  Int
-  Cantidad          Float
-  BaseCalculo       Decimal         @db.Decimal(10, 2)
-  TipoCalculo       String          @db.VarChar(30)
-  ValorAplicado     Decimal         @db.Decimal(10, 4)
-  MontoComision     Decimal         @db.Decimal(10, 2)
-  FechaRegistro     DateTime?       @default(now(), map: "DF__PlanillaD__Fecha__74AE54BC") @db.DateTime
-  Anulado           Boolean         @default(false, map: "DF__PlanillaD__Anula__75A278F5")
-  IdUsuarioAnulador Int?
-  FechaAnulacion    DateTime?       @db.DateTime
-  InventarioItem    InventarioItem  @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_PlanillaDetalleComision_InventarioItem")
-  PlanillaMensual   PlanillaMensual @relation(fields: [IdPlanillaMensual], references: [Id], onUpdate: NoAction, map: "FK_PlanillaDetalleComision_PlanillaMensual")
+  Id                         Int                              @id(map: "PK__Planilla__3214EC07DCOM001") @default(autoincrement())
+  IdPlanillaMensual          Int
+  IdInventarioItem           Int
+  IdConfiguracionComision    Int?
+  IdReglaComision            Int?
+  CantidadMinimaAplicada     Float?
+  CantidadMaximaAplicada     Float?
+  Cantidad                   Float
+  BaseCalculo                Decimal                          @db.Decimal(10, 2)
+  TipoCalculo                String                           @db.VarChar(30)
+  ValorAplicado              Decimal                          @db.Decimal(10, 4)
+  MontoComision              Decimal                          @db.Decimal(10, 2)
+  FechaRegistro              DateTime?                        @default(now(), map: "DF__PlanillaD__Fecha__74AE54BC") @db.DateTime
+  Anulado                    Boolean                          @default(false, map: "DF__PlanillaD__Anula__75A278F5")
+  IdUsuarioAnulador          Int?
+  FechaAnulacion             DateTime?                        @db.DateTime
+  InventarioItem             InventarioItem                   @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_PlanillaDetalleComision_InventarioItem")
+  PlanillaMensual            PlanillaMensual                  @relation(fields: [IdPlanillaMensual], references: [Id], onUpdate: NoAction, map: "FK_PlanillaDetalleComision_PlanillaMensual")
+  ReglaComision              ReglaComision?                   @relation(fields: [IdReglaComision], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_PlanillaDetalleComision_ReglaComision")
+  Fuentes                    PlanillaDetalleComisionFuente[]
 
   @@index([IdPlanillaMensual, Anulado], map: "IX_PlanillaDetalleComision_Planilla_Activo")
+}
+
+model PlanillaDetalleComisionFuente {
+  Id                         Int                    @id(map: "PK_PlanillaDetalleComisionFuente") @default(autoincrement())
+  IdPlanillaDetalleComision  Int
+  IdDetalleVenta             Int
+  IdVenta                    Int
+  IdRutaSesion               Int
+  FechaSesion                DateTime               @db.DateTime
+  SesionAnulada              Boolean
+  EstadoPago                 String                 @db.VarChar(20)
+  VentaAnulada               Boolean
+  DetalleVentaAnulado        Boolean
+  EsBonificacion             Boolean
+  IdUsuarioChofer            Int
+  IdUsuarioVendedor          Int
+  IdUsuarioAtribuido         Int
+  RolAtribucion              String                 @db.VarChar(12)
+  Cantidad                   Float
+  PrecioUnitario             Decimal                @db.Decimal(10, 2)
+  BaseCalculo                Decimal                @db.Decimal(10, 2)
+  FechaRegistro              DateTime?              @default(now(), map: "DF_PlanillaDetalleComisionFuente_FechaRegistro") @db.DateTime
+  PlanillaDetalleComision    PlanillaDetalleComision @relation(fields: [IdPlanillaDetalleComision], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_PlanillaDetalleComisionFuente_DetalleComision")
+
+  @@unique([IdPlanillaDetalleComision, IdDetalleVenta], map: "UQ_PlanillaDetalleComisionFuente_Detalle")
+  @@index([IdVenta], map: "IX_PlanillaDetalleComisionFuente_Venta")
+  @@index([IdRutaSesion], map: "IX_PlanillaDetalleComisionFuente_RutaSesion")
 }
 
 model PlanillaDetalleAjuste {
@@ -523,6 +556,7 @@ model ReglaComision {
   FechaAnulacion          DateTime?             @db.DateTime
   ConfiguracionComision   ConfiguracionComision @relation(fields: [IdConfiguracionComision], references: [Id], onUpdate: NoAction, map: "FK_ReglaComision_ConfiguracionComision")
   InventarioItem          InventarioItem        @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_ReglaComision_InventarioItem")
+  PlanillaDetalleComision PlanillaDetalleComision[]
 }
 
 model ReglaPrecioCliente {

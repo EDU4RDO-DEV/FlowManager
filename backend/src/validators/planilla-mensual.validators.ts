@@ -35,6 +35,7 @@ export const previewPayrollSchema = z.object({
 export const generatePayrollSchema = z.object({
   mes: z.number().int('mes debe ser entero').min(1, 'mes debe ser >= 1').max(12, 'mes debe ser <= 12'),
   anio: z.number().int('año debe ser entero').min(2000, 'año inválido').max(9999, 'año inválido'),
+  previewId: z.string().length(64, 'previsualización inválida'),
   idEmpleado: positiveInt.optional(),
   observaciones: z.string().trim().max(255, 'observaciones demasiado largas').optional(),
   ajustes: z.array(ajusteSchema).optional(),
