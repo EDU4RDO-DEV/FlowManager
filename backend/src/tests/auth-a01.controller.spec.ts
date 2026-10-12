@@ -57,7 +57,7 @@ describe('A01 registration bootstrap authorization', () => {
       id: 1,
       nombre: bootstrapPayload.nombre,
       correo: bootstrapPayload.correo,
-      idRol: null,
+      idRol: 1,
       idEntidad: null,
     });
   });
@@ -74,13 +74,30 @@ describe('A01 registration bootstrap authorization', () => {
     expect(registerMock).not.toHaveBeenCalled();
   });
 
-  it('creates an unprivileged first account without inventing an administrator role', async () => {
+  it('marks unauthenticated registration for atomic first-administrator assignment', async () => {
     const response = makeResponse();
 
     await registerController(makeRequest(bootstrapPayload), response);
 
     expect(registerMock).toHaveBeenCalledWith({
       ...bootstrapPayload,
+      bootstrap: true,
+      idEntidad: undefined,
+    });
+    expect(response.status).toHaveBeenCalledWith(201);
+  });
+
+  it('marks authenticated administrative registrations as non-bootstrap', async () => {
+    const response = makeResponse();
+
+    await registerController(
+      makeRequest(bootstrapPayload, { userId: 44, sessionId: 55, idRol: 1 }),
+      response,
+    );
+
+    expect(registerMock).toHaveBeenCalledWith({
+      ...bootstrapPayload,
+      bootstrap: false,
       idEntidad: undefined,
     });
     expect(response.status).toHaveBeenCalledWith(201);

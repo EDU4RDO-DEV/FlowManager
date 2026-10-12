@@ -43,7 +43,7 @@ describe('planilla-mensual.service', () => {
   });
 
   it('calcula comisión sobre ventas pagadas y volumen mensual completo', async () => {
-    prismaMock.configuracionComision.findFirst.mockResolvedValueOnce({ Id: 3 });
+    prismaMock.configuracionComision.findFirst.mockResolvedValue({ Id: 3 });
     prismaMock.empleado.findMany.mockResolvedValueOnce([
       {
         Id: 1,
@@ -52,9 +52,16 @@ describe('planilla-mensual.service', () => {
         SueldoBase: 2000,
         Entidad: { NombreCompleto: 'Repartidor A' },
       },
+      {
+        Id: 2,
+        IdUsuarioVinculado: 11,
+        IdConfiguracionComision: 3,
+        SueldoBase: 2000,
+        Entidad: { NombreCompleto: 'Vendedor B' },
+      },
     ]);
 
-    prismaMock.detalleVenta.findMany.mockResolvedValueOnce([
+    prismaMock.detalleVenta.findMany.mockResolvedValue([
       {
         Id: 101,
         IdVenta: 900,
@@ -105,7 +112,7 @@ describe('planilla-mensual.service', () => {
       },
     ]);
 
-    prismaMock.reglaComision.findMany.mockResolvedValueOnce([
+    prismaMock.reglaComision.findMany.mockResolvedValue([
       {
         Id: 11,
         IdConfiguracionComision: 3,
@@ -129,9 +136,13 @@ describe('planilla-mensual.service', () => {
       ],
     });
 
-    expect(result.planillas).toHaveLength(1);
+    expect(result.planillas).toHaveLength(2);
     expect(result.planillas[0].totalComisiones).toBe(80);
     expect(result.planillas[0].sueldoLiquido).toBe(2380);
+    expect(result.planillas.map((payroll) => payroll.totalBonosMetas)).toEqual([200, 200]);
+    expect(result.planillas.map((payroll) => payroll.totalViaticos)).toEqual([150, 150]);
+    expect(result.planillas.map((payroll) => payroll.totalDescuentos)).toEqual([50, 50]);
+    expect(result.planillas.reduce((total, payroll) => total + payroll.totalBonosMetas, 0)).toBe(400);
     expect(result.validaciones).toEqual([]);
     expect(result.planillas[0].detalleComisiones[0]).toMatchObject({
       idReglaComision: 11,

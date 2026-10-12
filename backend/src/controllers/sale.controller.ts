@@ -31,6 +31,7 @@ import {
   salePaymentIdParamsSchema,
   updateSaleSchema,
 } from '../validators/sale.validators';
+import { paymentIdempotencyKeySchema } from '../validators/payment.validators';
 import { getZodErrorMessage } from '../validators/validation';
 
 function isNumeroVentaUniqueConflict(error: unknown): boolean {
@@ -363,14 +364,21 @@ export async function createSalePaymentController(req: Request, res: Response) {
   try {
     const { id } = saleIdParamsSchema.parse(req.params);
     const payload = createSalePaymentSchema.parse(req.body);
+    const idempotencyKey = paymentIdempotencyKeySchema.parse(req.get('Idempotency-Key'));
+    const userId = req.auth?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ ok: false, message: 'Token inválido o expirado' });
+    }
 
     const data = await createSalePayment(id, {
       ...payload,
+      idUsuario: userId,
       numeroReferencia: payload.numeroReferencia?.trim(),
       banco: payload.banco?.trim(),
       observaciones: payload.observaciones?.trim(),
       rutaFirma: payload.rutaFirma?.trim(),
-    });
+    }, idempotencyKey);
 
     return res.status(201).json({ ok: true, data, message: 'Pago registrado correctamente' });
   } catch (error) {
@@ -382,6 +390,10 @@ export async function createSalePaymentController(req: Request, res: Response) {
 
     if (message === 'Venta no existe' || message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
+    }
+
+    if (message === 'La clave de idempotencia ya fue utilizada con datos diferentes') {
+      return res.status(409).json({ ok: false, message });
     }
 
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {

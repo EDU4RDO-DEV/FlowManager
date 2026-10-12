@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import crypto from 'crypto';
+import { Prisma } from '@prisma/client';
 
 const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
@@ -17,6 +19,10 @@ const { prismaMock } = vi.hoisted(() => ({
     },
     usuario: {
       findFirst: vi.fn(),
+    },
+    solicitudPagoIdempotente: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
     },
     $transaction: vi.fn(),
   },
@@ -54,12 +60,30 @@ function buildSaleExistenceCheck() {
   };
 }
 
+function paymentFingerprint() {
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify({
+      idVenta: 7,
+      idUsuario: 1,
+      monto: 20,
+      metodoPago: 'EFECTIVO',
+      numeroReferencia: null,
+      banco: null,
+      fechaPago: null,
+      rutaFirma: null,
+      observaciones: null,
+    }))
+    .digest('hex');
+}
+
 describe('Fase 4 - Ventas y Cuentas por Cobrar (pagos)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sendMock.mockReset();
     sendMock.mockResolvedValue({ ok: true, status: 200 });
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    prismaMock.solicitudPagoIdempotente.findUnique.mockResolvedValue(null);
     prismaMock.$transaction.mockImplementation(async (callback: (tx: typeof prismaMock) => unknown) =>
       callback(prismaMock),
     );
@@ -74,10 +98,104 @@ describe('Fase 4 - Ventas y Cuentas por Cobrar (pagos)', () => {
     prismaMock.venta.update.mockResolvedValueOnce({});
 
     await expect(
-      createSalePayment(7, { idUsuario: 1, monto: 50, metodoPago: 'EFECTIVO' }),
+      createSalePayment(7, { idUsuario: 1, monto: 50, metodoPago: 'EFECTIVO' }, 'key-overpayment'),
     ).rejects.toThrowError('Pago no puede ser mayor al saldo pendiente');
 
     expect(prismaMock.pagoVenta.create).not.toHaveBeenCalled();
+  });
+
+  it('reproduce el resultado guardado para una clave y payload ya procesados', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 1 });
+    prismaMock.solicitudPagoIdempotente.findUnique.mockResolvedValueOnce({
+      HuellaSolicitud: paymentFingerprint(),
+      EstadoPago: 'PAGADO',
+      Saldo: 0,
+      PagoVenta: {
+        Id: 55,
+        IdVenta: 7,
+        IdUsuario: 1,
+        Monto: 20,
+        MetodoPago: 'EFECTIVO',
+        NumeroReferencia: null,
+        Banco: null,
+        FechaPago: new Date('2026-09-28'),
+        RutaFirma: null,
+        Observaciones: null,
+      },
+    });
+
+    await expect(
+      createSalePayment(7, { idUsuario: 1, monto: 20, metodoPago: 'EFECTIVO' }, 'same-key'),
+    ).resolves.toMatchObject({
+      id: 55,
+      idVenta: 7,
+      estadoPago: 'PAGADO',
+      saldo: 0,
+    });
+
+    expect(prismaMock.pagoVenta.create).not.toHaveBeenCalled();
+    expect(prismaMock.solicitudPagoIdempotente.create).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('rechaza reutilizar una clave con un payload diferente', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 1 });
+    prismaMock.solicitudPagoIdempotente.findUnique.mockResolvedValueOnce({
+      HuellaSolicitud: '0'.repeat(64),
+      EstadoPago: 'PAGADO',
+      Saldo: 0,
+      PagoVenta: {
+        Id: 55,
+        IdVenta: 7,
+        IdUsuario: 1,
+        Monto: 20,
+        MetodoPago: 'EFECTIVO',
+        NumeroReferencia: null,
+        Banco: null,
+        FechaPago: new Date('2026-09-28'),
+        RutaFirma: null,
+        Observaciones: null,
+      },
+    });
+
+    await expect(
+      createSalePayment(7, { idUsuario: 1, monto: 20, metodoPago: 'EFECTIVO' }, 'same-key'),
+    ).rejects.toThrowError('La clave de idempotencia ya fue utilizada con datos diferentes');
+
+    expect(prismaMock.pagoVenta.create).not.toHaveBeenCalled();
+  });
+
+  it('recupera el resultado persistido cuando otra solicitud concurrente gana la clave única', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 1 });
+    prismaMock.$transaction.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+    prismaMock.solicitudPagoIdempotente.findUnique.mockResolvedValueOnce({
+      HuellaSolicitud: paymentFingerprint(),
+      EstadoPago: 'PAGADO',
+      Saldo: 0,
+      PagoVenta: {
+        Id: 55,
+        IdVenta: 7,
+        IdUsuario: 1,
+        Monto: 20,
+        MetodoPago: 'EFECTIVO',
+        NumeroReferencia: null,
+        Banco: null,
+        FechaPago: new Date('2026-09-28'),
+        RutaFirma: null,
+        Observaciones: null,
+      },
+    });
+
+    await expect(
+      createSalePayment(7, { idUsuario: 1, monto: 20, metodoPago: 'EFECTIVO' }, 'same-key'),
+    ).resolves.toMatchObject({ id: 55, estadoPago: 'PAGADO', saldo: 0 });
+    expect(prismaMock.pagoVenta.create).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
   });
 
   it('acepta un pago que completa exactamente el saldo pendiente y marca la CxC como PAGADO', async () => {
@@ -107,7 +225,7 @@ describe('Fase 4 - Ventas y Cuentas por Cobrar (pagos)', () => {
     prismaMock.cuentaPorCobrar.findFirst.mockResolvedValueOnce({ Id: 3, Estado: 'ACTIVO' });
     prismaMock.cuentaPorCobrar.update.mockResolvedValueOnce({});
 
-    const result = await createSalePayment(7, { idUsuario: 1, monto: 20, metodoPago: 'EFECTIVO' });
+    const result = await createSalePayment(7, { idUsuario: 1, monto: 20, metodoPago: 'EFECTIVO' }, 'key-exact-payment');
 
     expect(result.saldo).toBe(0);
     expect(result.estadoPago).toBe('PAGADO');
@@ -163,7 +281,7 @@ describe('Fase 4 - Ventas y Cuentas por Cobrar (pagos)', () => {
 
     sendMock.mockRejectedValueOnce(new Error('fallo inesperado de red'));
 
-    const result = await createSalePayment(7, { idUsuario: 1, monto: 20, metodoPago: 'EFECTIVO' });
+    const result = await createSalePayment(7, { idUsuario: 1, monto: 20, metodoPago: 'EFECTIVO' }, 'key-notification-failure');
 
     expect(result.id).toBe(55);
     expect(result.saldo).toBe(0);

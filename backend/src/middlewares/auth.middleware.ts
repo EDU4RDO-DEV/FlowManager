@@ -171,10 +171,6 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   const userId = Number(payload.sub);
   const sessionId = payload.sid !== undefined ? Number(payload.sid) : null;
-  const roleId = payload.idRol !== undefined && payload.idRol !== null
-    ? Number(payload.idRol)
-    : null;
-
   if (!Number.isInteger(userId) || userId <= 0) {
     return res.status(401).json({
       ok: false,
@@ -182,57 +178,56 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     });
   }
 
-  if (sessionId !== null && (!Number.isInteger(sessionId) || sessionId <= 0)) {
+  if (sessionId === null || !Number.isInteger(sessionId) || sessionId <= 0) {
     return res.status(401).json({
       ok: false,
       message: 'Token inválido o expirado',
     });
   }
 
-  if (sessionId !== null) {
-    const activeSession = await prisma.sesion.findFirst({
-      where: {
-        Id: sessionId,
-        IdUsuario: userId,
-        Anulado: false,
-        FechaExpiracionToken: {
-          gt: new Date(),
-        },
+  const activeSession = await prisma.sesion.findFirst({
+    where: {
+      Id: sessionId,
+      IdUsuario: userId,
+      Anulado: false,
+      FechaExpiracionToken: {
+        gt: new Date(),
       },
-      select: {
-        Id: true,
-      },
+    },
+    select: {
+      Id: true,
+    },
+  });
+
+  if (!activeSession) {
+    return res.status(401).json({
+      ok: false,
+      message: 'Token inválido o expirado',
     });
+  }
 
-    if (!activeSession) {
-      return res.status(401).json({
-        ok: false,
-        message: 'Token inválido o expirado',
-      });
-    }
+  const activeUser = await prisma.usuario.findFirst({
+    where: {
+      Id: userId,
+      Anulado: false,
+    },
+    select: {
+      Id: true,
+      IdRol: true,
+    },
+  });
 
-    const activeUser = await prisma.usuario.findFirst({
-      where: {
-        Id: userId,
-        Anulado: false,
-      },
-      select: {
-        Id: true,
-      },
+  if (!activeUser) {
+    return res.status(401).json({
+      ok: false,
+      message: 'Token inválido o expirado',
     });
-
-    if (!activeUser) {
-      return res.status(401).json({
-        ok: false,
-        message: 'Token inválido o expirado',
-      });
-    }
   }
 
   req.auth = {
     userId,
     sessionId,
-    idRol: roleId !== null && Number.isInteger(roleId) && roleId > 0 ? roleId : null,
+    idRol: activeUser.IdRol,
     nombreRol: payload.nombreRol,
     correo: payload.correo,
     nombre: payload.nombre,
@@ -246,11 +241,18 @@ export function requireBootstrapOrModulePermission(
   action: CrudAction,
 ) {
   return async function guard(req: Request, res: Response, next: NextFunction) {
-    const usersCount = await prisma.usuario.count({
-      where: { Anulado: false },
+    const activeAdministrator = await prisma.rol.findFirst({
+      where: {
+        Nombre: 'Administrador',
+        Anulado: false,
+        Usuario_Usuario_IdRolToRol: {
+          some: { Anulado: false },
+        },
+      },
+      select: { Id: true },
     });
 
-    if (usersCount === 0) {
+    if (!activeAdministrator) {
       return next();
     }
 

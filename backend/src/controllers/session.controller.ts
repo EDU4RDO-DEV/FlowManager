@@ -159,6 +159,10 @@ export async function restoreSessionController(req: Request, res: Response) {
       return res.status(404).json({ ok: false, message });
     }
 
+    if (message === 'Las sesiones revocadas no se pueden restaurar; inicia sesión nuevamente') {
+      return res.status(409).json({ ok: false, message });
+    }
+
     return res.status(500).json({ ok: false, message });
   }
 }

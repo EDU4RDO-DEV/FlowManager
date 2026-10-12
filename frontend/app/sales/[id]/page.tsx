@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -91,6 +91,7 @@ export default function SaleDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [isSavingPayment, setIsSavingPayment] = useState(false);
+  const paymentIdempotencyKey = useRef<{ fingerprint: string; key: string } | null>(null);
   const [paymentToAnulate, setPaymentToAnulate] = useState<SalePaymentDto | null>(null);
   const [isAnulatingPayment, setIsAnulatingPayment] = useState(false);
   const [isAnulateSaleDialogOpen, setIsAnulateSaleDialogOpen] = useState(false);
@@ -200,7 +201,12 @@ export default function SaleDetailPage() {
 
     setIsSavingPayment(true);
     try {
-      await createSalePayment(sale.id, payload);
+      const fingerprint = JSON.stringify(payload);
+      if (!paymentIdempotencyKey.current || paymentIdempotencyKey.current.fingerprint !== fingerprint) {
+        paymentIdempotencyKey.current = { fingerprint, key: crypto.randomUUID() };
+      }
+      await createSalePayment(sale.id, payload, paymentIdempotencyKey.current.key);
+      paymentIdempotencyKey.current = null;
       toast.success("Pago registrado correctamente");
       setMonto(0);
       setNumeroReferencia("");

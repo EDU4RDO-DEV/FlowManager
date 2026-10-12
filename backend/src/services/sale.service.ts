@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
@@ -69,6 +70,21 @@ type UpdateSaleInput = {
 
 type CreateSalePaymentInput = SalePaymentInput & {
   idUsuario: number;
+};
+
+type SalePaymentResult = {
+  id: number;
+  idVenta: number;
+  idUsuario: number;
+  monto: number;
+  metodoPago: string;
+  numeroReferencia: string | null;
+  banco: string | null;
+  fechaPago: Date | null;
+  rutaFirma: string | null;
+  observaciones: string | null;
+  estadoPago: string;
+  saldo: number;
 };
 
 type CuentaPorCobrarEstado = 'ACTIVO' | 'PAGADO' | 'ANULADO';
@@ -1615,92 +1631,233 @@ export function notifyPagoRecibido(payment: {
     });
 }
 
-export async function createSalePayment(idVenta: number, input: CreateSalePaymentInput) {
+export async function createSalePayment(
+  idVenta: number,
+  input: CreateSalePaymentInput,
+  idempotencyKey: string,
+) {
   await validateUsuarioExists(input.idUsuario);
   validatePaymentRules(input);
 
-  let saleInfo: { numeroVenta: number; cliente: string } | undefined;
+  const claveHash = crypto.createHash('sha256').update(idempotencyKey).digest('hex');
+  const huellaSolicitud = crypto
+    .createHash('sha256')
+    .update(JSON.stringify({
+      idVenta,
+      idUsuario: input.idUsuario,
+      monto: input.monto,
+      metodoPago: input.metodoPago,
+      numeroReferencia: input.numeroReferencia ?? null,
+      banco: input.banco ?? null,
+      fechaPago: input.fechaPago ?? null,
+      rutaFirma: input.rutaFirma ?? null,
+      observaciones: input.observaciones ?? null,
+    }))
+    .digest('hex');
 
-  const created = await prisma.$transaction(async (tx) => {
-    const sale = await tx.venta.findFirst({
+  const readReplay = async (): Promise<SalePaymentResult | null> => {
+    const record = await prisma.solicitudPagoIdempotente.findUnique({
       where: {
-        Id: idVenta,
-        Anulado: false,
+        IdUsuario_ClaveHash: {
+          IdUsuario: input.idUsuario,
+          ClaveHash: claveHash,
+        },
       },
-      select: {
-        Id: true,
-        NumeroVenta: true,
-        Cliente: {
+      include: { PagoVenta: true },
+    });
+
+    if (!record) {
+      return null;
+    }
+
+    if (record.HuellaSolicitud !== huellaSolicitud) {
+      throw new Error('La clave de idempotencia ya fue utilizada con datos diferentes');
+    }
+
+    return {
+      id: record.PagoVenta.Id,
+      idVenta: record.PagoVenta.IdVenta,
+      idUsuario: record.PagoVenta.IdUsuario,
+      monto: toNumber(record.PagoVenta.Monto),
+      metodoPago: record.PagoVenta.MetodoPago,
+      numeroReferencia: record.PagoVenta.NumeroReferencia,
+      banco: record.PagoVenta.Banco,
+      fechaPago: record.PagoVenta.FechaPago,
+      rutaFirma: record.PagoVenta.RutaFirma,
+      observaciones: record.PagoVenta.Observaciones,
+      estadoPago: record.EstadoPago,
+      saldo: toNumber(record.Saldo),
+    };
+  };
+
+  type PaymentOutcome = {
+    data: SalePaymentResult;
+    replayed: boolean;
+    saleInfo?: { numeroVenta: number; cliente: string };
+  };
+
+  let outcome: PaymentOutcome | undefined;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      outcome = await prisma.$transaction(async (tx) => {
+        const priorRequest = await tx.solicitudPagoIdempotente.findUnique({
+          where: {
+            IdUsuario_ClaveHash: {
+              IdUsuario: input.idUsuario,
+              ClaveHash: claveHash,
+            },
+          },
+          include: { PagoVenta: true },
+        });
+
+        if (priorRequest) {
+          if (priorRequest.HuellaSolicitud !== huellaSolicitud) {
+            throw new Error('La clave de idempotencia ya fue utilizada con datos diferentes');
+          }
+
+          return {
+            data: {
+              id: priorRequest.PagoVenta.Id,
+              idVenta: priorRequest.PagoVenta.IdVenta,
+              idUsuario: priorRequest.PagoVenta.IdUsuario,
+              monto: toNumber(priorRequest.PagoVenta.Monto),
+              metodoPago: priorRequest.PagoVenta.MetodoPago,
+              numeroReferencia: priorRequest.PagoVenta.NumeroReferencia,
+              banco: priorRequest.PagoVenta.Banco,
+              fechaPago: priorRequest.PagoVenta.FechaPago,
+              rutaFirma: priorRequest.PagoVenta.RutaFirma,
+              observaciones: priorRequest.PagoVenta.Observaciones,
+              estadoPago: priorRequest.EstadoPago,
+              saldo: toNumber(priorRequest.Saldo),
+            },
+            replayed: true,
+          };
+        }
+
+        const sale = await tx.venta.findFirst({
+          where: {
+            Id: idVenta,
+            Anulado: false,
+          },
           select: {
-            Entidad: {
+            Id: true,
+            NumeroVenta: true,
+            Cliente: {
               select: {
-                NombreCompleto: true,
+                Entidad: {
+                  select: {
+                    NombreCompleto: true,
+                  },
+                },
               },
             },
           },
-        },
-      },
-    });
+        });
 
-    if (!sale) {
-      throw new Error('Venta no existe');
+        if (!sale) {
+          throw new Error('Venta no existe');
+        }
+
+        const current = await recalculateSalePaymentStatus(tx, idVenta);
+        if (input.monto > current.saldo) {
+          throw new Error('Pago no puede ser mayor al saldo pendiente');
+        }
+
+        const payment = await tx.pagoVenta.create({
+          data: {
+            IdVenta: idVenta,
+            IdUsuario: input.idUsuario,
+            Monto: input.monto,
+            MetodoPago: input.metodoPago,
+            NumeroReferencia: input.numeroReferencia,
+            Banco: input.banco,
+            FechaPago: input.fechaPago ? toDateOnly(input.fechaPago) : new Date(),
+            RutaFirma: input.rutaFirma,
+            Observaciones: input.observaciones,
+            Anulado: false,
+          },
+        });
+
+        const recalculated = await recalculateSalePaymentStatus(tx, idVenta);
+        await syncCuentaPorCobrarFromSale(tx, idVenta, recalculated, input.idUsuario);
+
+        const data: SalePaymentResult = {
+          id: payment.Id,
+          idVenta: payment.IdVenta,
+          idUsuario: payment.IdUsuario,
+          monto: toNumber(payment.Monto),
+          metodoPago: payment.MetodoPago,
+          numeroReferencia: payment.NumeroReferencia,
+          banco: payment.Banco,
+          fechaPago: payment.FechaPago,
+          rutaFirma: payment.RutaFirma,
+          observaciones: payment.Observaciones,
+          estadoPago: recalculated.estadoPago,
+          saldo: recalculated.saldo,
+        };
+
+        await tx.solicitudPagoIdempotente.create({
+          data: {
+            IdUsuario: input.idUsuario,
+            IdVenta: idVenta,
+            IdPago: payment.Id,
+            ClaveHash: claveHash,
+            HuellaSolicitud: huellaSolicitud,
+            EstadoPago: recalculated.estadoPago,
+            Saldo: recalculated.saldo,
+          },
+        });
+
+        return {
+          data,
+          replayed: false,
+          saleInfo: {
+            numeroVenta: sale.NumeroVenta,
+            cliente: sale.Cliente.Entidad.NombreCompleto,
+          },
+        };
+      }, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+      break;
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        (error.code === 'P2002' || error.code === 'P2034')
+      ) {
+        const replay = await readReplay();
+        if (replay) {
+          outcome = { data: replay, replayed: true };
+          break;
+        }
+
+        if (error.code === 'P2034' && attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 10 * (attempt + 1)));
+          continue;
+        }
+      }
+
+      throw error;
     }
+  }
 
-    saleInfo = { numeroVenta: sale.NumeroVenta, cliente: sale.Cliente.Entidad.NombreCompleto };
+  if (!outcome) {
+    throw new Error('No se pudo confirmar el resultado del pago');
+  }
 
-    const current = await recalculateSalePaymentStatus(tx, idVenta);
-    if (input.monto > current.saldo) {
-      throw new Error('Pago no puede ser mayor al saldo pendiente');
-    }
-
-    const payment = await tx.pagoVenta.create({
-      data: {
-        IdVenta: idVenta,
-        IdUsuario: input.idUsuario,
-        Monto: input.monto,
-        MetodoPago: input.metodoPago,
-        NumeroReferencia: input.numeroReferencia,
-        Banco: input.banco,
-        FechaPago: input.fechaPago ? toDateOnly(input.fechaPago) : new Date(),
-        RutaFirma: input.rutaFirma,
-        Observaciones: input.observaciones,
-        Anulado: false,
-      },
-    });
-
-    const recalculated = await recalculateSalePaymentStatus(tx, idVenta);
-    await syncCuentaPorCobrarFromSale(tx, idVenta, recalculated, input.idUsuario);
-
-    return {
-      id: payment.Id,
-      idVenta: payment.IdVenta,
-      idUsuario: payment.IdUsuario,
-      monto: toNumber(payment.Monto),
-      metodoPago: payment.MetodoPago,
-      numeroReferencia: payment.NumeroReferencia,
-      banco: payment.Banco,
-      fechaPago: payment.FechaPago,
-      rutaFirma: payment.RutaFirma,
-      observaciones: payment.Observaciones,
-      estadoPago: recalculated.estadoPago,
-      saldo: recalculated.saldo,
-    };
-  }, {
-    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-  });
-
-  if (saleInfo) {
+  if (!outcome.replayed && outcome.saleInfo) {
     notifyPagoRecibido({
-      numeroVenta: saleInfo.numeroVenta,
-      cliente: saleInfo.cliente,
-      monto: created.monto,
-      metodoPago: created.metodoPago,
-      estadoPago: created.estadoPago,
-      saldo: created.saldo,
+      numeroVenta: outcome.saleInfo.numeroVenta,
+      cliente: outcome.saleInfo.cliente,
+      monto: outcome.data.monto,
+      metodoPago: outcome.data.metodoPago,
+      estadoPago: outcome.data.estadoPago,
+      saldo: outcome.data.saldo,
     });
   }
 
-  return created;
+  return outcome.data;
 }
 
 export async function anulateSalePayment(idVenta: number, idPago: number, idUsuarioAnulador?: number) {

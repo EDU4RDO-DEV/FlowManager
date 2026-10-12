@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
+import { runSerializableTransaction } from '../utils/serializable-transaction';
 import { NotificationEvents, send } from './notification.service';
 
 type VehiculoEstado = 'DISPONIBLE' | 'EN_RUTA' | 'MANTENIMIENTO' | 'NO_DISPONIBLE';
@@ -914,7 +915,7 @@ export async function createRutaSesion(input: CreateRutaSesionInput) {
     kmFinal: input.kmFinal,
   });
 
-  const created = await prisma.$transaction(async (tx) => {
+  const created = await runSerializableTransaction(async (tx) => {
     await assertVehicleAvailableForSession(tx, {
       idVehiculo: input.idVehiculo,
       fechaSesion,
@@ -951,7 +952,7 @@ export async function createRutaSesion(input: CreateRutaSesionInput) {
 
     await syncVehicleStateBySessions(tx, input.idVehiculo);
     return session;
-  }, { isolationLevel: 'Serializable' });
+  });
 
   return toRutaSesionDto(created);
 }
@@ -961,7 +962,7 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
     await validateUsuarioExists(input.idUsuarioModificador);
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
+  const updated = await runSerializableTransaction(async (tx) => {
     const existing = await tx.rutaSesion.findFirst({
       where: { Id: id, Anulado: false },
       select: {
@@ -1047,7 +1048,7 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
     await syncVehicleStateBySessions(tx, nextVehiculo);
 
     return session;
-  }, { isolationLevel: 'Serializable' });
+  });
 
   return toRutaSesionDto(updated);
 }
@@ -1055,7 +1056,7 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
 export async function deleteRutaSesion(id: number, idUsuarioAnulador: number) {
   await validateUsuarioExists(idUsuarioAnulador);
 
-  await prisma.$transaction(async (tx) => {
+  await runSerializableTransaction(async (tx) => {
     const existing = await tx.rutaSesion.findFirst({
       where: { Id: id, Anulado: false },
       select: { Id: true, IdVehiculo: true },
@@ -1076,13 +1077,13 @@ export async function deleteRutaSesion(id: number, idUsuarioAnulador: number) {
     });
 
     await syncVehicleStateBySessions(tx, existing.IdVehiculo);
-  }, { isolationLevel: 'Serializable' });
+  });
 }
 
 export async function restoreRutaSesion(id: number, idUsuarioModificador: number) {
   await validateUsuarioExists(idUsuarioModificador);
 
-  const restored = await prisma.$transaction(async (tx) => {
+  const restored = await runSerializableTransaction(async (tx) => {
     const existing = await tx.rutaSesion.findFirst({
       where: { Id: id, Anulado: true },
       select: {
@@ -1149,7 +1150,7 @@ export async function restoreRutaSesion(id: number, idUsuarioModificador: number
 
     await syncVehicleStateBySessions(tx, existing.IdVehiculo);
     return session;
-  }, { isolationLevel: 'Serializable' });
+  });
 
   return toRutaSesionDto(restored);
 }

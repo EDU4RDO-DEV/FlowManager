@@ -1,16 +1,21 @@
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../app';
+import { prisma } from '../config/prisma';
 
 const accessSecret = 'test-access-secret';
 const refreshSecret = 'test-refresh-secret';
+const testUserId = 101;
+const testSessionId = 81001;
+const originalUserFindFirst = prisma.usuario.findFirst.bind(prisma.usuario);
 
 function buildAccessToken(roleName: string) {
   return jwt.sign(
     {
-      sub: 101,
+      sub: testUserId,
+      sid: testSessionId,
       correo: 'tester@basan.com',
       idRol: 5,
       nombreRol: roleName,
@@ -74,7 +79,26 @@ describe('Auth/RBAC critical flows', () => {
     process.env.JWT_REFRESH_SECRET = refreshSecret;
     process.env.JWT_ISSUER = 'flowmanager.api';
     process.env.JWT_AUDIENCE = 'flowmanager.web';
+    vi.spyOn(prisma.sesion, 'findFirst').mockImplementation((args) =>
+      Promise.resolve(
+        args.where.Id === testSessionId ? { Id: testSessionId } : null,
+      ) as never,
+    );
+    vi.spyOn(prisma.usuario, 'findFirst').mockImplementation((args) => {
+      if (
+        args.where.Id === testUserId &&
+        typeof args.select === 'object' &&
+        args.select !== null &&
+        'IdRol' in args.select
+      ) {
+        return Promise.resolve({ Id: testUserId, IdRol: 5 }) as never;
+      }
+
+      return originalUserFindFirst(args);
+    });
   });
+
+  afterAll(() => vi.restoreAllMocks());
 
   it('returns 401 when protected route is called without token', async () => {
     const app = createApp();

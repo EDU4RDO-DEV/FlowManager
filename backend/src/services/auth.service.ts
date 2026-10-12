@@ -42,6 +42,7 @@ type RegisterInput = {
   clave: string;
   idRol?: number;
   idEntidad?: number;
+  bootstrap?: boolean;
 };
 
 type RegisterResult = {
@@ -609,7 +610,7 @@ export async function revokeAllUserSessions(idUsuario: number, idUsuarioAnulador
 }
 
 export async function register(input: RegisterInput): Promise<RegisterResult> {
-  const { nombre, clave, idRol, idEntidad } = input;
+  const { nombre, clave, idRol, idEntidad, bootstrap = false } = input;
   const correo = normalizeEmail(input.correo);
 
   const existing = await prisma.usuario.findFirst({
@@ -630,23 +631,78 @@ export async function register(input: RegisterInput): Promise<RegisterResult> {
 
   const hashedPassword = await bcrypt.hash(clave, sanitizeSaltRounds());
 
-  const created = await prisma.usuario.create({
-    data: {
-      Nombre: nombre,
-      Correo: correo,
-      Clave: hashedPassword,
-      IdRol: idRol ?? null,
-      IdEntidad: idEntidad ?? null,
-      Anulado: false,
-    },
-    select: {
-      Id: true,
-      Nombre: true,
-      Correo: true,
-      IdRol: true,
-      IdEntidad: true,
-    },
-  });
+  let created: {
+    Id: number;
+    Nombre: string;
+    Correo: string;
+    IdRol: number | null;
+    IdEntidad: number | null;
+  };
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      created = await prisma.$transaction(
+        async (tx) => {
+          let assignedRoleId = idRol ?? null;
+
+          if (bootstrap) {
+            const administratorRole = await tx.rol.findFirst({
+              where: { Nombre: 'Administrador', Anulado: false },
+              select: { Id: true },
+            });
+
+            if (!administratorRole) {
+              throw new Error('El rol Administrador no está configurado');
+            }
+
+            const existingAdministrator = await tx.usuario.findFirst({
+              where: {
+                IdRol: administratorRole.Id,
+                Anulado: false,
+              },
+              select: { Id: true },
+            });
+
+            if (existingAdministrator) {
+              throw new Error('El administrador inicial ya fue creado');
+            }
+
+            assignedRoleId = administratorRole.Id;
+          }
+
+          return tx.usuario.create({
+            data: {
+              Nombre: nombre,
+              Correo: correo,
+              Clave: hashedPassword,
+              IdRol: assignedRoleId,
+              IdEntidad: idEntidad ?? null,
+              Anulado: false,
+            },
+            select: {
+              Id: true,
+              Nombre: true,
+              Correo: true,
+              IdRol: true,
+              IdEntidad: true,
+            },
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+      break;
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2034' &&
+        attempt < 2
+      ) {
+        continue;
+      }
+
+      throw error;
+    }
+  }
 
   return {
     id: created.Id,

@@ -194,14 +194,5 @@ export async function restoreSession(id: number) {
     throw new Error('Sesion anulada no existe');
   }
 
-  const restored = await prisma.sesion.update({
-    where: { Id: id },
-    data: {
-      Anulado: false,
-      IdUsuarioAnulador: null,
-      FechaAnulacion: null,
-    },
-  });
-
-  return toSessionDto(restored);
+  throw new Error('Las sesiones revocadas no se pueden restaurar; inicia sesión nuevamente');
 }

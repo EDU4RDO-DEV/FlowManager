@@ -178,6 +178,7 @@ export async function registerController(req: Request, res: Response) {
       nombre,
       correo,
       clave,
+      bootstrap: !req.auth,
       ...(req.auth && idRol !== undefined ? { idRol } : {}),
       idEntidad,
     });
@@ -196,6 +197,14 @@ export async function registerController(req: Request, res: Response) {
 
     if (message === 'El correo ya está registrado') {
       return res.status(409).json({ ok: false, message });
+    }
+
+    if (message === 'El administrador inicial ya fue creado') {
+      return res.status(409).json({ ok: false, message });
+    }
+
+    if (message === 'El rol Administrador no está configurado') {
+      return res.status(503).json({ ok: false, message });
     }
 
     if (message === 'Entidad no existe') {

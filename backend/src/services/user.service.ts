@@ -760,31 +760,46 @@ export async function restoreUser(id: number, idUsuarioModificador?: number) {
 
   await validateCorreoDisponible(existing.Correo, id);
 
-  const restored = await prisma.usuario.update({
-    where: { Id: id },
-    data: {
-      Anulado: false,
-      ...(idUsuarioModificador !== undefined
-        ? { IdUsuarioModificador: idUsuarioModificador }
-        : {}),
-      FechaModificacion: new Date(),
-      IdUsuarioAnulador: null,
-      FechaAnulacion: null,
-    },
-    select: {
-      Id: true,
-      IdUsuario: true,
-      IdEntidad: true,
-      IdRol: true,
-      Nombre: true,
-      Correo: true,
-      FechaRegistro: true,
-      IdUsuarioModificador: true,
-      FechaModificacion: true,
-      Anulado: true,
-      IdUsuarioAnulador: true,
-      FechaAnulacion: true,
-    },
+  const restored = await prisma.$transaction(async (tx) => {
+    const fechaRevocacion = new Date();
+
+    await tx.sesion.updateMany({
+      where: { IdUsuario: id, Anulado: false },
+      data: {
+        Anulado: true,
+        ...(idUsuarioModificador !== undefined
+          ? { IdUsuarioAnulador: idUsuarioModificador }
+          : {}),
+        FechaAnulacion: fechaRevocacion,
+      },
+    });
+
+    return tx.usuario.update({
+      where: { Id: id },
+      data: {
+        Anulado: false,
+        ...(idUsuarioModificador !== undefined
+          ? { IdUsuarioModificador: idUsuarioModificador }
+          : {}),
+        FechaModificacion: new Date(),
+        IdUsuarioAnulador: null,
+        FechaAnulacion: null,
+      },
+      select: {
+        Id: true,
+        IdUsuario: true,
+        IdEntidad: true,
+        IdRol: true,
+        Nombre: true,
+        Correo: true,
+        FechaRegistro: true,
+        IdUsuarioModificador: true,
+        FechaModificacion: true,
+        Anulado: true,
+        IdUsuarioAnulador: true,
+        FechaAnulacion: true,
+      },
+    });
   });
 
   return toUserDto(restored);

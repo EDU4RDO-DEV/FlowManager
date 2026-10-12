@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
+import { runSerializableTransaction } from '../utils/serializable-transaction';
 import { registerInventoryMovement } from './inventory-movement.service';
 
 type RegistrarPrestamoInput = {
@@ -226,7 +227,7 @@ export async function registrarPrestamoEnvase(input: RegistrarPrestamoInput) {
     await validateVentaDeCliente(input.idVenta, input.idCliente);
   }
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await runSerializableTransaction(async (tx) => {
     const item = await getEnvaseItem(tx, input.idInventarioItem);
 
     if (item.Existencia < input.cantidad) {
@@ -296,7 +297,7 @@ export async function registrarPrestamoEnvase(input: RegistrarPrestamoInput) {
     });
 
     return created;
-  }, { isolationLevel: 'Serializable' });
+  });
 
   return toMovimientoDto(result);
 }
@@ -315,7 +316,7 @@ export async function registrarDevolucionEnvase(input: RegistrarDevolucionInput)
     await validateVentaDeCliente(input.idVenta, input.idCliente);
   }
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await runSerializableTransaction(async (tx) => {
     const item = await getEnvaseItem(tx, input.idInventarioItem);
 
     const saldoExistente = await tx.envaseClienteSaldo.findFirst({
@@ -376,7 +377,7 @@ export async function registrarDevolucionEnvase(input: RegistrarDevolucionInput)
     });
 
     return created;
-  }, { isolationLevel: 'Serializable' });
+  });
 
   return toMovimientoDto(result);
 }
@@ -388,7 +389,7 @@ export async function anulateMovimientoEnvase(id: number, idUsuarioAnulador?: nu
     await validateUsuarioExists(idUsuarioAnulador);
   }
 
-  await prisma.$transaction(async (tx) => {
+  await runSerializableTransaction(async (tx) => {
     const movimiento = await tx.movimientoEnvase.findFirst({
       where: { Id: id, Anulado: false },
       select: { Id: true, IdCliente: true, IdInventarioItem: true, TipoMovimiento: true, Cantidad: true },
@@ -463,7 +464,7 @@ export async function anulateMovimientoEnvase(id: number, idUsuarioAnulador?: nu
         FechaAnulacion: new Date(),
       },
     });
-  }, { isolationLevel: 'Serializable' });
+  });
 }
 
 export async function restoreMovimientoEnvase(id: number, idUsuarioModificador?: number) {
@@ -471,7 +472,7 @@ export async function restoreMovimientoEnvase(id: number, idUsuarioModificador?:
     await validateUsuarioExists(idUsuarioModificador);
   }
 
-  await prisma.$transaction(async (tx) => {
+  await runSerializableTransaction(async (tx) => {
     const movimiento = await tx.movimientoEnvase.findFirst({
       where: { Id: id, Anulado: true },
       select: { Id: true, IdCliente: true, IdInventarioItem: true, TipoMovimiento: true, Cantidad: true },
@@ -554,7 +555,7 @@ export async function restoreMovimientoEnvase(id: number, idUsuarioModificador?:
         FechaModificacion: new Date(),
       },
     });
-  }, { isolationLevel: 'Serializable' });
+  });
 
   return getMovimientoEnvaseById(id);
 }

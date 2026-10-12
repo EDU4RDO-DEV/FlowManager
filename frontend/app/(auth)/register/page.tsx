@@ -64,7 +64,7 @@ export default function RegisterPage() {
         <div className="space-y-1.5">
           <CardTitle className="text-2xl tracking-tight">Crear usuario</CardTitle>
           <CardDescription>
-            Registra el primer usuario. La asignación del rol administrativo requiere el procedimiento autorizado.
+            Si todavía no existe un administrador, el primer registro recibirá ese rol.
           </CardDescription>
         </div>
       </CardHeader>

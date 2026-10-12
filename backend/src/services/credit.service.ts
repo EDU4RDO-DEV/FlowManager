@@ -383,9 +383,9 @@ export async function listCreditPayments(id: number) {
   return listSalePayments(idVenta);
 }
 
-export async function createCreditPayment(id: number, input: CreditPaymentInput) {
+export async function createCreditPayment(id: number, input: CreditPaymentInput, idempotencyKey: string) {
   const idVenta = await getCreditSaleId(id);
-  return createSalePayment(idVenta, input);
+  return createSalePayment(idVenta, input, idempotencyKey);
 }
 
 export async function anulateCreditPayment(id: number, idPago: number, idUsuarioAnulador?: number) {

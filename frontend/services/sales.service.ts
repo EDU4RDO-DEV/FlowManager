@@ -152,8 +152,13 @@ export async function listSalePayments(idVenta: number): Promise<SalePaymentDto[
 export async function createSalePayment(
   idVenta: number,
   payload: CreateSalePaymentPayload,
+  idempotencyKey: string,
 ): Promise<CreateSalePaymentResult> {
-  const { data } = await api.post<CreateSalePaymentResponse>(`/api/ventas/${idVenta}/pagos`, payload);
+  const { data } = await api.post<CreateSalePaymentResponse>(
+    `/api/ventas/${idVenta}/pagos`,
+    payload,
+    { headers: { "Idempotency-Key": idempotencyKey } },
+  );
   if (!data.data) {
     throw new Error(data.message || "Respuesta inválida al registrar pago");
   }
@@ -213,4 +218,3 @@ export async function listAvailableRouteSessions(idUsuarioVendedor?: number): Pr
 export async function anulateSale(id: number, payload?: AnulateSalePayload): Promise<void> {
   await api.patch(`/api/ventas/${id}/anular`, payload ?? {});
 }
-

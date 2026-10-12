@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
 import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
+import { runSerializableTransaction } from '../utils/serializable-transaction';
 import { registerInventoryMovement } from './inventory-movement.service';
 
 type ListPurchasesInput = {
@@ -395,7 +396,7 @@ export async function createPurchase(input: CreatePurchaseInput) {
     throw new Error('Debe enviar al menos un detalle para registrar la compra');
   }
 
-  const created = await prisma.$transaction(async (tx) => {
+  const created = await runSerializableTransaction(async (tx) => {
     await validateNumeroFacturaDisponible(tx, input.idProveedor, input.numeroFactura);
     const numeroCompra = await getNextNumeroCompra(tx);
 
@@ -526,7 +527,7 @@ export async function createPurchase(input: CreatePurchaseInput) {
         DetalleGasto: true,
       },
     });
-  }, { isolationLevel: 'Serializable' });
+  });
 
   if (!created) {
     throw new Error('No se pudo registrar la compra');
@@ -540,7 +541,7 @@ export async function anulatePurchase(id: number, idUsuarioAnulador?: number) {
     await validateUsuarioExists(idUsuarioAnulador);
   }
 
-  await prisma.$transaction(async (tx) => {
+  await runSerializableTransaction(async (tx) => {
     const purchase = await tx.compra.findFirst({
       where: {
         Id: id,
@@ -646,7 +647,7 @@ export async function anulatePurchase(id: number, idUsuarioAnulador?: number) {
         FechaAnulacion: fechaAnulacion,
       },
     });
-  }, { isolationLevel: 'Serializable' });
+  });
 }
 
 export async function restorePurchase(id: number, idUsuarioModificador?: number) {
@@ -654,7 +655,7 @@ export async function restorePurchase(id: number, idUsuarioModificador?: number)
     await validateUsuarioExists(idUsuarioModificador);
   }
 
-  const restored = await prisma.$transaction(async (tx) => {
+  const restored = await runSerializableTransaction(async (tx) => {
     const purchase = await tx.compra.findFirst({
       where: {
         Id: id,
@@ -794,7 +795,7 @@ export async function restorePurchase(id: number, idUsuarioModificador?: number)
         DetalleGasto: true,
       },
     });
-  }, { isolationLevel: 'Serializable' });
+  });
 
   if (!restored) {
     throw new Error('No se pudo restaurar la compra');

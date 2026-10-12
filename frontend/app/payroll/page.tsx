@@ -158,6 +158,32 @@ export default function PayrollPage() {
     [employees, idEmpleado],
   );
 
+  const adjustmentSummary = useMemo(() => {
+    const perEmployee = ajustes.reduce(
+      (totals, adjustment) => {
+        totals[adjustment.tipoAjuste] += adjustment.monto;
+        return totals;
+      },
+      { BONO_META: 0, VIATICO: 0, DESCUENTO: 0 },
+    );
+    const employeeIds = new Set<number>();
+
+    if (preview) {
+      preview.planillas.forEach((payroll) => employeeIds.add(payroll.idEmpleado));
+      preview.validaciones.forEach((issue) => employeeIds.add(issue.idEmpleado));
+    }
+
+    return {
+      employeeCount: employeeIds.size,
+      perEmployee,
+      period: {
+        BONO_META: Number((perEmployee.BONO_META * employeeIds.size).toFixed(2)),
+        VIATICO: Number((perEmployee.VIATICO * employeeIds.size).toFixed(2)),
+        DESCUENTO: Number((perEmployee.DESCUENTO * employeeIds.size).toFixed(2)),
+      },
+    };
+  }, [ajustes, preview]);
+
   function parsePeriod() {
     const mesNum = Number(mes);
     const anioNum = Number(anio);
@@ -519,6 +545,23 @@ export default function PayrollPage() {
                       {preview.planillas.length} empleados calculados · {preview.validaciones.length} validaciones · Estado al generar: BORRADOR
                     </p>
                   </div>
+                  {ajustes.length > 0 ? (
+                    <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                      <p className="font-medium">
+                        Ajustes para {adjustmentSummary.employeeCount} empleados
+                      </p>
+                      <p className="text-muted-foreground">
+                        Por empleado: bonos {money(adjustmentSummary.perEmployee.BONO_META)} ·
+                        viáticos {money(adjustmentSummary.perEmployee.VIATICO)} ·
+                        descuentos {money(adjustmentSummary.perEmployee.DESCUENTO)}
+                      </p>
+                      <p className="text-muted-foreground">
+                        Total del período: bonos {money(adjustmentSummary.period.BONO_META)} ·
+                        viáticos {money(adjustmentSummary.period.VIATICO)} ·
+                        descuentos {money(adjustmentSummary.period.DESCUENTO)}
+                      </p>
+                    </div>
+                  ) : null}
                   {preview.validaciones.length > 0 ? (
                     <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
                       <p className="text-sm font-semibold text-amber-900">Debe resolver estos puntos antes de generar</p>

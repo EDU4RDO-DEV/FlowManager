@@ -1,8 +1,9 @@
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../app';
+import { prisma } from '../config/prisma';
 
 const accessSecret = 'test-access-secret';
 const refreshSecret = 'test-refresh-secret';
@@ -16,11 +17,16 @@ const ROLE_IDS = {
   encargadoProduccion: 4,
   auxiliarPlanta: 5,
 };
+const testSessionId = 83001;
+let activeRoleId = ROLE_IDS.administrador;
+const originalUserFindFirst = prisma.usuario.findFirst.bind(prisma.usuario);
 
 function buildAccessToken(idRol: number, nombreRol: string) {
+  activeRoleId = idRol;
   return jwt.sign(
     {
       sub: 101,
+      sid: testSessionId,
       correo: 'tester@basan.com',
       idRol,
       nombreRol,
@@ -43,7 +49,26 @@ describe('Fase 2 - matriz Rol -> Módulo -> Acción (seed real)', () => {
     process.env.JWT_REFRESH_SECRET = refreshSecret;
     process.env.JWT_ISSUER = 'flowmanager.api';
     process.env.JWT_AUDIENCE = 'flowmanager.web';
+    vi.spyOn(prisma.sesion, 'findFirst').mockImplementation((args) =>
+      Promise.resolve(
+        args.where.Id === testSessionId ? { Id: testSessionId } : null,
+      ) as never,
+    );
+    vi.spyOn(prisma.usuario, 'findFirst').mockImplementation((args) => {
+      if (
+        args.where.Id === 101 &&
+        typeof args.select === 'object' &&
+        args.select !== null &&
+        'IdRol' in args.select
+      ) {
+        return Promise.resolve({ Id: 101, IdRol: activeRoleId }) as never;
+      }
+
+      return originalUserFindFirst(args);
+    });
   });
+
+  afterAll(() => vi.restoreAllMocks());
 
   it('Administrador tiene acceso total (usuarios:read permitido)', async () => {
     const app = createApp();

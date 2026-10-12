@@ -1,5 +1,8 @@
+import { Prisma } from '@prisma/client';
+
 import { prisma } from '../config/prisma';
 import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
+import { runSerializableTransaction } from '../utils/serializable-transaction';
 import { registerInventoryMovement } from './inventory-movement.service';
 
 type ListAdjustmentsInput = {
@@ -77,8 +80,8 @@ async function validateUsuarioExists(idUsuario: number) {
   }
 }
 
-async function getNextNumeroAjuste(): Promise<number> {
-  const lastAdjustment = await prisma.ajusteInventario.findFirst({
+async function getNextNumeroAjuste(tx: Prisma.TransactionClient): Promise<number> {
+  const lastAdjustment = await tx.ajusteInventario.findFirst({
     orderBy: { NumeroAjuste: 'desc' },
     select: { NumeroAjuste: true },
   });
@@ -192,9 +195,8 @@ export async function createAdjustment(input: CreateAdjustmentInput) {
     throw new Error('Debes agregar al menos un item al ajuste');
   }
 
-  const numeroAjuste = await getNextNumeroAjuste();
-
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await runSerializableTransaction(async (tx) => {
+    const numeroAjuste = await getNextNumeroAjuste(tx);
     const productIds = Array.from(new Set(input.items.map((item) => item.idInventarioItem)));
     const itemsInventario = await tx.inventarioItem.findMany({
       where: {
@@ -282,14 +284,14 @@ export async function createAdjustment(input: CreateAdjustmentInput) {
       createdAdjustments.push(ajuste);
     }
 
-    return createdAdjustments;
-  }, { isolationLevel: 'Serializable' });
+    return { numeroAjuste, items: createdAdjustments };
+  });
 
   return {
-    numeroAjuste,
+    numeroAjuste: result.numeroAjuste,
     nombreAjuste: input.nombreAjuste,
-    totalItems: result.length,
-    items: result.map(toAdjustmentDto),
+    totalItems: result.items.length,
+    items: result.items.map(toAdjustmentDto),
   };
 }
 
@@ -298,7 +300,7 @@ export async function deleteAdjustment(id: number, idUsuarioAnulador?: number) {
     await validateUsuarioExists(idUsuarioAnulador);
   }
 
-  await prisma.$transaction(async (tx) => {
+  await runSerializableTransaction(async (tx) => {
     const existing = await tx.ajusteInventario.findFirst({
       where: { Id: id, Anulado: false },
       select: {
@@ -361,7 +363,7 @@ export async function deleteAdjustment(id: number, idUsuarioAnulador?: number) {
       cantidad: existing.CantidadAjustada,
       nuevaExistencia,
     });
-  }, { isolationLevel: 'Serializable' });
+  });
 }
 
 export async function restoreAdjustment(id: number, idUsuarioModificador?: number) {
@@ -369,7 +371,7 @@ export async function restoreAdjustment(id: number, idUsuarioModificador?: numbe
     await validateUsuarioExists(idUsuarioModificador);
   }
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await runSerializableTransaction(async (tx) => {
     const existing = await tx.ajusteInventario.findFirst({
       where: { Id: id, Anulado: true },
       select: {
@@ -446,7 +448,7 @@ export async function restoreAdjustment(id: number, idUsuarioModificador?: numbe
     });
 
     return restored;
-  }, { isolationLevel: 'Serializable' });
+  });
 
   return toAdjustmentDto(result);
 }

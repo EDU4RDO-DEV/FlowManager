@@ -1,16 +1,20 @@
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../app';
+import { prisma } from '../config/prisma';
 
 const accessSecret = 'test-access-secret';
 const refreshSecret = 'test-refresh-secret';
+const testSessionId = 82001;
+const originalUserFindFirst = prisma.usuario.findFirst.bind(prisma.usuario);
 
 function buildAccessToken(roleName: string) {
   return jwt.sign(
     {
       sub: 101,
+      sid: testSessionId,
       correo: 'tester@basan.com',
       idRol: 5,
       nombreRol: roleName,
@@ -33,7 +37,26 @@ describe('Module endpoints RBAC/integration', () => {
     process.env.JWT_REFRESH_SECRET = refreshSecret;
     process.env.JWT_ISSUER = 'flowmanager.api';
     process.env.JWT_AUDIENCE = 'flowmanager.web';
+    vi.spyOn(prisma.sesion, 'findFirst').mockImplementation((args) =>
+      Promise.resolve(
+        args.where.Id === testSessionId ? { Id: testSessionId } : null,
+      ) as never,
+    );
+    vi.spyOn(prisma.usuario, 'findFirst').mockImplementation((args) => {
+      if (
+        args.where.Id === 101 &&
+        typeof args.select === 'object' &&
+        args.select !== null &&
+        'IdRol' in args.select
+      ) {
+        return Promise.resolve({ Id: 101, IdRol: 5 }) as never;
+      }
+
+      return originalUserFindFirst(args);
+    });
   });
+
+  afterAll(() => vi.restoreAllMocks());
 
   it('returns 403 when read-only inventory role tries to restore adjustment', async () => {
     const app = createApp();

@@ -15,7 +15,11 @@ vi.mock('../config/prisma', () => ({
   prisma: prismaMock,
 }));
 
-import { requireAuth, requireModulePermission } from '../middlewares/auth.middleware';
+import {
+  requireAuth,
+  requireBootstrapOrModulePermission,
+  requireModulePermission,
+} from '../middlewares/auth.middleware';
 
 const accessSecret = 'a01-test-access-secret';
 
@@ -80,9 +84,45 @@ describe('A01 auth middleware invalidation', () => {
     expect(response.status).toHaveBeenCalledWith(401);
     expect(prismaMock.usuario.findFirst).toHaveBeenCalledWith({
       where: { Id: 101, Anulado: false },
-      select: { Id: true },
+      select: { Id: true, IdRol: true },
     });
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('uses the current persisted role instead of the role embedded in the access token', async () => {
+    prismaMock.sesion.findFirst.mockResolvedValueOnce({ Id: 501 });
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 101, IdRol: 9 });
+    const request = makeRequest();
+    const response = makeResponse();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await requireAuth(request, response, next);
+
+    expect(request.auth?.idRol).toBe(9);
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('rejects access tokens that are not bound to a persisted session', async () => {
+    const token = jwt.sign(
+      { sub: 101, idRol: 7, tokenType: 'access' },
+      accessSecret,
+      { algorithm: 'HS256', expiresIn: 60, issuer: 'flowmanager.api', audience: 'flowmanager.web' },
+    );
+    const response = makeResponse();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await requireAuth(
+      {
+        headers: { authorization: `Bearer ${token}` },
+        params: {},
+      } as unknown as Request,
+      response,
+      next,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+    expect(prismaMock.sesion.findFirst).not.toHaveBeenCalled();
   });
 
   it('denies persisted grants when the token role has been deactivated', async () => {
@@ -96,5 +136,27 @@ describe('A01 auth middleware invalidation', () => {
     expect(response.status).toHaveBeenCalledWith(403);
     expect(prismaMock.$queryRaw).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('allows bootstrap registration only while no active administrator exists', async () => {
+    prismaMock.rol.findFirst.mockResolvedValueOnce(null);
+    const response = makeResponse();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await requireBootstrapOrModulePermission('usuarios', 'create')(
+      { headers: {}, params: {} } as unknown as Request,
+      response,
+      next,
+    );
+
+    expect(prismaMock.rol.findFirst).toHaveBeenCalledWith({
+      where: {
+        Nombre: 'Administrador',
+        Anulado: false,
+        Usuario_Usuario_IdRolToRol: { some: { Anulado: false } },
+      },
+      select: { Id: true },
+    });
+    expect(next).toHaveBeenCalledOnce();
   });
 });
