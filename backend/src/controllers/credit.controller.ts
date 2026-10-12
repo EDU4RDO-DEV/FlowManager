@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 
 import {
@@ -127,6 +128,13 @@ export async function createCreditPaymentController(req: Request, res: Response)
 
     if (message === 'CuentaPorCobrar no existe' || message === 'Venta no existe' || message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({
+        ok: false,
+        message: 'Conflicto concurrente al registrar el pago; consulte el saldo antes de reintentar',
+      });
     }
 
     if (message.startsWith('Pago no puede ser mayor') || message.includes('obligatorio')) {

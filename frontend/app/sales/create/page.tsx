@@ -414,8 +414,11 @@ export default function CreateSalePage() {
       return "Para contado debes registrar un pago inicial mayor a 0";
     }
 
-    if (condicionPago === "CONTADO" && pagoMonto + 0.0001 < total) {
-      return "En contado el pago inicial no puede ser menor al total";
+    if (
+      condicionPago === "CONTADO" &&
+      Number(pagoMonto.toFixed(2)) !== Number(total.toFixed(2))
+    ) {
+      return "En contado el pago debe coincidir con el total";
     }
 
     if (pagoMetodo === "TRANSFERENCIA" || pagoMetodo === "CHEQUE" || pagoMetodo === "POS") {

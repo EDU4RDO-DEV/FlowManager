@@ -1663,6 +1663,8 @@ export async function createSalePayment(idVenta: number, input: CreateSalePaymen
       estadoPago: recalculated.estadoPago,
       saldo: recalculated.saldo,
     };
+  }, {
+    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
   });
 
   if (saleInfo) {

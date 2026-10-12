@@ -6,10 +6,20 @@ import type {
   CreateClientPayload,
   DeleteClientPayload,
   RestoreClientPayload,
+  TipoClienteDto,
+  TipoClientesListResponse,
   UploadClientImageResponse,
   UploadClientImageResult,
   UpdateClientPayload,
 } from "@/types/clients";
+
+export async function listTiposCliente(): Promise<TipoClienteDto[]> {
+  const { data } = await api.get<TipoClientesListResponse>("/api/client-catalog/tipos-cliente");
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al obtener tipos de cliente");
+  }
+  return data.data;
+}
 
 export async function listClients(): Promise<ClientDto[]> {
   const { data } = await api.get<ClientsListResponse>("/api/clients");

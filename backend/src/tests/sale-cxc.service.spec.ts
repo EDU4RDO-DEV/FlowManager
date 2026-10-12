@@ -117,6 +117,10 @@ describe('Fase 4 - Ventas y Cuentas por Cobrar (pagos)', () => {
         data: expect.objectContaining({ Estado: 'PAGADO' }),
       }),
     );
+    expect(prismaMock.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { isolationLevel: 'Serializable' },
+    );
 
     // PAGO_RECIBIDO se dispara una sola vez, después del commit, con el payload real.
     await Promise.resolve();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -12,10 +12,12 @@ import { useAuth } from "@/components/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
-import { createClient, uploadClientImage } from "@/services/clients.service";
+import { createClient, listTiposCliente, uploadClientImage } from "@/services/clients.service";
+import type { TipoClienteDto } from "@/types/clients";
 
 const EMPTY_FORM: ClientFormValues = {
   nombreCompleto: "",
+  idTipoCliente: "",
   correoElectronico: "",
   telefono1: "",
   telefono2: "",
@@ -29,7 +31,16 @@ export default function CreateClientPage() {
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [tiposCliente, setTiposCliente] = useState<TipoClienteDto[]>([]);
   const [form, setForm] = useState<ClientFormValues>(EMPTY_FORM);
+
+  useEffect(() => {
+    listTiposCliente()
+      .then(setTiposCliente)
+      .catch((error) => {
+        toast.error(getApiErrorMessage(error, "No se pudieron cargar los tipos de cliente."));
+      });
+  }, []);
 
   async function handleUploadImage(file: File) {
     setUploadingImage(true);
@@ -59,6 +70,7 @@ export default function CreateClientPage() {
     try {
       await createClient({
         idUsuario: user.id,
+        idTipoCliente: form.idTipoCliente ? Number(form.idTipoCliente) : null,
         entidad: {
           nombreCompleto: form.nombreCompleto.trim(),
           correoElectronico: form.correoElectronico.trim() || undefined,
@@ -90,6 +102,7 @@ export default function CreateClientPage() {
           <ClientFormCard
             title="Nuevo cliente"
             form={form}
+            tiposCliente={tiposCliente}
             saving={saving}
             uploadingImage={uploadingImage}
             onChange={setForm}

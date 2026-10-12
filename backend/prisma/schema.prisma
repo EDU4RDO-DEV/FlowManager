@@ -803,7 +803,7 @@ model Venta {
   IdUsuario                 Int
   IdRutaSesion              Int?
   IdTalonario               Int?
-  NumeroVenta               Int
+  NumeroVenta               Int                @unique(map: "UQ_Venta_NumeroVenta")
   NumeroProForma            Int?
   TipoRegistro              String             @db.VarChar(20)
   EstadoEntrega             String             @db.VarChar(20)

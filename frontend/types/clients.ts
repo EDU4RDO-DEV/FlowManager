@@ -18,6 +18,7 @@ export interface ClientDto {
   id: number;
   idEntidad: number;
   idUsuario: number;
+  idTipoCliente: number | null;
   fechaRegistro: string | null;
   idUsuarioModificador: number | null;
   fechaModificacion: string | null;
@@ -31,6 +32,7 @@ export type ClientsListResponse = ApiResponse<ClientDto[]>;
 
 export interface CreateClientPayload {
   idUsuario: number;
+  idTipoCliente?: number | null;
   entidad: {
     nombreCompleto: string;
     sexo?: string;
@@ -47,6 +49,7 @@ export interface CreateClientPayload {
 export interface UpdateClientPayload {
   idUsuario?: number;
   idUsuarioModificador?: number;
+  idTipoCliente?: number | null;
   entidad?: {
     nombreCompleto?: string;
     sexo?: string;
@@ -59,6 +62,14 @@ export interface UpdateClientPayload {
     dpi?: string;
   };
 }
+
+export interface TipoClienteDto {
+  id: number;
+  nombre: string;
+  descripcion: string | null;
+}
+
+export type TipoClientesListResponse = ApiResponse<TipoClienteDto[]>;
 
 export interface DeleteClientPayload {
   idUsuarioAnulador?: number;

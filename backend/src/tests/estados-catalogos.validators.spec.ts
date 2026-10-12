@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createGastoVehiculoSchema, updateGastoVehiculoSchema } from '../validators/logistics.validators';
-import { createClientSchema } from '../validators/client.validators';
+import { createClientSchema, updateClientSchema } from '../validators/client.validators';
 import { createEmployeeSchema } from '../validators/employee.validators';
 
 describe('Fase 12 - homologación estados/catálogos (MetodoPago y Sexo)', () => {
@@ -35,6 +35,21 @@ describe('Fase 12 - homologación estados/catálogos (MetodoPago y Sexo)', () =>
     expect(() =>
       createClientSchema.parse({ idUsuario: 1, entidad: { nombreCompleto: 'Cliente X', sexo: 'X' } }),
     ).toThrowError();
+  });
+
+  it('createClientSchema acepta un tipo de cliente opcional o nulo y valida su identificador', () => {
+    const client = { idUsuario: 1, entidad: { nombreCompleto: 'Cliente X' } };
+
+    expect(() => createClientSchema.parse(client)).not.toThrow();
+    expect(() => createClientSchema.parse({ ...client, idTipoCliente: null })).not.toThrow();
+    expect(() => createClientSchema.parse({ ...client, idTipoCliente: 3 })).not.toThrow();
+    expect(() => createClientSchema.parse({ ...client, idTipoCliente: 0 })).toThrowError();
+  });
+
+  it('updateClientSchema permite asignar o quitar la clasificación comercial', () => {
+    expect(() => updateClientSchema.parse({ idTipoCliente: 4 })).not.toThrow();
+    expect(() => updateClientSchema.parse({ idTipoCliente: null })).not.toThrow();
+    expect(() => updateClientSchema.parse({ idTipoCliente: -1 })).toThrowError();
   });
 
   it('createEmployeeSchema restringe entidad.sexo a M o F', () => {

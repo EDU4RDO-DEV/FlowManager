@@ -159,6 +159,33 @@ export async function updateTalonario(id: number, input: UpdateTalonarioInput) {
   const nextUltimoUtilizado = input.ultimoUtilizado ?? current.UltimoUtilizado;
   validateRange(nextInitial, nextFinal, nextUltimoUtilizado);
 
+  if (
+    input.ultimoUtilizado !== undefined &&
+    current.UltimoUtilizado !== null &&
+    input.ultimoUtilizado < current.UltimoUtilizado
+  ) {
+    throw new Error('No se permite retroceder el correlativo utilizado');
+  }
+
+  if (input.ultimoUtilizado !== undefined) {
+    const latestAssignedSale = await prisma.venta.findFirst({
+      where: {
+        IdTalonario: id,
+        NumeroProForma: { not: null },
+      },
+      orderBy: { NumeroProForma: 'desc' },
+      select: { NumeroProForma: true },
+    });
+
+    if (
+      latestAssignedSale &&
+      latestAssignedSale.NumeroProForma !== null &&
+      input.ultimoUtilizado < latestAssignedSale.NumeroProForma
+    ) {
+      throw new Error('ultimoUtilizado no puede ser menor que un correlativo ya asignado');
+    }
+  }
+
   if (input.nombre !== undefined && input.nombre !== current.Nombre) {
     const duplicateName = await prisma.talonario.findFirst({
       where: {
@@ -174,8 +201,12 @@ export async function updateTalonario(id: number, input: UpdateTalonarioInput) {
     }
   }
 
-  const updated = await prisma.talonario.update({
-    where: { Id: id },
+  const updatedCount = await prisma.talonario.updateMany({
+    where: {
+      Id: id,
+      Anulado: false,
+      UltimoUtilizado: current.UltimoUtilizado,
+    },
     data: {
       ...(input.nombre !== undefined ? { Nombre: input.nombre } : {}),
       ...(input.correlativoInicial !== undefined
@@ -193,6 +224,18 @@ export async function updateTalonario(id: number, input: UpdateTalonarioInput) {
       FechaModificacion: new Date(),
     },
   });
+
+  if (updatedCount.count !== 1) {
+    throw new Error('Talonario modificado concurrentemente; vuelva a cargarlo');
+  }
+
+  const updated = await prisma.talonario.findFirst({
+    where: { Id: id, Anulado: false },
+  });
+
+  if (!updated) {
+    throw new Error('Talonario no existe');
+  }
 
   return toTalonarioDto(updated);
 }

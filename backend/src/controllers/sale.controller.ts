@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 
 import {
@@ -31,6 +32,18 @@ import {
   updateSaleSchema,
 } from '../validators/sale.validators';
 import { getZodErrorMessage } from '../validators/validation';
+
+function isNumeroVentaUniqueConflict(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+    return false;
+  }
+
+  const target = error.meta?.target;
+  return (
+    (Array.isArray(target) && target.includes('NumeroVenta')) ||
+    (typeof target === 'string' && target.includes('NumeroVenta'))
+  );
+}
 
 export async function uploadSaleImageController(req: Request, res: Response) {
   try {
@@ -211,6 +224,20 @@ export async function createSaleController(req: Request, res: Response) {
       return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
     }
 
+    if (isNumeroVentaUniqueConflict(error)) {
+      return res.status(409).json({
+        ok: false,
+        message: 'Conflicto al asignar el número de venta; consulte el estado antes de reintentar',
+      });
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({
+        ok: false,
+        message: 'Conflicto concurrente al registrar la venta; consulte el estado antes de reintentar',
+      });
+    }
+
     const message = error instanceof Error ? error.message : 'Error interno';
 
     if (
@@ -348,6 +375,13 @@ export async function createSalePaymentController(req: Request, res: Response) {
 
     if (message === 'Venta no existe' || message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({
+        ok: false,
+        message: 'Conflicto concurrente al registrar el pago; consulte el saldo antes de reintentar',
+      });
     }
 
     if (message.startsWith('Pago no puede ser mayor') || message.includes('obligatorio')) {

@@ -117,6 +117,10 @@ export async function updateTalonarioController(req: Request, res: Response) {
       return res.status(404).json({ ok: false, message });
     }
 
+    if (message.includes('modificado concurrentemente')) {
+      return res.status(409).json({ ok: false, message });
+    }
+
     if (message.includes('correlativo') || message.includes('rango')) {
       return res.status(400).json({ ok: false, message });
     }
