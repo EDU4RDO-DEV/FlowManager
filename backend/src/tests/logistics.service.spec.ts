@@ -5,6 +5,7 @@ const { prismaMock } = vi.hoisted(() => ({
     usuario: { findFirst: vi.fn() },
     vehiculo: { findFirst: vi.fn(), update: vi.fn() },
     rutaSesion: { findFirst: vi.fn(), update: vi.fn() },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -26,6 +27,9 @@ import { deleteRutaSesion, updateVehiculo } from '../services/logistics.service'
 describe('Fase 10 - logística: sincronización de estado de vehículo', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    prismaMock.$transaction.mockImplementation(
+      async (callback: (tx: typeof prismaMock) => Promise<unknown>) => callback(prismaMock),
+    );
   });
 
   it('no sobreescribe el estado MANTENIMIENTO de un vehículo al anular una sesión de ruta', async () => {
@@ -36,6 +40,10 @@ describe('Fase 10 - logística: sincronización de estado de vehículo', () => {
 
     await deleteRutaSesion(1, 9);
 
+    expect(prismaMock.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { isolationLevel: 'Serializable' },
+    );
     expect(prismaMock.vehiculo.update).not.toHaveBeenCalled();
   });
 

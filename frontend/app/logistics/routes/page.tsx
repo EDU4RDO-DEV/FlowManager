@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getApiErrorMessage } from "@/lib/api";
+import { getLogisticsEmployeeOptions } from "@/lib/logistics-employee-options";
 import { hasModulePermission } from "@/lib/rbac";
 import { listEmployees } from "@/services/employees.service";
 import {
@@ -122,18 +123,7 @@ export default function LogisticsRoutesPage() {
       setSessions(activeSessions);
       setTrashSessions(removedSessions);
       setVehicles(availableVehicles);
-      const employeesByUser = new Map<number, { userId: number; nombre: string }>();
-      for (const item of employeeList) {
-        const userId = item.idUsuarioVinculado ?? item.idUsuario;
-        if (userId > 0 && !employeesByUser.has(userId)) {
-          employeesByUser.set(userId, {
-            userId,
-            nombre: item.entidad.nombreCompleto,
-          });
-        }
-      }
-
-      setEmployees(Array.from(employeesByUser.values()));
+      setEmployees(getLogisticsEmployeeOptions(employeeList));
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cargar logística de rutas"));
     } finally {

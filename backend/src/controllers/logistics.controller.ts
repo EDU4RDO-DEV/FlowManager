@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
 import { ZodError } from 'zod';
 
@@ -63,6 +64,10 @@ function handleValidationError(error: unknown, res: Response) {
   }
 
   return null;
+}
+
+function isSerializationConflict(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034';
 }
 
 export async function uploadGastoVehiculoImageController(req: Request, res: Response) {
@@ -395,6 +400,13 @@ export async function createRutaSesionController(req: Request, res: Response) {
     const parsed = handleValidationError(error, res);
     if (parsed) return parsed;
 
+    if (isSerializationConflict(error)) {
+      return res.status(409).json({
+        ok: false,
+        message: 'La sesión cambió por una operación concurrente. Verifique su estado antes de reintentar.',
+      });
+    }
+
     const message = getMessage(error);
     if (
       message === 'Ruta no existe' ||
@@ -437,6 +449,13 @@ export async function updateRutaSesionController(req: Request, res: Response) {
   } catch (error) {
     const parsed = handleValidationError(error, res);
     if (parsed) return parsed;
+
+    if (isSerializationConflict(error)) {
+      return res.status(409).json({
+        ok: false,
+        message: 'La sesión cambió por una operación concurrente. Verifique su estado antes de reintentar.',
+      });
+    }
 
     const message = getMessage(error);
     if (
@@ -487,6 +506,13 @@ export async function deleteRutaSesionController(req: Request, res: Response) {
     const parsed = handleValidationError(error, res);
     if (parsed) return parsed;
 
+    if (isSerializationConflict(error)) {
+      return res.status(409).json({
+        ok: false,
+        message: 'La sesión cambió por una operación concurrente. Verifique su estado antes de reintentar.',
+      });
+    }
+
     const message = getMessage(error);
     if (message === 'RutaSesion no existe' || message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
@@ -511,6 +537,13 @@ export async function restoreRutaSesionController(req: Request, res: Response) {
   } catch (error) {
     const parsed = handleValidationError(error, res);
     if (parsed) return parsed;
+
+    if (isSerializationConflict(error)) {
+      return res.status(409).json({
+        ok: false,
+        message: 'La sesión cambió por una operación concurrente. Verifique su estado antes de reintentar.',
+      });
+    }
 
     const message = getMessage(error);
     if (

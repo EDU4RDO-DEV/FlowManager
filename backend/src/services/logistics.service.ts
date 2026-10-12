@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { NotificationEvents, send } from './notification.service';
 
@@ -5,6 +6,7 @@ type VehiculoEstado = 'DISPONIBLE' | 'EN_RUTA' | 'MANTENIMIENTO' | 'NO_DISPONIBL
 type RutaSesionEstado = 'PROGRAMADA' | 'EN_CURSO' | 'CERRADA';
 type GastoEstadoPago = 'PENDIENTE' | 'PAGADO';
 type GastoMetodoPago = 'EFECTIVO' | 'TRANSFERENCIA' | 'CHEQUE' | 'POS';
+type LogisticsDatabaseClient = Prisma.TransactionClient | typeof prisma;
 
 type CreateVehiculoInput = {
   idUsuario: number;
@@ -292,8 +294,11 @@ function toGastoVehiculoDto(gasto: {
   };
 }
 
-async function validateUsuarioExists(idUsuario: number) {
-  const user = await prisma.usuario.findFirst({
+async function validateUsuarioExists(
+  idUsuario: number,
+  client: LogisticsDatabaseClient = prisma,
+) {
+  const user = await client.usuario.findFirst({
     where: { Id: idUsuario, Anulado: false },
     select: { Id: true },
   });
@@ -303,8 +308,12 @@ async function validateUsuarioExists(idUsuario: number) {
   }
 }
 
-async function validateRutaExists(idRuta: number, allowAnulated = false) {
-  const ruta = await prisma.ruta.findFirst({
+async function validateRutaExists(
+  idRuta: number,
+  allowAnulated = false,
+  client: LogisticsDatabaseClient = prisma,
+) {
+  const ruta = await client.ruta.findFirst({
     where: {
       Id: idRuta,
       ...(allowAnulated ? {} : { Anulado: false }),
@@ -344,11 +353,15 @@ async function validateProveedorExists(idProveedor: number) {
   }
 }
 
-async function validateEmpleadoVinculado(idUsuario: number, roleName: 'Chofer' | 'Vendedor') {
-  await validateUsuarioExists(idUsuario);
+async function validateEmpleadoVinculado(
+  idUsuario: number,
+  roleName: 'Chofer' | 'Vendedor',
+  client: LogisticsDatabaseClient = prisma,
+) {
+  await validateUsuarioExists(idUsuario, client);
 
   // Empleado.IdUsuarioVinculado es la única fuente de verdad de la relación laboral.
-  const empleado = await prisma.empleado.findFirst({
+  const empleado = await client.empleado.findFirst({
     where: {
       Anulado: false,
       IdUsuarioVinculado: idUsuario,
@@ -404,17 +417,20 @@ async function assertUniqueRouteName(nombre: string, currentId?: number) {
   }
 }
 
-async function assertVehicleAvailableForSession(params: {
+async function assertVehicleAvailableForSession(
+  tx: Prisma.TransactionClient,
+  params: {
   idVehiculo: number;
   fechaSesion: Date;
   idRutaSesionActual?: number;
   targetEstado: RutaSesionEstado;
-}) {
+  },
+) {
   if (params.targetEstado === 'CERRADA') {
     return;
   }
 
-  const activeConflict = await prisma.rutaSesion.findFirst({
+  const activeConflict = await tx.rutaSesion.findFirst({
     where: {
       IdVehiculo: params.idVehiculo,
       FechaSesion: params.fechaSesion,
@@ -433,14 +449,22 @@ async function assertVehicleAvailableForSession(params: {
     throw new Error('Vehiculo no disponible para la fecha seleccionada');
   }
 
-  const vehiculo = await validateVehiculoExists(params.idVehiculo);
+  const vehiculo = await tx.vehiculo.findFirst({
+    where: { Id: params.idVehiculo, Anulado: false },
+    select: { Id: true, Estado: true },
+  });
+
+  if (!vehiculo) {
+    throw new Error('Vehiculo no existe');
+  }
+
   if (vehiculo.Estado === 'MANTENIMIENTO' || vehiculo.Estado === 'NO_DISPONIBLE') {
     throw new Error('Vehiculo no disponible por estado actual');
   }
 }
 
-async function syncVehicleStateBySessions(idVehiculo: number) {
-  const vehiculo = await prisma.vehiculo.findFirst({
+async function syncVehicleStateBySessions(tx: Prisma.TransactionClient, idVehiculo: number) {
+  const vehiculo = await tx.vehiculo.findFirst({
     where: { Id: idVehiculo },
     select: { Estado: true },
   });
@@ -455,7 +479,7 @@ async function syncVehicleStateBySessions(idVehiculo: number) {
     return;
   }
 
-  const hasActiveInRouteSession = await prisma.rutaSesion.findFirst({
+  const hasActiveInRouteSession = await tx.rutaSesion.findFirst({
     where: {
       IdVehiculo: idVehiculo,
       Anulado: false,
@@ -464,7 +488,7 @@ async function syncVehicleStateBySessions(idVehiculo: number) {
     select: { Id: true },
   });
 
-  await prisma.vehiculo.update({
+  await tx.vehiculo.update({
     where: { Id: idVehiculo },
     data: {
       Estado: hasActiveInRouteSession ? 'EN_RUTA' : 'DISPONIBLE',
@@ -890,130 +914,140 @@ export async function createRutaSesion(input: CreateRutaSesionInput) {
     kmFinal: input.kmFinal,
   });
 
-  await assertVehicleAvailableForSession({
-    idVehiculo: input.idVehiculo,
-    fechaSesion,
-    targetEstado: input.estado,
-  });
+  const created = await prisma.$transaction(async (tx) => {
+    await assertVehicleAvailableForSession(tx, {
+      idVehiculo: input.idVehiculo,
+      fechaSesion,
+      targetEstado: input.estado,
+    });
 
-  const created = await prisma.rutaSesion.create({
-    data: {
-      IdRuta: input.idRuta,
-      IdVehiculo: input.idVehiculo,
-      IdUsuarioChofer: input.idUsuarioChofer,
-      IdUsuarioVendedor: input.idUsuarioVendedor,
-      FechaSesion: fechaSesion,
-      KmInicial: input.kmInicial,
-      KmFinal: input.kmFinal,
-      Estado: input.estado,
-      Anulado: false,
-    },
-    include: {
-      Ruta: {
-        select: { Id: true, Nombre: true },
+    const session = await tx.rutaSesion.create({
+      data: {
+        IdRuta: input.idRuta,
+        IdVehiculo: input.idVehiculo,
+        IdUsuarioChofer: input.idUsuarioChofer,
+        IdUsuarioVendedor: input.idUsuarioVendedor,
+        FechaSesion: fechaSesion,
+        KmInicial: input.kmInicial,
+        KmFinal: input.kmFinal,
+        Estado: input.estado,
+        Anulado: false,
       },
-      Vehiculo: {
-        select: { Id: true, Placa: true, Marca: true, Modelo: true },
+      include: {
+        Ruta: {
+          select: { Id: true, Nombre: true },
+        },
+        Vehiculo: {
+          select: { Id: true, Placa: true, Marca: true, Modelo: true },
+        },
+        Usuario_RutaSesion_IdUsuarioChoferToUsuario: {
+          select: { Id: true, Nombre: true, Correo: true },
+        },
+        Usuario_RutaSesion_IdUsuarioVendedorToUsuario: {
+          select: { Id: true, Nombre: true, Correo: true },
+        },
       },
-      Usuario_RutaSesion_IdUsuarioChoferToUsuario: {
-        select: { Id: true, Nombre: true, Correo: true },
-      },
-      Usuario_RutaSesion_IdUsuarioVendedorToUsuario: {
-        select: { Id: true, Nombre: true, Correo: true },
-      },
-    },
-  });
+    });
 
-  await syncVehicleStateBySessions(input.idVehiculo);
+    await syncVehicleStateBySessions(tx, input.idVehiculo);
+    return session;
+  }, { isolationLevel: 'Serializable' });
+
   return toRutaSesionDto(created);
 }
 
 export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput) {
-  const existing = await prisma.rutaSesion.findFirst({
-    where: { Id: id, Anulado: false },
-    select: {
-      Id: true,
-      IdRuta: true,
-      IdVehiculo: true,
-      IdUsuarioChofer: true,
-      IdUsuarioVendedor: true,
-      FechaSesion: true,
-      KmInicial: true,
-      KmFinal: true,
-      Estado: true,
-    },
-  });
-
-  if (!existing) {
-    throw new Error('RutaSesion no existe');
-  }
-
   if (input.idUsuarioModificador !== undefined) {
     await validateUsuarioExists(input.idUsuarioModificador);
   }
 
-  const nextRuta = input.idRuta ?? existing.IdRuta;
-  const nextVehiculo = input.idVehiculo ?? existing.IdVehiculo;
-  const nextChofer = input.idUsuarioChofer ?? existing.IdUsuarioChofer;
-  const nextVendedor = input.idUsuarioVendedor ?? existing.IdUsuarioVendedor;
-  const nextFecha = input.fechaSesion ? parseDateOnlyUtc(input.fechaSesion) : existing.FechaSesion;
-  const nextEstado = input.estado ?? (existing.Estado as RutaSesionEstado);
-  const nextKmInicial = input.kmInicial === undefined ? existing.KmInicial : input.kmInicial;
-  const nextKmFinal = input.kmFinal === undefined ? existing.KmFinal : input.kmFinal;
-
-  await validateRutaExists(nextRuta);
-  await validateEmpleadoVinculado(nextChofer, 'Chofer');
-  await validateEmpleadoVinculado(nextVendedor, 'Vendedor');
-
-  ensureSessionKilometers({
-    estado: nextEstado,
-    kmInicial: nextKmInicial,
-    kmFinal: nextKmFinal,
-  });
-
-  await assertVehicleAvailableForSession({
-    idVehiculo: nextVehiculo,
-    fechaSesion: nextFecha,
-    idRutaSesionActual: id,
-    targetEstado: nextEstado,
-  });
-
-  const updated = await prisma.rutaSesion.update({
-    where: { Id: id },
-    data: {
-      IdRuta: nextRuta,
-      IdVehiculo: nextVehiculo,
-      IdUsuarioChofer: nextChofer,
-      IdUsuarioVendedor: nextVendedor,
-      FechaSesion: nextFecha,
-      KmInicial: nextKmInicial,
-      KmFinal: nextKmFinal,
-      Estado: nextEstado,
-      ...(input.idUsuarioModificador !== undefined
-        ? { IdUsuarioModificador: input.idUsuarioModificador }
-        : {}),
-      FechaModificacion: new Date(),
-    },
-    include: {
-      Ruta: {
-        select: { Id: true, Nombre: true },
+  const updated = await prisma.$transaction(async (tx) => {
+    const existing = await tx.rutaSesion.findFirst({
+      where: { Id: id, Anulado: false },
+      select: {
+        Id: true,
+        IdRuta: true,
+        IdVehiculo: true,
+        IdUsuarioChofer: true,
+        IdUsuarioVendedor: true,
+        FechaSesion: true,
+        KmInicial: true,
+        KmFinal: true,
+        Estado: true,
       },
-      Vehiculo: {
-        select: { Id: true, Placa: true, Marca: true, Modelo: true },
-      },
-      Usuario_RutaSesion_IdUsuarioChoferToUsuario: {
-        select: { Id: true, Nombre: true, Correo: true },
-      },
-      Usuario_RutaSesion_IdUsuarioVendedorToUsuario: {
-        select: { Id: true, Nombre: true, Correo: true },
-      },
-    },
-  });
+    });
 
-  if (existing.IdVehiculo !== nextVehiculo) {
-    await syncVehicleStateBySessions(existing.IdVehiculo);
-  }
-  await syncVehicleStateBySessions(nextVehiculo);
+    if (!existing) {
+      throw new Error('RutaSesion no existe');
+    }
+
+    const nextRuta = input.idRuta ?? existing.IdRuta;
+    const nextVehiculo = input.idVehiculo ?? existing.IdVehiculo;
+    const nextChofer = input.idUsuarioChofer ?? existing.IdUsuarioChofer;
+    const nextVendedor = input.idUsuarioVendedor ?? existing.IdUsuarioVendedor;
+    const nextFecha = input.fechaSesion
+      ? parseDateOnlyUtc(input.fechaSesion)
+      : existing.FechaSesion;
+    const nextEstado = input.estado ?? (existing.Estado as RutaSesionEstado);
+    const nextKmInicial = input.kmInicial === undefined ? existing.KmInicial : input.kmInicial;
+    const nextKmFinal = input.kmFinal === undefined ? existing.KmFinal : input.kmFinal;
+
+    await validateRutaExists(nextRuta, false, tx);
+    await validateEmpleadoVinculado(nextChofer, 'Chofer', tx);
+    await validateEmpleadoVinculado(nextVendedor, 'Vendedor', tx);
+
+    ensureSessionKilometers({
+      estado: nextEstado,
+      kmInicial: nextKmInicial,
+      kmFinal: nextKmFinal,
+    });
+
+    await assertVehicleAvailableForSession(tx, {
+      idVehiculo: nextVehiculo,
+      fechaSesion: nextFecha,
+      idRutaSesionActual: id,
+      targetEstado: nextEstado,
+    });
+
+    const session = await tx.rutaSesion.update({
+      where: { Id: id },
+      data: {
+        IdRuta: nextRuta,
+        IdVehiculo: nextVehiculo,
+        IdUsuarioChofer: nextChofer,
+        IdUsuarioVendedor: nextVendedor,
+        FechaSesion: nextFecha,
+        KmInicial: nextKmInicial,
+        KmFinal: nextKmFinal,
+        Estado: nextEstado,
+        ...(input.idUsuarioModificador !== undefined
+          ? { IdUsuarioModificador: input.idUsuarioModificador }
+          : {}),
+        FechaModificacion: new Date(),
+      },
+      include: {
+        Ruta: {
+          select: { Id: true, Nombre: true },
+        },
+        Vehiculo: {
+          select: { Id: true, Placa: true, Marca: true, Modelo: true },
+        },
+        Usuario_RutaSesion_IdUsuarioChoferToUsuario: {
+          select: { Id: true, Nombre: true, Correo: true },
+        },
+        Usuario_RutaSesion_IdUsuarioVendedorToUsuario: {
+          select: { Id: true, Nombre: true, Correo: true },
+        },
+      },
+    });
+
+    if (existing.IdVehiculo !== nextVehiculo) {
+      await syncVehicleStateBySessions(tx, existing.IdVehiculo);
+    }
+    await syncVehicleStateBySessions(tx, nextVehiculo);
+
+    return session;
+  }, { isolationLevel: 'Serializable' });
 
   return toRutaSesionDto(updated);
 }
@@ -1021,95 +1055,102 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
 export async function deleteRutaSesion(id: number, idUsuarioAnulador: number) {
   await validateUsuarioExists(idUsuarioAnulador);
 
-  const existing = await prisma.rutaSesion.findFirst({
-    where: { Id: id, Anulado: false },
-    select: { Id: true, IdVehiculo: true },
-  });
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.rutaSesion.findFirst({
+      where: { Id: id, Anulado: false },
+      select: { Id: true, IdVehiculo: true },
+    });
 
-  if (!existing) {
-    throw new Error('RutaSesion no existe');
-  }
+    if (!existing) {
+      throw new Error('RutaSesion no existe');
+    }
 
-  await prisma.rutaSesion.update({
-    where: { Id: id },
-    data: {
-      Anulado: true,
-      IdUsuarioAnulador: idUsuarioAnulador,
-      FechaAnulacion: new Date(),
-      Estado: 'CERRADA',
-    },
-  });
+    await tx.rutaSesion.update({
+      where: { Id: id },
+      data: {
+        Anulado: true,
+        IdUsuarioAnulador: idUsuarioAnulador,
+        FechaAnulacion: new Date(),
+        Estado: 'CERRADA',
+      },
+    });
 
-  await syncVehicleStateBySessions(existing.IdVehiculo);
+    await syncVehicleStateBySessions(tx, existing.IdVehiculo);
+  }, { isolationLevel: 'Serializable' });
 }
 
 export async function restoreRutaSesion(id: number, idUsuarioModificador: number) {
   await validateUsuarioExists(idUsuarioModificador);
 
-  const existing = await prisma.rutaSesion.findFirst({
-    where: { Id: id, Anulado: true },
-    select: {
-      Id: true,
-      IdRuta: true,
-      IdVehiculo: true,
-      IdUsuarioChofer: true,
-      IdUsuarioVendedor: true,
-      FechaSesion: true,
-      KmInicial: true,
-      KmFinal: true,
-    },
-  });
-
-  if (!existing) {
-    throw new Error('RutaSesion anulada no existe');
-  }
-
-  await validateRutaExists(existing.IdRuta);
-  await validateEmpleadoVinculado(existing.IdUsuarioChofer, 'Chofer');
-  await validateEmpleadoVinculado(existing.IdUsuarioVendedor, 'Vendedor');
-
-  const defaultState: RutaSesionEstado = existing.KmFinal !== null ? 'CERRADA' : 'PROGRAMADA';
-
-  ensureSessionKilometers({
-    estado: defaultState,
-    kmInicial: existing.KmInicial,
-    kmFinal: existing.KmFinal,
-  });
-
-  await assertVehicleAvailableForSession({
-    idVehiculo: existing.IdVehiculo,
-    fechaSesion: existing.FechaSesion,
-    idRutaSesionActual: existing.Id,
-    targetEstado: defaultState,
-  });
-
-  const restored = await prisma.rutaSesion.update({
-    where: { Id: id },
-    data: {
-      Anulado: false,
-      IdUsuarioModificador: idUsuarioModificador,
-      FechaModificacion: new Date(),
-      IdUsuarioAnulador: null,
-      FechaAnulacion: null,
-      Estado: defaultState,
-    },
-    include: {
-      Ruta: {
-        select: { Id: true, Nombre: true },
+  const restored = await prisma.$transaction(async (tx) => {
+    const existing = await tx.rutaSesion.findFirst({
+      where: { Id: id, Anulado: true },
+      select: {
+        Id: true,
+        IdRuta: true,
+        IdVehiculo: true,
+        IdUsuarioChofer: true,
+        IdUsuarioVendedor: true,
+        FechaSesion: true,
+        KmInicial: true,
+        KmFinal: true,
       },
-      Vehiculo: {
-        select: { Id: true, Placa: true, Marca: true, Modelo: true },
-      },
-      Usuario_RutaSesion_IdUsuarioChoferToUsuario: {
-        select: { Id: true, Nombre: true, Correo: true },
-      },
-      Usuario_RutaSesion_IdUsuarioVendedorToUsuario: {
-        select: { Id: true, Nombre: true, Correo: true },
-      },
-    },
-  });
+    });
 
-  await syncVehicleStateBySessions(existing.IdVehiculo);
+    if (!existing) {
+      throw new Error('RutaSesion anulada no existe');
+    }
+
+    await validateRutaExists(existing.IdRuta, false, tx);
+    await validateEmpleadoVinculado(existing.IdUsuarioChofer, 'Chofer', tx);
+    await validateEmpleadoVinculado(existing.IdUsuarioVendedor, 'Vendedor', tx);
+
+    const defaultState: RutaSesionEstado =
+      existing.KmFinal !== null ? 'CERRADA' : 'PROGRAMADA';
+
+    ensureSessionKilometers({
+      estado: defaultState,
+      kmInicial: existing.KmInicial,
+      kmFinal: existing.KmFinal,
+    });
+
+    await assertVehicleAvailableForSession(tx, {
+      idVehiculo: existing.IdVehiculo,
+      fechaSesion: existing.FechaSesion,
+      idRutaSesionActual: existing.Id,
+      targetEstado: defaultState,
+    });
+
+    const session = await tx.rutaSesion.update({
+      where: { Id: id },
+      data: {
+        Anulado: false,
+        IdUsuarioModificador: idUsuarioModificador,
+        FechaModificacion: new Date(),
+        IdUsuarioAnulador: null,
+        FechaAnulacion: null,
+        Estado: defaultState,
+      },
+      include: {
+        Ruta: {
+          select: { Id: true, Nombre: true },
+        },
+        Vehiculo: {
+          select: { Id: true, Placa: true, Marca: true, Modelo: true },
+        },
+        Usuario_RutaSesion_IdUsuarioChoferToUsuario: {
+          select: { Id: true, Nombre: true, Correo: true },
+        },
+        Usuario_RutaSesion_IdUsuarioVendedorToUsuario: {
+          select: { Id: true, Nombre: true, Correo: true },
+        },
+      },
+    });
+
+    await syncVehicleStateBySessions(tx, existing.IdVehiculo);
+    return session;
+  }, { isolationLevel: 'Serializable' });
+
   return toRutaSesionDto(restored);
 }
 
