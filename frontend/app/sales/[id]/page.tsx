@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/table";
 import { getApiErrorMessage } from "@/lib/api";
 import { hasModulePermission } from "@/lib/rbac";
+import { formatSatNameForDisplay } from "@/lib/sales-formatters";
 import {
   anulateSale,
   anulateSalePayment,
@@ -320,7 +321,7 @@ export default function SaleDetailPage() {
                 <Card>
                   <CardContent className="p-4">
                     <p className="text-xs text-muted-foreground">Cliente</p>
-                    <p className="font-medium">{sale.cliente.nombre}</p>
+                    <p className="break-words font-medium">{formatSatNameForDisplay(sale.cliente.nombre)}</p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -395,7 +396,9 @@ export default function SaleDetailPage() {
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Nombre facturado</p>
-                      <p className="font-medium">{sale.nombreClienteFacturado ?? "-"}</p>
+                      <p className="break-words font-medium">
+                        {sale.nombreClienteFacturado ? formatSatNameForDisplay(sale.nombreClienteFacturado) : "-"}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Serie / Número</p>

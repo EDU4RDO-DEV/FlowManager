@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { getApiErrorMessage } from "@/lib/api";
 import { hasModulePermission } from "@/lib/rbac";
+import { formatSatNameForDisplay } from "@/lib/sales-formatters";
 import { listSales } from "@/services/sales.service";
 import type { SaleDto, SalesFilters } from "@/types/sales";
 
@@ -271,7 +272,7 @@ export default function SalesPage() {
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Cliente</p>
-                        <p className="font-medium">{sale.cliente.nombre}</p>
+                        <p className="break-words font-medium">{formatSatNameForDisplay(sale.cliente.nombre)}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Fecha</p>
