@@ -5,16 +5,19 @@ import { postToN8nWebhook } from '../services/n8n-webhook.client';
 describe('postToN8nWebhook', () => {
   const originalUrl = process.env.N8N_WEBHOOK_URL;
   const originalSecret = process.env.N8N_WEBHOOK_SECRET;
+  const originalTimeout = process.env.N8N_WEBHOOK_TIMEOUT_MS;
   const originalFetch = global.fetch;
 
   beforeEach(() => {
     process.env.N8N_WEBHOOK_URL = 'http://localhost:5678/webhook/prueba';
     process.env.N8N_WEBHOOK_SECRET = 'secreto-test';
+    process.env.N8N_WEBHOOK_TIMEOUT_MS = '5000';
   });
 
   afterEach(() => {
     process.env.N8N_WEBHOOK_URL = originalUrl;
     process.env.N8N_WEBHOOK_SECRET = originalSecret;
+    process.env.N8N_WEBHOOK_TIMEOUT_MS = originalTimeout;
     global.fetch = originalFetch;
     vi.restoreAllMocks();
   });
@@ -29,6 +32,32 @@ describe('postToN8nWebhook', () => {
       reason: 'not_configured',
       message: expect.stringContaining('N8N_WEBHOOK_URL'),
     });
+  });
+
+  it.each(['no-numérico', '-1', '0', '2147483648'])(
+    'rechaza timeout inválido (%s) sin invocar el webhook',
+    async (timeout) => {
+      process.env.N8N_WEBHOOK_TIMEOUT_MS = timeout;
+      global.fetch = vi.fn();
+
+      const result = await postToN8nWebhook({ tipo: 'prueba' });
+
+      expect(result).toEqual({
+        ok: false,
+        reason: 'invalid_timeout',
+        message: expect.stringContaining('N8N_WEBHOOK_TIMEOUT_MS'),
+      });
+      expect(global.fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it('acepta el máximo compatible con setTimeout', async () => {
+    process.env.N8N_WEBHOOK_TIMEOUT_MS = '2147483647';
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 202 }) as unknown as typeof fetch;
+
+    const result = await postToN8nWebhook({ tipo: 'prueba' });
+
+    expect(result).toEqual({ ok: true, status: 202 });
   });
 
   it('retorna ok=true y status cuando n8n responde 200', async () => {

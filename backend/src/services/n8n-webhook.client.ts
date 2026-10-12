@@ -8,6 +8,7 @@ export type N8nWebhookSuccess = {
 
 export type N8nWebhookFailureReason =
   | 'not_configured'
+  | 'invalid_timeout'
   | 'timeout'
   | 'network_error'
   | 'http_client_error'
@@ -23,6 +24,7 @@ export type N8nWebhookFailure = {
 export type N8nWebhookResult = N8nWebhookSuccess | N8nWebhookFailure;
 
 const DEFAULT_TIMEOUT_MS = 5000;
+const MAX_TIMEOUT_MS = 2_147_483_647;
 
 export async function postToN8nWebhook(body: unknown): Promise<N8nWebhookResult> {
   const webhookUrl = process.env.N8N_WEBHOOK_URL;
@@ -36,7 +38,16 @@ export async function postToN8nWebhook(body: unknown): Promise<N8nWebhookResult>
   }
 
   const secret = process.env.N8N_WEBHOOK_SECRET;
-  const timeoutMs = Number(process.env.N8N_WEBHOOK_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
+  const configuredTimeout = process.env.N8N_WEBHOOK_TIMEOUT_MS;
+  const timeoutMs = configuredTimeout === undefined ? DEFAULT_TIMEOUT_MS : Number(configuredTimeout);
+
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) {
+    return {
+      ok: false,
+      reason: 'invalid_timeout',
+      message: `N8N_WEBHOOK_TIMEOUT_MS debe ser un entero entre 1 y ${MAX_TIMEOUT_MS}`,
+    };
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);

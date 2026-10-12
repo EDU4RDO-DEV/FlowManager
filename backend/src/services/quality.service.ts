@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 import { prisma } from '../config/prisma';
 
 type CreateControlCalidadInput = {
@@ -26,6 +28,13 @@ type ListControlCalidadInput = {
   mes?: number;
   anulado?: boolean;
 };
+
+const FECHA_DUPLICADA_MESSAGE = 'Ya existe un registro activo de control de calidad para esa fecha';
+const REGISTRO_VALIDADO_MESSAGE = 'No se puede editar un registro ya validado';
+
+function isUniqueConstraintError(error: unknown): error is Prisma.PrismaClientKnownRequestError {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+}
 
 function toControlCalidadDto(registro: {
   Id: number;
@@ -126,7 +135,7 @@ async function validateFechaDisponible(fecha: Date, exceptId?: number) {
   });
 
   if (existing) {
-    throw new Error('Ya existe un registro activo de control de calidad para esa fecha');
+    throw new Error(FECHA_DUPLICADA_MESSAGE);
   }
 }
 
@@ -189,21 +198,29 @@ export async function createControlCalidad(input: CreateControlCalidadInput) {
   const fecha = parseDateOnly(input.fecha, 'fecha');
   await validateFechaDisponible(fecha);
 
-  const created = await prisma.controlCalidadAgua.create({
-    data: {
-      IdUsuario: input.idUsuario,
-      Fecha: fecha,
-      DiaNoLaborado: input.diaNoLaborado ?? false,
-      CloroAntesFiltrado: input.cloroAntesFiltrado,
-      CloroDespuesFiltrado: input.cloroDespuesFiltrado,
-      PhAntesFiltrado: input.phAntesFiltrado,
-      PhDespuesFiltrado: input.phDespuesFiltrado,
-      Observaciones: input.observaciones,
-      Validado: false,
-      Anulado: false,
-    },
-    include: includeUsuarios,
-  });
+  let created;
+  try {
+    created = await prisma.controlCalidadAgua.create({
+      data: {
+        IdUsuario: input.idUsuario,
+        Fecha: fecha,
+        DiaNoLaborado: input.diaNoLaborado ?? false,
+        CloroAntesFiltrado: input.cloroAntesFiltrado,
+        CloroDespuesFiltrado: input.cloroDespuesFiltrado,
+        PhAntesFiltrado: input.phAntesFiltrado,
+        PhDespuesFiltrado: input.phDespuesFiltrado,
+        Observaciones: input.observaciones,
+        Validado: false,
+        Anulado: false,
+      },
+      include: includeUsuarios,
+    });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      throw new Error(FECHA_DUPLICADA_MESSAGE);
+    }
+    throw error;
+  }
 
   return toControlCalidadDto(created);
 }
@@ -227,7 +244,7 @@ export async function updateControlCalidad(id: number, input: UpdateControlCalid
   }
 
   if (existing.Validado) {
-    throw new Error('No se puede editar un registro ya validado');
+    throw new Error(REGISTRO_VALIDADO_MESSAGE);
   }
 
   if (input.idUsuarioModificador !== undefined) {
@@ -263,8 +280,8 @@ export async function updateControlCalidad(id: number, input: UpdateControlCalid
           : Number(existing.PhDespuesFiltrado),
   });
 
-  const updated = await prisma.controlCalidadAgua.update({
-    where: { Id: id },
+  const updateResult = await prisma.controlCalidadAgua.updateMany({
+    where: { Id: id, Anulado: false, Validado: false },
     data: {
       ...(input.diaNoLaborado !== undefined ? { DiaNoLaborado: input.diaNoLaborado } : {}),
       ...(input.cloroAntesFiltrado !== undefined ? { CloroAntesFiltrado: input.cloroAntesFiltrado } : {}),
@@ -279,10 +296,22 @@ export async function updateControlCalidad(id: number, input: UpdateControlCalid
         : {}),
       FechaModificacion: new Date(),
     },
-    include: includeUsuarios,
   });
 
-  return toControlCalidadDto(updated);
+  if (updateResult.count === 0) {
+    const current = await prisma.controlCalidadAgua.findFirst({
+      where: { Id: id, Anulado: false },
+      select: { Id: true, Validado: true },
+    });
+
+    if (!current) {
+      throw new Error('Registro de control de calidad no existe');
+    }
+
+    throw new Error(REGISTRO_VALIDADO_MESSAGE);
+  }
+
+  return getControlCalidadById(id);
 }
 
 export async function validateControlCalidadRegistro(id: number, idUsuarioValidador: number) {
@@ -301,14 +330,18 @@ export async function validateControlCalidadRegistro(id: number, idUsuarioValida
     return getControlCalidadById(id);
   }
 
-  await prisma.controlCalidadAgua.update({
-    where: { Id: id },
+  const updateResult = await prisma.controlCalidadAgua.updateMany({
+    where: { Id: id, Anulado: false, Validado: false },
     data: {
       Validado: true,
       IdUsuarioValidador: idUsuarioValidador,
       FechaValidacion: new Date(),
     },
   });
+
+  if (updateResult.count === 0) {
+    return getControlCalidadById(id);
+  }
 
   return getControlCalidadById(id);
 }
@@ -353,17 +386,25 @@ export async function restoreControlCalidad(id: number, idUsuarioModificador?: n
 
   await validateFechaDisponible(existing.Fecha, id);
 
-  const restored = await prisma.controlCalidadAgua.update({
-    where: { Id: id },
-    data: {
-      Anulado: false,
-      IdUsuarioAnulador: null,
-      FechaAnulacion: null,
-      ...(idUsuarioModificador !== undefined ? { IdUsuarioModificador: idUsuarioModificador } : {}),
-      FechaModificacion: new Date(),
-    },
-    include: includeUsuarios,
-  });
+  let restored;
+  try {
+    restored = await prisma.controlCalidadAgua.update({
+      where: { Id: id },
+      data: {
+        Anulado: false,
+        IdUsuarioAnulador: null,
+        FechaAnulacion: null,
+        ...(idUsuarioModificador !== undefined ? { IdUsuarioModificador: idUsuarioModificador } : {}),
+        FechaModificacion: new Date(),
+      },
+      include: includeUsuarios,
+    });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      throw new Error(FECHA_DUPLICADA_MESSAGE);
+    }
+    throw error;
+  }
 
   return toControlCalidadDto(restored);
 }

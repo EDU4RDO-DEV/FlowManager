@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prismaMock } = vi.hoisted(() => ({
@@ -8,6 +9,7 @@ const { prismaMock } = vi.hoisted(() => ({
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
   },
 }));
@@ -19,6 +21,7 @@ vi.mock('../config/prisma', () => ({
 import {
   createControlCalidad,
   listFechasFaltantes,
+  restoreControlCalidad,
   updateControlCalidad,
   validateControlCalidadRegistro,
 } from '../services/quality.service';
@@ -91,6 +94,28 @@ describe('Fase 8 - control de calidad de agua (pH y cloro)', () => {
     ).rejects.toThrowError('Ya existe un registro activo de control de calidad para esa fecha');
   });
 
+  it('traduce la colisión de unicidad al crear en conflicto de fecha', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 1 });
+    prismaMock.controlCalidadAgua.findFirst.mockResolvedValueOnce(null);
+    prismaMock.controlCalidadAgua.create.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+
+    await expect(
+      createControlCalidad({
+        idUsuario: 1,
+        fecha: '2026-09-28',
+        cloroAntesFiltrado: 1,
+        cloroDespuesFiltrado: 0.8,
+        phAntesFiltrado: 7,
+        phDespuesFiltrado: 7.2,
+      }),
+    ).rejects.toThrowError('Ya existe un registro activo de control de calidad para esa fecha');
+  });
+
   it('rechaza editar un registro ya validado', async () => {
     prismaMock.controlCalidadAgua.findFirst.mockResolvedValueOnce({
       Id: 1,
@@ -107,10 +132,34 @@ describe('Fase 8 - control de calidad de agua (pH y cloro)', () => {
     );
   });
 
+  it('no permite editar si el registro fue validado entre la lectura y la escritura', async () => {
+    prismaMock.controlCalidadAgua.findFirst
+      .mockResolvedValueOnce({
+        Id: 1,
+        Validado: false,
+        DiaNoLaborado: false,
+        CloroAntesFiltrado: 1,
+        CloroDespuesFiltrado: 1,
+        PhAntesFiltrado: 7,
+        PhDespuesFiltrado: 7,
+      })
+      .mockResolvedValueOnce({ Id: 1, Validado: true });
+    prismaMock.controlCalidadAgua.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(updateControlCalidad(1, { observaciones: 'cambio' })).rejects.toThrowError(
+      'No se puede editar un registro ya validado',
+    );
+    expect(prismaMock.controlCalidadAgua.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { Id: 1, Anulado: false, Validado: false },
+      }),
+    );
+  });
+
   it('valida un registro y setea IdUsuarioValidador/FechaValidacion', async () => {
     prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 4 });
     prismaMock.controlCalidadAgua.findFirst.mockResolvedValueOnce({ Id: 1, Validado: false });
-    prismaMock.controlCalidadAgua.update.mockResolvedValueOnce({});
+    prismaMock.controlCalidadAgua.updateMany.mockResolvedValueOnce({ count: 1 });
     prismaMock.controlCalidadAgua.findFirst.mockResolvedValueOnce({
       Id: 1,
       IdUsuario: 1,
@@ -134,12 +183,31 @@ describe('Fase 8 - control de calidad de agua (pH y cloro)', () => {
 
     const result = await validateControlCalidadRegistro(1, 4);
 
-    expect(prismaMock.controlCalidadAgua.update).toHaveBeenCalledWith(
+    expect(prismaMock.controlCalidadAgua.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: { Id: 1, Anulado: false, Validado: false },
         data: expect.objectContaining({ Validado: true, IdUsuarioValidador: 4 }),
       }),
     );
     expect(result.validado).toBe(true);
+  });
+
+  it('traduce la colisión de unicidad al restaurar en conflicto de fecha', async () => {
+    prismaMock.controlCalidadAgua.findFirst.mockResolvedValueOnce({
+      Id: 5,
+      Fecha: new Date('2026-09-28'),
+    });
+    prismaMock.controlCalidadAgua.findFirst.mockResolvedValueOnce(null);
+    prismaMock.controlCalidadAgua.update.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+
+    await expect(restoreControlCalidad(5)).rejects.toThrowError(
+      'Ya existe un registro activo de control de calidad para esa fecha',
+    );
   });
 
   it('identifica fechas faltantes del mes hasta el día actual', async () => {
