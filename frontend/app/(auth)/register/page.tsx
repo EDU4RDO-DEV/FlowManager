@@ -64,7 +64,7 @@ export default function RegisterPage() {
         <div className="space-y-1.5">
           <CardTitle className="text-2xl tracking-tight">Crear usuario</CardTitle>
           <CardDescription>
-            Configura el primer usuario administrador de la planta.
+            Registra el primer usuario. La asignación del rol administrativo requiere el procedimiento autorizado.
           </CardDescription>
         </div>
       </CardHeader>
@@ -101,6 +101,7 @@ export default function RegisterPage() {
             <Input
               id="clave"
               type="password"
+              maxLength={128}
               autoComplete="new-password"
               placeholder="Mínimo 8 caracteres"
               value={clave}

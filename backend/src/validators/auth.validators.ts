@@ -2,18 +2,20 @@ import { z } from 'zod';
 
 import { positiveInt } from './validation';
 
+export const passwordSchema = z
+  .string()
+  .min(8, 'clave debe tener al menos 8 caracteres')
+  .max(128, 'clave demasiado larga');
+
 export const loginSchema = z.object({
   correo: z.string().trim().email('correo inválido').max(255, 'correo demasiado largo'),
-  clave: z.string().min(8, 'clave debe tener al menos 8 caracteres').max(128, 'clave demasiado larga'),
+  clave: passwordSchema,
 });
 
 export const registerSchema = z.object({
   nombre: z.string().trim().min(3, 'nombre debe tener al menos 3 caracteres').max(255, 'nombre demasiado largo'),
   correo: z.string().trim().email('correo inválido').max(255, 'correo demasiado largo'),
-  clave: z
-    .string()
-    .min(8, 'clave debe tener al menos 8 caracteres')
-    .max(128, 'clave demasiado larga')
+  clave: passwordSchema
     .regex(/[A-Z]/, 'clave debe incluir al menos una mayúscula')
     .regex(/[a-z]/, 'clave debe incluir al menos una minúscula')
     .regex(/[0-9]/, 'clave debe incluir al menos un número'),

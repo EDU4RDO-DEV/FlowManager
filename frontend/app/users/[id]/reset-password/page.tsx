@@ -98,6 +98,7 @@ export default function ResetUserPasswordPage() {
                   <Input
                     id="new-password"
                     type="password"
+                    maxLength={128}
                     value={newPassword}
                     onChange={(event) => setNewPassword(event.target.value)}
                     placeholder="Minimo 8 caracteres"

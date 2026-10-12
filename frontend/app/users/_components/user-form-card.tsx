@@ -74,6 +74,7 @@ export function UserFormCard({
               <Input
                 id="user-password"
                 type="password"
+                maxLength={128}
                 value={form.clave}
                 onChange={(event) => onChange({ ...form, clave: event.target.value })}
                 placeholder="Minimo 8 caracteres"

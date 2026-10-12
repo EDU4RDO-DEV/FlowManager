@@ -120,6 +120,15 @@ async function resolveEffectivePermissions(idRol: number | null): Promise<UserPe
     return buildDefaultPermissions();
   }
 
+  const activeRole = await prisma.rol.findFirst({
+    where: { Id: idRol, Anulado: false },
+    select: { Id: true },
+  });
+
+  if (!activeRole) {
+    return buildDefaultPermissions();
+  }
+
   const tablesExist = await persistedTablesExist();
   if (!tablesExist) {
     return buildDefaultPermissions();
@@ -482,14 +491,6 @@ export async function refreshAuthTokens(input: RefreshInput): Promise<LoginResul
 
   const nextRefreshExpiresAt = addDays(new Date(), sanitizeRefreshDays());
 
-  await prisma.sesion.update({
-    where: { Id: session.Id },
-    data: {
-      TokenSesion: hashToken(nextRefreshToken),
-      FechaExpiracionToken: nextRefreshExpiresAt,
-    },
-  });
-
   const accessToken = signAccessToken({
     accessSecret,
     userId: usuario.Id,
@@ -499,13 +500,34 @@ export async function refreshAuthTokens(input: RefreshInput): Promise<LoginResul
     nombre: usuario.Nombre,
     sessionId: session.Id,
   });
+  const user = await buildUserDto(usuario);
+
+  const rotation = await prisma.sesion.updateMany({
+    where: {
+      Id: session.Id,
+      IdUsuario: userId,
+      TokenSesion: tokenHash,
+      Anulado: false,
+      FechaExpiracionToken: {
+        gt: new Date(),
+      },
+    },
+    data: {
+      TokenSesion: hashToken(nextRefreshToken),
+      FechaExpiracionToken: nextRefreshExpiresAt,
+    },
+  });
+
+  if (rotation.count !== 1) {
+    throw new Error('Refresh token inválido o expirado');
+  }
 
   return {
     token: accessToken,
     accessToken,
     refreshToken: nextRefreshToken,
     accessTokenExpiresIn: `${sanitizeAccessMinutes()}m`,
-    user: await buildUserDto(usuario),
+    user,
   };
 }
 
@@ -541,35 +563,35 @@ export async function revokeRefreshToken(
 ): Promise<boolean> {
   const { refreshSecret } = getJwtSecrets();
 
+  let userId: number;
   try {
-    const payload = verifyRefreshToken(refreshToken, refreshSecret);
-    const userId = Number(payload.sub);
-
-    if (!Number.isInteger(userId) || userId <= 0) {
-      return false;
-    }
-
-    if (requestedByUserId !== undefined && requestedByUserId !== userId) {
-      return false;
-    }
-
-    const result = await prisma.sesion.updateMany({
-      where: {
-        IdUsuario: userId,
-        TokenSesion: hashToken(refreshToken),
-        Anulado: false,
-      },
-      data: {
-        Anulado: true,
-        IdUsuarioAnulador: requestedByUserId ?? userId,
-        FechaAnulacion: new Date(),
-      },
-    });
-
-    return result.count > 0;
+    userId = Number(verifyRefreshToken(refreshToken, refreshSecret).sub);
   } catch {
     return false;
   }
+
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return false;
+  }
+
+  if (requestedByUserId !== undefined && requestedByUserId !== userId) {
+    return false;
+  }
+
+  const result = await prisma.sesion.updateMany({
+    where: {
+      IdUsuario: userId,
+      TokenSesion: hashToken(refreshToken),
+      Anulado: false,
+    },
+    data: {
+      Anulado: true,
+      IdUsuarioAnulador: requestedByUserId ?? userId,
+      FechaAnulacion: new Date(),
+    },
+  });
+
+  return result.count > 0;
 }
 
 export async function revokeAllUserSessions(idUsuario: number, idUsuarioAnulador: number) {

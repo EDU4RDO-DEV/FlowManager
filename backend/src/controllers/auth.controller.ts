@@ -167,7 +167,20 @@ export async function registerController(req: Request, res: Response) {
   try {
     const { nombre, correo, clave, idRol, idEntidad } = registerSchema.parse(req.body);
 
-    const created = await register({ nombre, correo, clave, idRol, idEntidad });
+    if (!req.auth && idRol !== undefined) {
+      return res.status(403).json({
+        ok: false,
+        message: 'La asignación de rol requiere el procedimiento autorizado de administración',
+      });
+    }
+
+    const created = await register({
+      nombre,
+      correo,
+      clave,
+      ...(req.auth && idRol !== undefined ? { idRol } : {}),
+      idEntidad,
+    });
 
     return res.status(201).json({
       ok: true,

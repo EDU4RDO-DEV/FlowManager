@@ -10,8 +10,10 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
+import { toast } from 'sonner';
 
-import { UNAUTHORIZED_EVENT } from '@/lib/api';
+import { getApiErrorMessage, UNAUTHORIZED_EVENT } from '@/lib/api';
+import { getRefreshToken } from '@/lib/auth-storage';
 import {
   getServerSnapshot,
   getSnapshot,
@@ -20,8 +22,7 @@ import {
   persistLogout,
   subscribe,
 } from '@/lib/auth-store';
-import { login as loginService } from '@/services/auth.service';
-import { getCurrentAuthUser } from '@/services/auth.service';
+import { getCurrentAuthUser, login as loginService, logout as logoutService } from '@/services/auth.service';
 import type { AuthUser, LoginRequest } from '@/types/auth';
 
 interface AuthContextValue {
@@ -29,7 +30,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (credentials: LoginRequest) => Promise<AuthUser>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -38,9 +39,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
-  const logout = useCallback(() => {
-    persistLogout();
-    router.replace('/login');
+  const logout = useCallback(async () => {
+    try {
+      await logoutService(getRefreshToken() ?? undefined);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'No se pudo revocar la sesión en el servidor.'));
+    } finally {
+      persistLogout();
+      router.replace('/login');
+    }
   }, [router]);
 
   // Reacciona a 401 global emitido por el interceptor de Axios.

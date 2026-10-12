@@ -87,6 +87,7 @@ export default function ChangeOwnPasswordPage() {
                 <Input
                   id="next-password"
                   type="password"
+                  maxLength={128}
                   value={nextPassword}
                   onChange={(event) => setNextPassword(event.target.value)}
                   placeholder="Minimo 8 caracteres"

@@ -76,6 +76,15 @@ async function evaluatePersistedPermission(
   moduleKey: BackendModuleKey,
   action: CrudAction,
 ): Promise<PersistedDecision> {
+  const activeRole = await prisma.rol.findFirst({
+    where: { Id: idRol, Anulado: false },
+    select: { Id: true },
+  });
+
+  if (!activeRole) {
+    return 'deny';
+  }
+
   const tablesExist = await persistedTablesExist();
   if (!tablesExist) {
     return 'not-configured';
@@ -131,6 +140,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     });
   }
 
+  let payload: TokenPayload;
   try {
     const decoded = jwt.verify(token, secret, {
       algorithms: ['HS256'],
@@ -145,73 +155,90 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       });
     }
 
-    const payload = decoded as TokenPayload;
+    payload = decoded as TokenPayload;
     if (payload.tokenType !== 'access') {
       return res.status(401).json({
         ok: false,
         message: 'Token inválido o expirado',
       });
     }
-
-    const userId = Number(payload.sub);
-    const sessionId = payload.sid !== undefined ? Number(payload.sid) : null;
-    const roleId = payload.idRol !== undefined && payload.idRol !== null
-      ? Number(payload.idRol)
-      : null;
-
-    if (!Number.isInteger(userId) || userId <= 0) {
-      return res.status(401).json({
-        ok: false,
-        message: 'Token inválido o expirado',
-      });
-    }
-
-    if (sessionId !== null) {
-      if (!Number.isInteger(sessionId) || sessionId <= 0) {
-        return res.status(401).json({
-          ok: false,
-          message: 'Token inválido o expirado',
-        });
-      }
-
-      const activeSession = await prisma.sesion.findFirst({
-        where: {
-          Id: sessionId,
-          IdUsuario: userId,
-          Anulado: false,
-          FechaExpiracionToken: {
-            gt: new Date(),
-          },
-        },
-        select: {
-          Id: true,
-        },
-      });
-
-      if (!activeSession) {
-        return res.status(401).json({
-          ok: false,
-          message: 'Token inválido o expirado',
-        });
-      }
-    }
-
-    req.auth = {
-      userId,
-      sessionId,
-      idRol: roleId !== null && Number.isInteger(roleId) && roleId > 0 ? roleId : null,
-      nombreRol: payload.nombreRol,
-      correo: payload.correo,
-      nombre: payload.nombre,
-    };
-
-    return next();
   } catch {
     return res.status(401).json({
       ok: false,
       message: 'Token inválido o expirado',
     });
   }
+
+  const userId = Number(payload.sub);
+  const sessionId = payload.sid !== undefined ? Number(payload.sid) : null;
+  const roleId = payload.idRol !== undefined && payload.idRol !== null
+    ? Number(payload.idRol)
+    : null;
+
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(401).json({
+      ok: false,
+      message: 'Token inválido o expirado',
+    });
+  }
+
+  if (sessionId !== null && (!Number.isInteger(sessionId) || sessionId <= 0)) {
+    return res.status(401).json({
+      ok: false,
+      message: 'Token inválido o expirado',
+    });
+  }
+
+  if (sessionId !== null) {
+    const activeSession = await prisma.sesion.findFirst({
+      where: {
+        Id: sessionId,
+        IdUsuario: userId,
+        Anulado: false,
+        FechaExpiracionToken: {
+          gt: new Date(),
+        },
+      },
+      select: {
+        Id: true,
+      },
+    });
+
+    if (!activeSession) {
+      return res.status(401).json({
+        ok: false,
+        message: 'Token inválido o expirado',
+      });
+    }
+
+    const activeUser = await prisma.usuario.findFirst({
+      where: {
+        Id: userId,
+        Anulado: false,
+      },
+      select: {
+        Id: true,
+      },
+    });
+
+    if (!activeUser) {
+      return res.status(401).json({
+        ok: false,
+        message: 'Token inválido o expirado',
+      });
+    }
+  }
+
+  req.auth = {
+    userId,
+    sessionId,
+    idRol: roleId !== null && Number.isInteger(roleId) && roleId > 0 ? roleId : null,
+    nombreRol: payload.nombreRol,
+    correo: payload.correo,
+    nombre: payload.nombre,
+  };
+
+  return next();
 }
 
 export function requireBootstrapOrModulePermission(

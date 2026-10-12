@@ -5,6 +5,7 @@ import type { ApiResponse, LoginResponse } from '@/types/auth';
 import {
   clearAuth,
   getRefreshToken,
+  getStoredUser,
   getToken,
   setRefreshToken,
   setStoredUser,
@@ -47,25 +48,48 @@ function shouldSkipRefresh(url: string | undefined): boolean {
 }
 
 async function renewAccessToken(): Promise<string | null> {
-  const currentRefreshToken = getRefreshToken();
+  let currentRefreshToken = getRefreshToken();
+  const currentUserId = getStoredUser<{ id?: number }>()?.id;
   if (!currentRefreshToken) {
     return null;
   }
 
-  const { data } = await axios.post<LoginResponse>(
-    `${baseURL}/api/auth/refresh`,
-    { refreshToken: currentRefreshToken },
-    { headers: { 'Content-Type': 'application/json' } },
-  );
+  let retries = 0;
+  while (true) {
+    try {
+      const { data } = await axios.post<LoginResponse>(
+        `${baseURL}/api/auth/refresh`,
+        { refreshToken: currentRefreshToken },
+        { headers: { 'Content-Type': 'application/json' } },
+      );
 
-  if (!data.data) {
-    return null;
+      if (!data.data) {
+        return null;
+      }
+
+      setToken(data.data.accessToken);
+      setRefreshToken(data.data.refreshToken);
+      setStoredUser(data.data.user);
+      return data.data.accessToken;
+    } catch (error) {
+      const latestRefreshToken = getRefreshToken();
+      const latestUserId = getStoredUser<{ id?: number }>()?.id;
+
+      if (
+        retries < 2 &&
+        currentUserId !== undefined &&
+        latestUserId === currentUserId &&
+        latestRefreshToken &&
+        latestRefreshToken !== currentRefreshToken
+      ) {
+        retries += 1;
+        currentRefreshToken = latestRefreshToken;
+        continue;
+      }
+
+      throw error;
+    }
   }
-
-  setToken(data.data.accessToken);
-  setRefreshToken(data.data.refreshToken);
-  setStoredUser(data.data.user);
-  return data.data.accessToken;
 }
 
 // Request: adjunta el JWT como Bearer cuando existe.

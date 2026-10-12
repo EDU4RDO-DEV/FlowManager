@@ -719,13 +719,28 @@ export async function deleteUser(id: number, idUsuarioAnulador?: number) {
     await validateUsuarioExists(idUsuarioAnulador);
   }
 
-  await prisma.usuario.update({
-    where: { Id: id },
-    data: {
-      Anulado: true,
-      ...(idUsuarioAnulador !== undefined ? { IdUsuarioAnulador: idUsuarioAnulador } : {}),
-      FechaAnulacion: new Date(),
-    },
+  const fechaAnulacion = new Date();
+  await prisma.$transaction(async (tx) => {
+    await tx.usuario.update({
+      where: { Id: id },
+      data: {
+        Anulado: true,
+        ...(idUsuarioAnulador !== undefined ? { IdUsuarioAnulador: idUsuarioAnulador } : {}),
+        FechaAnulacion: fechaAnulacion,
+      },
+    });
+
+    await tx.sesion.updateMany({
+      where: {
+        IdUsuario: id,
+        Anulado: false,
+      },
+      data: {
+        Anulado: true,
+        ...(idUsuarioAnulador !== undefined ? { IdUsuarioAnulador: idUsuarioAnulador } : {}),
+        FechaAnulacion: fechaAnulacion,
+      },
+    });
   });
 }
 

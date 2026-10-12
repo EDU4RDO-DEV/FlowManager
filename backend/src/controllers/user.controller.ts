@@ -12,6 +12,7 @@ import {
   restoreUser,
   updateUser,
 } from '../services/user.service';
+import { passwordSchema } from '../validators/auth.validators';
 
 function parseId(value: unknown): number {
   if (typeof value === 'string') {
@@ -132,6 +133,14 @@ export async function createUserController(req: Request, res: Response) {
       });
     }
 
+    const passwordValidation = passwordSchema.safeParse(clave);
+    if (!passwordValidation.success) {
+      return res.status(400).json({
+        ok: false,
+        message: passwordValidation.error.issues[0]?.message ?? 'clave inválida',
+      });
+    }
+
     if (idUsuario !== undefined && !isValidPositiveInteger(idUsuario)) {
       return res.status(400).json({
         ok: false,
@@ -231,6 +240,16 @@ export async function updateUserController(req: Request, res: Response) {
           dpi?: string;
         };
       };
+
+    if (clave !== undefined) {
+      const passwordValidation = passwordSchema.safeParse(clave);
+      if (!passwordValidation.success) {
+        return res.status(400).json({
+          ok: false,
+          message: passwordValidation.error.issues[0]?.message ?? 'clave inválida',
+        });
+      }
+    }
 
     if (nombre !== undefined && !nombre.trim()) {
       return res.status(400).json({ ok: false, message: 'nombre no puede ir vacío' });
@@ -435,10 +454,11 @@ export async function changeUserPasswordController(req: Request, res: Response) 
       });
     }
 
-    if (nuevaClave.length < 8) {
+    const passwordValidation = passwordSchema.safeParse(nuevaClave);
+    if (!passwordValidation.success) {
       return res.status(400).json({
         ok: false,
-        message: 'nuevaClave debe tener al menos 8 caracteres',
+        message: passwordValidation.error.issues[0]?.message ?? 'nuevaClave inválida',
       });
     }
 
@@ -501,10 +521,11 @@ export async function resetUserPasswordController(req: Request, res: Response) {
       });
     }
 
-    if (nuevaClave.length < 8) {
+    const passwordValidation = passwordSchema.safeParse(nuevaClave);
+    if (!passwordValidation.success) {
       return res.status(400).json({
         ok: false,
-        message: 'nuevaClave debe tener al menos 8 caracteres',
+        message: passwordValidation.error.issues[0]?.message ?? 'nuevaClave inválida',
       });
     }
 

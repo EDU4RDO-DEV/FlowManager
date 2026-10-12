@@ -89,8 +89,8 @@ export default function CreateUserPage() {
       return;
     }
 
-    if (!form.clave || form.clave.length < 8) {
-      toast.error("La clave debe tener al menos 8 caracteres.");
+    if (!form.clave || form.clave.length < 8 || form.clave.length > 128) {
+      toast.error("La clave debe tener entre 8 y 128 caracteres.");
       return;
     }
 
