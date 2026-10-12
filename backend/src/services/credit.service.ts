@@ -9,7 +9,12 @@ type ListCreditsInput = {
   limit?: number;
   idCliente?: number;
   estado?: 'ACTIVO' | 'PAGADO' | 'ANULADO';
+  estadoPago?: 'PENDIENTE' | 'PARCIAL' | 'PAGADO';
   anulado?: boolean;
+  incluirAnulados?: boolean;
+  fechaDesde?: string;
+  fechaHasta?: string;
+  busqueda?: string;
 };
 
 type CreditPaymentInput = {
@@ -49,9 +54,15 @@ function toCreditDto(
     Venta: {
       Id: number;
       NumeroVenta: number;
+      NumeroProForma: number | null;
       CondicionPago: string;
       EstadoPago: string;
       Anulado: boolean;
+      AutorizacionFel: string | null;
+      NumeroFel: string | null;
+      SerieFel: string | null;
+      FechaEmisionFel: Date | null;
+      FechaRegistro: Date | null;
       Cliente: {
         Id: number;
         Entidad: {
@@ -61,6 +72,20 @@ function toCreditDto(
       };
       PagoVenta: Array<{
         Monto: Prisma.Decimal;
+        Id?: number;
+        MetodoPago?: string;
+        NumeroReferencia?: string | null;
+        Banco?: string | null;
+        FechaPago?: Date | null;
+        RutaFirma?: string | null;
+        Observaciones?: string | null;
+        Anulado?: boolean;
+        FechaAnulacion?: Date | null;
+        Usuario?: {
+          Id: number;
+          Nombre: string;
+          Correo: string;
+        };
       }>;
     };
     TipoCredito: {
@@ -71,8 +96,12 @@ function toCreditDto(
 ) {
   const totalOriginal = toNumber(credit.TotalOriginal);
   const totalAbonado = Number(
-    credit.Venta.PagoVenta.reduce((sum, payment) => sum + toNumber(payment.Monto), 0).toFixed(2),
+    credit.Venta.PagoVenta
+      .filter((payment) => payment.Anulado !== true)
+      .reduce((sum, payment) => sum + toNumber(payment.Monto), 0)
+      .toFixed(2),
   );
+  const cuentaAnulada = credit.Anulado || credit.Estado === 'ANULADO' || credit.Venta.Anulado;
 
   return {
     id: credit.Id,
@@ -81,8 +110,8 @@ function toCreditDto(
     idClienteCondicionCreditoAplicada: credit.IdClienteCondicionCreditoAplicada,
     totalOriginal,
     totalAbonado,
-    saldo: calculateSaldo(totalOriginal, totalAbonado),
-    estado: credit.Estado,
+    saldo: cuentaAnulada ? 0 : calculateSaldo(totalOriginal, totalAbonado),
+    estado: cuentaAnulada ? 'ANULADO' : credit.Estado,
     fechaCreacion: credit.FechaCreacion,
     fechaVencimiento: credit.FechaVencimiento,
     fechaLiquidacion: credit.FechaLiquidacion,
@@ -93,9 +122,14 @@ function toCreditDto(
     venta: {
       id: credit.Venta.Id,
       numeroVenta: credit.Venta.NumeroVenta,
+      numeroProForma: credit.Venta.NumeroProForma,
       condicionPago: credit.Venta.CondicionPago,
       estadoPago: credit.Venta.EstadoPago,
       anulado: credit.Venta.Anulado,
+      autorizacionFel: credit.Venta.AutorizacionFel,
+      numeroFel: credit.Venta.NumeroFel,
+      serieFel: credit.Venta.SerieFel,
+      fechaEmision: credit.Venta.FechaEmisionFel ?? credit.Venta.FechaRegistro,
     },
     cliente: {
       id: credit.Venta.Cliente.Id,
@@ -108,6 +142,117 @@ function toCreditDto(
           nombre: credit.TipoCredito.Nombre,
         }
       : null,
+    pagos: credit.Venta.PagoVenta.flatMap((payment) => {
+      if (payment.Id === undefined || !payment.Usuario || payment.MetodoPago === undefined) {
+        return [];
+      }
+
+      return [{
+        id: payment.Id,
+        idVenta: credit.Venta.Id,
+        monto: toNumber(payment.Monto),
+        metodoPago: payment.MetodoPago,
+        numeroReferencia: payment.NumeroReferencia ?? null,
+        banco: payment.Banco ?? null,
+        fechaPago: payment.FechaPago ?? null,
+        rutaFirma: payment.RutaFirma ?? null,
+        observaciones: payment.Observaciones ?? null,
+        anulado: payment.Anulado === true,
+        fechaAnulacion: payment.FechaAnulacion ?? null,
+        estado: payment.Anulado === true ? 'ANULADO' : 'REGISTRADO',
+        usuario: {
+          id: payment.Usuario.Id,
+          nombre: payment.Usuario.Nombre,
+          correo: payment.Usuario.Correo,
+        },
+      }];
+    }),
+  };
+}
+
+function getCreditListWhere(input: ListCreditsInput): Prisma.CuentaPorCobrarWhereInput {
+  const search = input.busqueda?.trim();
+  const numeroDocumento = search && /^\d+$/.test(search) ? Number(search) : undefined;
+  const fechaDesde = input.fechaDesde ? new Date(`${input.fechaDesde}T00:00:00.000Z`) : undefined;
+  const fechaHasta = input.fechaHasta ? new Date(`${input.fechaHasta}T00:00:00.000Z`) : undefined;
+
+  if (fechaHasta) {
+    fechaHasta.setUTCDate(fechaHasta.getUTCDate() + 1);
+  }
+
+  const dateRange = fechaDesde || fechaHasta
+    ? {
+        ...(fechaDesde ? { gte: fechaDesde } : {}),
+        ...(fechaHasta ? { lt: fechaHasta } : {}),
+      }
+    : undefined;
+  const searchWhere: Prisma.VentaWhereInput | undefined = search
+    ? {
+        OR: [
+          { Cliente: { Entidad: { NombreCompleto: { contains: search } } } },
+          { Cliente: { Entidad: { Nit: { contains: search } } } },
+          { NitFacturado: { contains: search } },
+          { NumeroFel: { contains: search } },
+          { SerieFel: { contains: search } },
+          { AutorizacionFel: { contains: search } },
+          ...(numeroDocumento !== undefined && Number.isSafeInteger(numeroDocumento)
+            ? [
+                { Id: numeroDocumento },
+                { IdCliente: numeroDocumento },
+                { NumeroVenta: numeroDocumento },
+                { NumeroProForma: numeroDocumento },
+              ]
+            : []),
+        ],
+      }
+    : undefined;
+  const ventaConditions: Prisma.VentaWhereInput[] = [];
+
+  if (dateRange) {
+    ventaConditions.push({
+      OR: [
+        { FechaEmisionFel: dateRange },
+        { AND: [{ FechaEmisionFel: null }, { FechaRegistro: dateRange }] },
+      ],
+    });
+  }
+  if (searchWhere) {
+    ventaConditions.push(searchWhere);
+  }
+
+  const ventaWhere: Prisma.VentaWhereInput = {
+    ...(input.incluirAnulados ? {} : { Anulado: false }),
+    ...(input.idCliente ? { IdCliente: input.idCliente } : {}),
+    ...(input.estadoPago ? { EstadoPago: input.estadoPago } : {}),
+    ...(ventaConditions.length > 0 ? { AND: ventaConditions } : {}),
+  };
+
+  const filters: Prisma.CuentaPorCobrarWhereInput = {
+    ...(input.incluirAnulados
+      ? {}
+      : { Anulado: input.anulado !== undefined ? input.anulado : false }),
+    ...(input.estado ? { Estado: input.estado } : {}),
+  };
+
+  if (search && numeroDocumento !== undefined && Number.isSafeInteger(numeroDocumento) && searchWhere) {
+    return {
+      ...filters,
+      AND: [
+        { Venta: ventaWhere },
+        {
+          OR: [
+            { Id: numeroDocumento },
+            { IdVenta: numeroDocumento },
+            { Venta: searchWhere },
+          ],
+        },
+      ],
+    };
+  }
+
+  return {
+    ...filters,
+    Venta: ventaWhere,
   };
 }
 
@@ -127,9 +272,15 @@ async function getCreditByIdInternal(id: number) {
         select: {
           Id: true,
           NumeroVenta: true,
+          NumeroProForma: true,
           CondicionPago: true,
           EstadoPago: true,
           Anulado: true,
+          AutorizacionFel: true,
+          NumeroFel: true,
+          SerieFel: true,
+          FechaEmisionFel: true,
+          FechaRegistro: true,
           Cliente: {
             select: {
               Id: true,
@@ -153,11 +304,11 @@ async function getCreditByIdInternal(id: number) {
   });
 }
 
-async function getCreditSaleId(id: number): Promise<number> {
+async function getCreditSaleId(id: number, includeAnulado = false): Promise<number> {
   const credit = await prisma.cuentaPorCobrar.findFirst({
     where: {
       Id: id,
-      Anulado: false,
+      ...(includeAnulado ? {} : { Anulado: false }),
     },
     select: {
       IdVenta: true,
@@ -173,18 +324,7 @@ async function getCreditSaleId(id: number): Promise<number> {
 
 export async function listCredits(input: ListCreditsInput) {
   const { page, limit, skip } = resolvePagination(input);
-
-  const where: Prisma.CuentaPorCobrarWhereInput = {
-    ...(input.anulado !== undefined ? { Anulado: input.anulado } : { Anulado: false }),
-    ...(input.estado ? { Estado: input.estado } : {}),
-    ...(input.idCliente
-      ? {
-          Venta: {
-            IdCliente: input.idCliente,
-          },
-        }
-      : {}),
-  };
+  const where = getCreditListWhere(input);
 
   const [total, rows] = await Promise.all([
     prisma.cuentaPorCobrar.count({ where }),
@@ -204,9 +344,15 @@ export async function listCredits(input: ListCreditsInput) {
           select: {
             Id: true,
             NumeroVenta: true,
+            NumeroProForma: true,
             CondicionPago: true,
             EstadoPago: true,
             Anulado: true,
+            AutorizacionFel: true,
+            NumeroFel: true,
+            SerieFel: true,
+            FechaEmisionFel: true,
+            FechaRegistro: true,
             Cliente: {
               select: {
                 Id: true,
@@ -252,7 +398,6 @@ export async function listCreditsByCustomer(idCliente: number) {
       Venta: {
         IdCliente: idCliente,
       },
-      Anulado: false,
     },
     orderBy: { Id: 'desc' },
     include: {
@@ -266,9 +411,15 @@ export async function listCreditsByCustomer(idCliente: number) {
         select: {
           Id: true,
           NumeroVenta: true,
+          NumeroProForma: true,
           CondicionPago: true,
           EstadoPago: true,
           Anulado: true,
+          AutorizacionFel: true,
+          NumeroFel: true,
+          SerieFel: true,
+          FechaEmisionFel: true,
+          FechaRegistro: true,
           Cliente: {
             select: {
               Id: true,
@@ -281,10 +432,26 @@ export async function listCreditsByCustomer(idCliente: number) {
             },
           },
           PagoVenta: {
-            where: { Anulado: false },
             select: {
+              Id: true,
               Monto: true,
+              MetodoPago: true,
+              NumeroReferencia: true,
+              Banco: true,
+              FechaPago: true,
+              RutaFirma: true,
+              Observaciones: true,
+              Anulado: true,
+              FechaAnulacion: true,
+              Usuario: {
+                select: {
+                  Id: true,
+                  Nombre: true,
+                  Correo: true,
+                },
+              },
             },
+            orderBy: { Id: 'desc' },
           },
         },
       },
@@ -298,6 +465,7 @@ export async function getCreditsPortfolio() {
   const rows = await prisma.cuentaPorCobrar.findMany({
     where: {
       Anulado: false,
+      Venta: { Anulado: false },
     },
     include: {
       Venta: {
@@ -379,7 +547,7 @@ export async function getCreditsPortfolio() {
 }
 
 export async function listCreditPayments(id: number) {
-  const idVenta = await getCreditSaleId(id);
+  const idVenta = await getCreditSaleId(id, true);
   return listSalePayments(idVenta);
 }
 

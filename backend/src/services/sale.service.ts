@@ -453,7 +453,6 @@ async function getSaleByIdInternal(
         },
       },
       DetalleVenta: {
-        where: { Anulado: false },
         include: {
           InventarioItem: {
             select: {
@@ -482,7 +481,9 @@ async function getSaleByIdInternal(
 }
 
 function toSaleDto(sale: NonNullable<Awaited<ReturnType<typeof getSaleByIdInternal>>>) {
-  const detalle = sale.DetalleVenta.map((detail) => ({
+  const detalle = sale.DetalleVenta
+    .filter((detail) => sale.Anulado || !detail.Anulado)
+    .map((detail) => ({
     id: detail.Id,
     idVenta: detail.IdVenta,
     idInventarioItem: detail.IdInventarioItem,
@@ -510,6 +511,9 @@ function toSaleDto(sale: NonNullable<Awaited<ReturnType<typeof getSaleByIdIntern
     fechaPago: payment.FechaPago,
     rutaFirma: payment.RutaFirma,
     observaciones: payment.Observaciones,
+    anulado: false,
+    fechaAnulacion: null,
+    estado: 'REGISTRADO',
     usuario: {
       id: payment.Usuario.Id,
       nombre: payment.Usuario.Nombre,
@@ -526,7 +530,7 @@ function toSaleDto(sale: NonNullable<Awaited<ReturnType<typeof getSaleByIdIntern
   );
 
   const totalPagado = Number(pagos.reduce((sum, item) => sum + item.monto, 0).toFixed(2));
-  const saldo = Number(Math.max(0, totals.total - totalPagado).toFixed(2));
+  const saldo = sale.Anulado ? 0 : Number(Math.max(0, totals.total - totalPagado).toFixed(2));
 
   return {
     id: sale.Id,
@@ -602,6 +606,15 @@ function toSaleDto(sale: NonNullable<Awaited<ReturnType<typeof getSaleByIdIntern
 }
 
 function validatePaymentRules(payment: SalePaymentInput) {
+  if (
+    !Number.isFinite(payment.monto) ||
+    payment.monto <= 0 ||
+    payment.monto > 99_999_999.99 ||
+    !Number.isInteger(Number((payment.monto * 100).toFixed(8)))
+  ) {
+    throw new Error('Monto inválido: debe ser positivo, con máximo dos decimales y dentro del rango permitido');
+  }
+
   const referenceMethods = ['TRANSFERENCIA', 'CHEQUE', 'POS'];
   if (referenceMethods.includes(payment.metodoPago) && !payment.numeroReferencia) {
     throw new Error('numeroReferencia es obligatoria para este método de pago');
@@ -1483,7 +1496,6 @@ export async function listSalePayments(idVenta: number) {
   const sale = await prisma.venta.findFirst({
     where: {
       Id: idVenta,
-      Anulado: false,
     },
     select: { Id: true },
   });
@@ -1495,7 +1507,6 @@ export async function listSalePayments(idVenta: number) {
   const payments = await prisma.pagoVenta.findMany({
     where: {
       IdVenta: idVenta,
-      Anulado: false,
     },
     orderBy: { Id: 'desc' },
     include: {
@@ -1520,6 +1531,9 @@ export async function listSalePayments(idVenta: number) {
     fechaPago: payment.FechaPago,
     rutaFirma: payment.RutaFirma,
     observaciones: payment.Observaciones,
+    anulado: payment.Anulado,
+    fechaAnulacion: payment.FechaAnulacion,
+    estado: payment.Anulado ? 'ANULADO' : 'REGISTRADO',
     usuario: {
       id: payment.Usuario.Id,
       nombre: payment.Usuario.Nombre,

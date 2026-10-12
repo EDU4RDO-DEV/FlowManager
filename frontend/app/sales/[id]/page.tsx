@@ -139,7 +139,7 @@ export default function SaleDetailPage() {
   }, [loadData]);
 
   const saldoPendiente = useMemo(() => {
-    if (!sale) {
+    if (!sale || sale.anulado) {
       return 0;
     }
     return Number(Math.max(0, sale.total - sale.totalPagado).toFixed(2));
@@ -291,11 +291,18 @@ export default function SaleDetailPage() {
               </Link>
             </Button>
 
-            {canAnulateSale && sale && !sale.anulado ? (
-              <Button variant="destructive" onClick={() => setIsAnulateSaleDialogOpen(true)}>
-                Anular venta
-              </Button>
-            ) : null}
+            <div className="flex flex-wrap gap-2">
+              {sale ? (
+                <Button asChild variant="outline">
+                  <Link href={`/credits/customers/${sale.idCliente}`}>Abrir Créditos y Abonos</Link>
+                </Button>
+              ) : null}
+              {canAnulateSale && sale && !sale.anulado ? (
+                <Button variant="destructive" onClick={() => setIsAnulateSaleDialogOpen(true)}>
+                  Anular venta
+                </Button>
+              ) : null}
+            </div>
           </div>
 
           {isLoading && !hasLoadedOnce ? (
@@ -327,14 +334,16 @@ export default function SaleDetailPage() {
                     <p className="text-xs text-muted-foreground">Estado de pago</p>
                     <Badge
                       className={
-                        sale.estadoPago === "PAGADO"
+                        sale.anulado
+                          ? "bg-rose-700 text-white"
+                          : sale.estadoPago === "PAGADO"
                           ? "bg-emerald-600 text-white"
                           : sale.estadoPago === "PARCIAL"
                             ? "bg-amber-500 text-white"
                             : "bg-slate-500 text-white"
                       }
                     >
-                      {sale.estadoPago}
+                      {sale.anulado ? "ANULADO" : sale.estadoPago}
                     </Badge>
                   </CardContent>
                 </Card>
@@ -555,6 +564,7 @@ export default function SaleDetailPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Fecha</TableHead>
+                          <TableHead>Estado</TableHead>
                           <TableHead>Método</TableHead>
                           <TableHead>Referencia</TableHead>
                           <TableHead>Banco</TableHead>
@@ -568,6 +578,14 @@ export default function SaleDetailPage() {
                         {payments.map((payment) => (
                           <TableRow key={payment.id}>
                             <TableCell>{formatDate(payment.fechaPago)}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={payment.anulado ? "destructive" : "secondary"}
+                                className={payment.anulado ? "" : "bg-emerald-100 text-emerald-800"}
+                              >
+                                {payment.estado}
+                              </Badge>
+                            </TableCell>
                             <TableCell>{payment.metodoPago}</TableCell>
                             <TableCell>{payment.numeroReferencia ?? "-"}</TableCell>
                             <TableCell>{payment.banco ?? "-"}</TableCell>
@@ -583,7 +601,7 @@ export default function SaleDetailPage() {
                             <TableCell className="text-right font-medium">{formatMoney(payment.monto)}</TableCell>
                             <TableCell>{payment.usuario.nombre}</TableCell>
                             <TableCell className="text-right">
-                              {canAnulatePayments ? (
+                              {canAnulatePayments && !payment.anulado ? (
                                 <Button
                                   variant="destructive"
                                   size="sm"

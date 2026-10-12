@@ -9,8 +9,8 @@ import {
   optionalPositiveIntFromQuery,
   positiveInt,
 } from './validation';
+import { paymentDetailsFields, validatePaymentMethodRequirements } from './payment.validators';
 
-const paymentMethodSchema = z.enum(['EFECTIVO', 'TRANSFERENCIA', 'CHEQUE', 'POS']);
 const condicionPagoSchema = z.enum(['CONTADO', 'CREDITO']);
 const estadoEntregaSchema = z.enum(['PENDIENTE', 'EN_RUTA', 'ENTREGADO', 'PARCIAL']);
 const tipoRegistroSchema = z.enum(['VENTA', 'PROFORMA']);
@@ -24,35 +24,9 @@ const saleDetailItemSchema = z.object({
 
 const salePaymentSchema = z
   .object({
-    monto: finitePositiveNumber,
-    metodoPago: paymentMethodSchema,
-    numeroReferencia: z.string().trim().max(100, 'numeroReferencia demasiado largo').optional(),
-    banco: z.string().trim().max(100, 'banco demasiado largo').optional(),
-    fechaPago: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'fechaPago inválida').optional(),
-    rutaFirma: z.string().trim().max(255, 'rutaFirma demasiado larga').optional(),
-    observaciones: z.string().trim().max(255, 'observaciones demasiado largas').optional(),
+    ...paymentDetailsFields,
   })
-  .superRefine((data, ctx) => {
-    if (data.metodoPago === 'TRANSFERENCIA' || data.metodoPago === 'CHEQUE' || data.metodoPago === 'POS') {
-      if (!data.numeroReferencia) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'numeroReferencia es obligatoria para este método de pago',
-          path: ['numeroReferencia'],
-        });
-      }
-    }
-
-    if (data.metodoPago === 'TRANSFERENCIA' || data.metodoPago === 'CHEQUE') {
-      if (!data.banco) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'banco es obligatorio para este método de pago',
-          path: ['banco'],
-        });
-      }
-    }
-  });
+  .superRefine(validatePaymentMethodRequirements);
 
 export const saleIdParamsSchema = z.object({
   id: z.coerce.number().int('id debe ser entero').positive('id debe ser mayor a 0'),

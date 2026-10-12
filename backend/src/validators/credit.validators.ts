@@ -1,47 +1,26 @@
 import { z } from 'zod';
 
 import {
+  optionalDateFromQuery,
   optionalBooleanFromQuery,
   optionalLimitFromQuery,
   optionalPageFromQuery,
   optionalPositiveIntFromQuery,
   positiveInt,
 } from './validation';
-
-const paymentMethodSchema = z.enum(['EFECTIVO', 'TRANSFERENCIA', 'CHEQUE', 'POS']);
+import { paymentDetailsFields, validatePaymentMethodRequirements } from './payment.validators';
 
 const creditPaymentSchema = z
   .object({
     idUsuario: positiveInt,
-    monto: z.number().finite('debe ser un número válido').positive('debe ser mayor a 0'),
-    metodoPago: paymentMethodSchema,
-    numeroReferencia: z.string().trim().max(100, 'numeroReferencia demasiado largo').optional(),
-    banco: z.string().trim().max(100, 'banco demasiado largo').optional(),
-    fechaPago: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'fechaPago inválida').optional(),
-    rutaFirma: z.string().trim().max(255, 'rutaFirma demasiado larga').optional(),
-    observaciones: z.string().trim().max(255, 'observaciones demasiado largas').optional(),
+    ...paymentDetailsFields,
   })
-  .superRefine((data, ctx) => {
-    if (data.metodoPago === 'TRANSFERENCIA' || data.metodoPago === 'CHEQUE' || data.metodoPago === 'POS') {
-      if (!data.numeroReferencia) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'numeroReferencia es obligatoria para este método de pago',
-          path: ['numeroReferencia'],
-        });
-      }
-    }
+  .superRefine(validatePaymentMethodRequirements);
 
-    if (data.metodoPago === 'TRANSFERENCIA' || data.metodoPago === 'CHEQUE') {
-      if (!data.banco) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'banco es obligatorio para este método de pago',
-          path: ['banco'],
-        });
-      }
-    }
-  });
+function isValidDateOnly(value: string): boolean {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
 
 export const creditIdParamsSchema = z.object({
   id: z.coerce.number().int('id debe ser entero').positive('id debe ser mayor a 0'),
@@ -56,13 +35,29 @@ export const customerIdParamsSchema = z.object({
   idCliente: z.coerce.number().int('idCliente debe ser entero').positive('idCliente debe ser mayor a 0'),
 });
 
-export const listCreditsQuerySchema = z.object({
-  page: optionalPageFromQuery,
-  limit: optionalLimitFromQuery,
-  idCliente: optionalPositiveIntFromQuery,
-  estado: z.enum(['ACTIVO', 'PAGADO', 'ANULADO']).optional(),
-  anulado: optionalBooleanFromQuery,
-});
+export const listCreditsQuerySchema = z
+  .object({
+    page: optionalPageFromQuery,
+    limit: optionalLimitFromQuery,
+    idCliente: optionalPositiveIntFromQuery,
+    estado: z.enum(['ACTIVO', 'PAGADO', 'ANULADO']).optional(),
+    estadoPago: z.enum(['PENDIENTE', 'PARCIAL', 'PAGADO']).optional(),
+    anulado: optionalBooleanFromQuery,
+    incluirAnulados: optionalBooleanFromQuery,
+    fechaDesde: optionalDateFromQuery,
+    fechaHasta: optionalDateFromQuery,
+    busqueda: z.string().trim().min(1).max(255).optional(),
+  })
+  .refine(
+    (query) =>
+      (!query.fechaDesde || isValidDateOnly(query.fechaDesde)) &&
+      (!query.fechaHasta || isValidDateOnly(query.fechaHasta)),
+    { message: 'Las fechas deben ser válidas' },
+  )
+  .refine(
+    (query) => !query.fechaDesde || !query.fechaHasta || query.fechaDesde <= query.fechaHasta,
+    { message: 'fechaDesde no puede ser posterior a fechaHasta' },
+  );
 
 export const createCreditPaymentSchema = creditPaymentSchema;
 

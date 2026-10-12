@@ -172,6 +172,14 @@ export function DashboardShell({ title, description, printContentOnly = false, c
               icon: ShoppingCart,
               children: [
                 {
+                  id: "ventas-creditos-abonos",
+                  name: "Créditos y Abonos",
+                  path: "/credits",
+                  icon: CreditCard,
+                  available: has.ventas,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/credits"),
+                },
+                {
                   id: "ventas-pagos",
                   name: "Administración de Ventas",
                   path: "/sales",

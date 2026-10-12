@@ -403,7 +403,11 @@ export async function createSalePaymentController(req: Request, res: Response) {
       });
     }
 
-    if (message.startsWith('Pago no puede ser mayor') || message.includes('obligatorio')) {
+    if (
+      message.startsWith('Pago no puede ser mayor') ||
+      message.startsWith('Monto inválido') ||
+      message.includes('obligatorio')
+    ) {
       return res.status(400).json({ ok: false, message });
     }
 

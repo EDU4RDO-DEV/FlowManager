@@ -59,6 +59,9 @@ export interface SalePaymentDto {
   fechaPago: string | null;
   rutaFirma: string | null;
   observaciones: string | null;
+  anulado: boolean;
+  fechaAnulacion: string | null;
+  estado: "REGISTRADO" | "ANULADO";
   usuario: SaleUserDto;
 }
 

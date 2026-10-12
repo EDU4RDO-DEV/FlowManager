@@ -10,6 +10,7 @@ const { prismaMock } = vi.hoisted(() => ({
     },
     pagoVenta: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
     },
@@ -41,7 +42,7 @@ vi.mock('../services/notification.service', () => ({
   send: sendMock,
 }));
 
-import { anulateSalePayment, createSalePayment } from '../services/sale.service';
+import { anulateSalePayment, createSalePayment, getSaleById, listSalePayments } from '../services/sale.service';
 
 function buildSaleWithPayments(pagos: number[]) {
   return {
@@ -101,6 +102,29 @@ describe('Fase 4 - Ventas y Cuentas por Cobrar (pagos)', () => {
       createSalePayment(7, { idUsuario: 1, monto: 50, metodoPago: 'EFECTIVO' }, 'key-overpayment'),
     ).rejects.toThrowError('Pago no puede ser mayor al saldo pendiente');
 
+    expect(prismaMock.pagoVenta.create).not.toHaveBeenCalled();
+  });
+
+  it('revalida el saldo tras un conflicto serializable antes de crear un pago concurrente', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 1 });
+    prismaMock.$transaction
+      .mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Serialization conflict', {
+          code: 'P2034',
+          clientVersion: 'test',
+        }),
+      )
+      .mockImplementationOnce(async (callback: (tx: typeof prismaMock) => unknown) => callback(prismaMock));
+    prismaMock.venta.findFirst
+      .mockResolvedValueOnce(buildSaleExistenceCheck())
+      .mockResolvedValueOnce(buildSaleWithPayments([95]));
+    prismaMock.venta.update.mockResolvedValueOnce({});
+
+    await expect(
+      createSalePayment(7, { idUsuario: 1, monto: 10, metodoPago: 'EFECTIVO' }, 'key-concurrent-overpayment'),
+    ).rejects.toThrowError('Pago no puede ser mayor al saldo pendiente');
+
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(2);
     expect(prismaMock.pagoVenta.create).not.toHaveBeenCalled();
   });
 
@@ -322,5 +346,107 @@ describe('Fase 4 - Ventas y Cuentas por Cobrar (pagos)', () => {
     await anulateSalePayment(7, 55, 9);
 
     expect(prismaMock.cuentaPorCobrar.update).not.toHaveBeenCalled();
+  });
+
+  it('allows reading annulled payment history for an annulled sale', async () => {
+    prismaMock.venta.findFirst.mockResolvedValueOnce({ Id: 7 });
+    prismaMock.pagoVenta.findMany.mockResolvedValueOnce([{
+      Id: 55,
+      IdVenta: 7,
+      IdUsuario: 1,
+      Monto: 20,
+      MetodoPago: 'EFECTIVO',
+      NumeroReferencia: null,
+      Banco: null,
+      FechaPago: new Date('2026-10-10'),
+      RutaFirma: null,
+      Observaciones: null,
+      Anulado: true,
+      FechaAnulacion: new Date('2026-10-11'),
+      Usuario: { Id: 1, Nombre: 'Operador', Correo: 'operador@example.test' },
+    }]);
+
+    const payments = await listSalePayments(7);
+
+    expect(payments[0]).toMatchObject({
+      id: 55,
+      anulado: true,
+      estado: 'ANULADO',
+      fechaAnulacion: new Date('2026-10-11'),
+    });
+    expect(prismaMock.venta.findFirst).toHaveBeenCalledWith({
+      where: { Id: 7 },
+      select: { Id: true },
+    });
+  });
+
+  it('keeps original document amounts visible after the sale and its details are annulled', async () => {
+    prismaMock.venta.findFirst.mockResolvedValueOnce({
+      Id: 7,
+      IdCliente: 4,
+      IdUsuario: 1,
+      IdRutaSesion: null,
+      IdTalonario: null,
+      NumeroVenta: 1007,
+      NumeroProForma: null,
+      TipoRegistro: 'VENTA',
+      EstadoEntrega: 'PENDIENTE',
+      CondicionPago: 'CREDITO',
+      EstadoPago: 'PAGADO',
+      RequiereFactura: false,
+      AutorizacionFel: null,
+      NumeroFel: null,
+      SerieFel: null,
+      QrFel: null,
+      RutaPdfFel: null,
+      FechaEmisionFel: null,
+      NitFacturado: null,
+      NombreClienteFacturado: null,
+      DireccionClienteFacturado: null,
+      LugarEntrega: null,
+      FechaEntregaEsperada: null,
+      FechaRegistro: new Date('2026-10-01'),
+      IdUsuarioModificador: null,
+      FechaModificacion: null,
+      Anulado: true,
+      IdUsuarioAnulador: 1,
+      FechaAnulacion: new Date('2026-10-11'),
+      Cliente: {
+        Id: 4,
+        Entidad: { NombreCompleto: 'Cliente de Prueba', Nit: '1234567-8' },
+        TipoCliente: null,
+      },
+      Usuario: { Id: 1, Nombre: 'Operador', Correo: 'operador@example.test' },
+      RutaSesion: null,
+      Talonario: null,
+      DetalleVenta: [{
+        Id: 90,
+        IdVenta: 7,
+        IdInventarioItem: 8,
+        Nombre: 'Producto de prueba',
+        Cantidad: 2,
+        PrecioUnitario: 50,
+        EsBonificacion: false,
+        Anulado: true,
+        InventarioItem: {
+          Id: 8,
+          Nombre: 'Producto de prueba',
+          Categoria: 'PRODUCTO_TERMINADO',
+          Existencia: 0,
+        },
+      }],
+      PagoVenta: [],
+    });
+
+    const sale = await getSaleById(7);
+
+    expect(sale).toMatchObject({
+      anulado: true,
+      subtotal: 100,
+      total: 100,
+      totalPagado: 0,
+      saldo: 0,
+      detalle: [{ id: 90, subtotal: 100 }],
+    });
   });
 });
