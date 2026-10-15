@@ -12,6 +12,7 @@ import { useAuth } from "@/components/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
+import { gallonsToLiters, litersToGallons } from "@/lib/volume";
 import { listCommissionCategories } from "@/services/commissions.service";
 import { getProductById, updateProduct, uploadProductImage } from "@/services/products.service";
 import { listProviders } from "@/services/providers.service";
@@ -26,7 +27,7 @@ const EMPTY_FORM: ProductFormValues = {
   precioVenta: "",
   esVendible: true,
   esEnvaseRetornable: false,
-  capacidadEnvaseGalones: "",
+  capacidadEnvaseLitros: "",
   idEnvasePresentacion: "",
   unidadesEnvasePorUnidad: "",
   rutaImagen: "",
@@ -72,9 +73,9 @@ export default function EditProductPage() {
           precioVenta: productData.esVendible ? String(productData.precioVenta) : "",
           esVendible: productData.esVendible,
           esEnvaseRetornable: productData.esEnvaseRetornable,
-          capacidadEnvaseGalones: productData.capacidadEnvaseGalones == null
+          capacidadEnvaseLitros: productData.capacidadEnvaseGalones == null
             ? ""
-            : String(productData.capacidadEnvaseGalones),
+            : String(gallonsToLiters(productData.capacidadEnvaseGalones)),
           idEnvasePresentacion: productData.idEnvasePresentacion == null
             ? ""
             : String(productData.idEnvasePresentacion),
@@ -152,8 +153,8 @@ export default function EditProductPage() {
         unidadMedida: form.unidadMedida.trim() || null,
         costoPromedio,
         precioVenta: form.esVendible ? precioVenta : undefined,
-        capacidadEnvaseGalones: form.capacidadEnvaseGalones
-          ? Number(form.capacidadEnvaseGalones)
+        capacidadEnvaseGalones: form.capacidadEnvaseLitros
+          ? litersToGallons(Number(form.capacidadEnvaseLitros))
           : null,
         idEnvasePresentacion: form.idEnvasePresentacion
           ? Number(form.idEnvasePresentacion)

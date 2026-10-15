@@ -12,6 +12,7 @@ import { useAuth } from "@/components/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
+import { litersToGallons } from "@/lib/volume";
 import { listCommissionCategories } from "@/services/commissions.service";
 import { createProduct, uploadProductImage } from "@/services/products.service";
 import { listProviders } from "@/services/providers.service";
@@ -26,7 +27,7 @@ const EMPTY_FORM: ProductFormValues = {
   precioVenta: "",
   esVendible: true,
   esEnvaseRetornable: false,
-  capacidadEnvaseGalones: "",
+  capacidadEnvaseLitros: "",
   idEnvasePresentacion: "",
   unidadesEnvasePorUnidad: "",
   rutaImagen: "",
@@ -109,8 +110,8 @@ export default function CreateProductPage() {
         unidadMedida: form.unidadMedida.trim() || undefined,
         costoPromedio,
         precioVenta: form.esVendible ? precioVenta : undefined,
-        capacidadEnvaseGalones: form.capacidadEnvaseGalones
-          ? Number(form.capacidadEnvaseGalones)
+        capacidadEnvaseGalones: form.capacidadEnvaseLitros
+          ? litersToGallons(Number(form.capacidadEnvaseLitros))
           : undefined,
         idEnvasePresentacion: form.idEnvasePresentacion
           ? Number(form.idEnvasePresentacion)

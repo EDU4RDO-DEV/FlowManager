@@ -27,7 +27,7 @@ export type ProductFormValues = {
   precioVenta: string;
   esVendible: boolean;
   esEnvaseRetornable: boolean;
-  capacidadEnvaseGalones: string;
+  capacidadEnvaseLitros: string;
   idEnvasePresentacion: string;
   unidadesEnvasePorUnidad: string;
   rutaImagen: string;
@@ -191,17 +191,18 @@ export function ProductFormCard({
 
           {form.esEnvaseRetornable ? (
             <div className="space-y-1.5">
-              <Label htmlFor="product-container-capacity">Capacidad (galones)</Label>
+              <Label htmlFor="product-container-capacity">Capacidad (litros)</Label>
               <Input
                 id="product-container-capacity"
                 type="number"
-                min={0.001}
+                min={0.01}
                 step="0.001"
-                value={form.capacidadEnvaseGalones}
-                onChange={(event) => onChange({ ...form, capacidadEnvaseGalones: event.target.value })}
-                placeholder="5"
+                value={form.capacidadEnvaseLitros}
+                onChange={(event) => onChange({ ...form, capacidadEnvaseLitros: event.target.value })}
+                placeholder="10"
                 className="bg-background"
               />
+              <p className="text-xs text-muted-foreground">La capacidad se convierte a galones al guardar.</p>
             </div>
           ) : null}
 
