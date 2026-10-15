@@ -24,6 +24,7 @@ type CreateProductInput = {
   costoPromedio: number;
   precioVenta?: number;
   rutaImagen?: string;
+  idCategoriaComision?: number | null;
 };
 
 type UpdateProductInput = {
@@ -36,6 +37,7 @@ type UpdateProductInput = {
   costoPromedio?: number;
   precioVenta?: number;
   rutaImagen?: string;
+  idCategoriaComision?: number | null;
 };
 
 function resolvePrecioVentaForCategoria(
@@ -68,6 +70,7 @@ function toProductDto(product: {
   IdProveedor: number;
   Nombre: string;
   Categoria: string;
+  IdCategoriaComision: number | null;
   UnidadMedida: string | null;
   Existencia: number;
   CostoPromedio: unknown;
@@ -94,6 +97,7 @@ function toProductDto(product: {
     idProveedor: product.IdProveedor,
     nombre: product.Nombre,
     categoria: product.Categoria,
+    idCategoriaComision: product.IdCategoriaComision,
     unidadMedida: product.UnidadMedida,
     existencia: product.Existencia,
     costoPromedio: Number(product.CostoPromedio),
@@ -254,6 +258,15 @@ export async function createProduct(input: CreateProductInput) {
   await validateUsuarioExists(input.idUsuario);
   await validateProveedorExists(input.idProveedor);
   await validateUniqueNameInCategory(input.nombre, input.categoria);
+  if (input.idCategoriaComision !== undefined && input.idCategoriaComision !== null) {
+    const category = await prisma.categoriaComision.findFirst({
+      where: { Id: input.idCategoriaComision, Activa: true },
+      select: { Id: true },
+    });
+    if (!category) {
+      throw new Error('Categoría de comisión no existe');
+    }
+  }
 
   const precioVenta = resolvePrecioVentaForCategoria(
     input.categoria,
@@ -268,6 +281,7 @@ export async function createProduct(input: CreateProductInput) {
         IdProveedor: input.idProveedor,
         Nombre: input.nombre,
         Categoria: input.categoria,
+        IdCategoriaComision: input.idCategoriaComision ?? null,
         UnidadMedida: input.unidadMedida ?? null,
         Existencia: 0,
         CostoPromedio: input.costoPromedio,
@@ -335,6 +349,15 @@ export async function updateProduct(id: number, input: UpdateProductInput) {
   if (input.idProveedor !== undefined) {
     await validateProveedorExists(input.idProveedor);
   }
+  if (input.idCategoriaComision !== undefined && input.idCategoriaComision !== null) {
+    const category = await prisma.categoriaComision.findFirst({
+      where: { Id: input.idCategoriaComision, Activa: true },
+      select: { Id: true },
+    });
+    if (!category) {
+      throw new Error('Categoría de comisión no existe');
+    }
+  }
 
   const nextNombre = input.nombre ?? existing.Nombre;
   const nextCategoria = input.categoria ?? existing.Categoria;
@@ -357,6 +380,9 @@ export async function updateProduct(id: number, input: UpdateProductInput) {
       ...(input.idProveedor !== undefined ? { IdProveedor: input.idProveedor } : {}),
       ...(input.nombre !== undefined ? { Nombre: input.nombre } : {}),
       ...(input.categoria !== undefined ? { Categoria: input.categoria } : {}),
+      ...(input.idCategoriaComision !== undefined
+        ? { IdCategoriaComision: input.idCategoriaComision }
+        : {}),
       ...(input.unidadMedida !== undefined ? { UnidadMedida: input.unidadMedida } : {}),
       ...(input.costoPromedio !== undefined ? { CostoPromedio: input.costoPromedio } : {}),
       PrecioVenta: precioVenta,

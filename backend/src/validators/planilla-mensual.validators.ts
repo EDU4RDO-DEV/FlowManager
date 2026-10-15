@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { optionalBooleanFromQuery, positiveInt } from './validation';
 
-const ajusteTipoSchema = z.enum(['BONO_META', 'VIATICO', 'DESCUENTO']);
+const ajusteTipoSchema = z.enum(['BONO_META']);
 
 const ajusteSchema = z.object({
   tipoAjuste: ajusteTipoSchema,
@@ -12,6 +12,12 @@ const ajusteSchema = z.object({
     .min(3, 'descripcion debe tener al menos 3 caracteres')
     .max(255, 'descripcion demasiado larga'),
   monto: z.number().finite('monto inválido').nonnegative('monto debe ser mayor o igual a 0'),
+});
+
+const payrollEmployeeInputSchema = z.object({
+  idEmpleado: positiveInt,
+  diasTrabajados: z.number().int().min(0).max(31).optional(),
+  ajustes: z.array(ajusteSchema).optional(),
 });
 
 export const planillaIdParamsSchema = z.object({
@@ -29,7 +35,7 @@ export const previewPayrollSchema = z.object({
   mes: z.number().int('mes debe ser entero').min(1, 'mes debe ser >= 1').max(12, 'mes debe ser <= 12'),
   anio: z.number().int('año debe ser entero').min(2000, 'año inválido').max(9999, 'año inválido'),
   idEmpleado: positiveInt.optional(),
-  ajustes: z.array(ajusteSchema).optional(),
+  empleados: z.array(payrollEmployeeInputSchema).optional(),
 });
 
 export const generatePayrollSchema = z.object({
@@ -38,7 +44,7 @@ export const generatePayrollSchema = z.object({
   previewId: z.string().length(64, 'previsualización inválida'),
   idEmpleado: positiveInt.optional(),
   observaciones: z.string().trim().max(255, 'observaciones demasiado largas').optional(),
-  ajustes: z.array(ajusteSchema).optional(),
+  empleados: z.array(payrollEmployeeInputSchema).optional(),
 });
 
 export const updatePayrollSchema = z
@@ -60,4 +66,8 @@ export const restorePayrollBodySchema = z.object({
 
 export const closePayrollBodySchema = z.object({
   idUsuarioModificador: positiveInt.optional(),
+});
+
+export const reopenPayrollBodySchema = z.object({
+  motivo: z.string().trim().min(5, 'motivo debe tener al menos 5 caracteres').max(255),
 });

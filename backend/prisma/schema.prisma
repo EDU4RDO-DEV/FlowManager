@@ -154,18 +154,22 @@ model Compra {
 }
 
 model ConfiguracionComision {
-  Id                   Int             @id(map: "PK__Configur__3214EC07C239FD38") @default(autoincrement())
+  Id                   Int                      @id(map: "PK__Configur__3214EC07C239FD38") @default(autoincrement())
   IdUsuario            Int
-  Nombre               String          @db.VarChar(100)
-  FechaRegistro        DateTime?       @default(now(), map: "DF__Configura__Fecha__68487DD7") @db.DateTime
+  Nombre               String                   @db.VarChar(100)
+  EsGeneral            Boolean                  @default(false, map: "DF_ConfiguracionComision_EsGeneral")
+  FechaRegistro        DateTime?                @default(now(), map: "DF__Configura__Fecha__68487DD7") @db.DateTime
   IdUsuarioModificador Int?
-  FechaModificacion    DateTime?       @db.DateTime
-  Anulado              Boolean         @default(false, map: "DF__Configura__Anula__693CA210")
+  FechaModificacion    DateTime?                @db.DateTime
+  Anulado              Boolean                  @default(false, map: "DF__Configura__Anula__693CA210")
   IdUsuarioAnulador    Int?
-  FechaAnulacion       DateTime?       @db.DateTime
-  Usuario              Usuario         @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_ConfiguracionComision_Usuario")
+  FechaAnulacion       DateTime?                @db.DateTime
+  Usuario              Usuario                  @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_ConfiguracionComision_Usuario")
   Empleado             Empleado[]
   ReglaComision        ReglaComision[]
+  ReglasPorCategoria   ReglaComisionCategoria[]
+
+  @@index([EsGeneral, Anulado], map: "IX_ConfiguracionComision_General_Activo")
 }
 
 model DetalleCompra {
@@ -344,27 +348,32 @@ model AjusteRuta {
 }
 
 model Empleado {
-  Id                      Int                    @id(map: "PK__Empleado__3214EC0707FA1428") @default(autoincrement())
+  Id                      Int                      @id(map: "PK__Empleado__3214EC0707FA1428") @default(autoincrement())
   IdEntidad               Int
   IdUsuario               Int
   IdUsuarioVinculado      Int?
   IdConfiguracionComision Int?
-  PuestoTrabajo           String                 @db.VarChar(255)
-  DescripcionPuesto       String?                @db.VarChar(255)
-  FechaContratacion       DateTime               @db.Date
-  FechaSalida             DateTime?              @db.Date
-  SueldoBase              Decimal                @db.Decimal(10, 2)
-  FechaRegistro           DateTime?              @default(now(), map: "DF__Empleado__FechaR__60A75C0F") @db.DateTime
+  IdTipoTrabajador        Int?
+  PuestoTrabajo           String                   @db.VarChar(255)
+  DescripcionPuesto       String?                  @db.VarChar(255)
+  FechaContratacion       DateTime                 @db.Date
+  FechaSalida             DateTime?                @db.Date
+  SueldoBase              Decimal                  @db.Decimal(10, 2)
+  FechaRegistro           DateTime?                @default(now(), map: "DF__Empleado__FechaR__60A75C0F") @db.DateTime
   IdUsuarioModificador    Int?
-  FechaModificacion       DateTime?              @db.DateTime
-  Anulado                 Boolean                @default(false, map: "DF__Empleado__Anulad__619B8048")
+  FechaModificacion       DateTime?                @db.DateTime
+  Anulado                 Boolean                  @default(false, map: "DF__Empleado__Anulad__619B8048")
   IdUsuarioAnulador       Int?
-  FechaAnulacion          DateTime?              @db.DateTime
-  ConfiguracionComision   ConfiguracionComision? @relation(fields: [IdConfiguracionComision], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Empleado_ConfiguracionComision")
-  Entidad                 Entidad                @relation(fields: [IdEntidad], references: [Id], onUpdate: NoAction, map: "FK_Empleado_Entidad")
-  UsuarioRegistro         Usuario                @relation("Empleado_IdUsuarioRegistroToUsuario", fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Empleado_Usuario")
-  UsuarioVinculado        Usuario?               @relation("Empleado_IdUsuarioVinculadoToUsuario", fields: [IdUsuarioVinculado], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Empleado_UsuarioVinculado")
+  FechaAnulacion          DateTime?                @db.DateTime
+  ConfiguracionComision   ConfiguracionComision?   @relation(fields: [IdConfiguracionComision], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Empleado_ConfiguracionComision")
+  TipoTrabajador          TipoTrabajador?          @relation(fields: [IdTipoTrabajador], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Empleado_TipoTrabajador")
+  Entidad                 Entidad                  @relation(fields: [IdEntidad], references: [Id], onUpdate: NoAction, map: "FK_Empleado_Entidad")
+  UsuarioRegistro         Usuario                  @relation("Empleado_IdUsuarioRegistroToUsuario", fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Empleado_Usuario")
+  UsuarioVinculado        Usuario?                 @relation("Empleado_IdUsuarioVinculadoToUsuario", fields: [IdUsuarioVinculado], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Empleado_UsuarioVinculado")
   PlanillaMensual         PlanillaMensual[]
+  HistorialSueldos        EmpleadoSueldoVigencia[]
+  Adelantos               AdelantoEmpleado[]
+  Faltantes               FaltanteEmpleado[]
 
   @@index([IdUsuarioVinculado, Anulado], map: "IX_Empleado_UsuarioVinculado_Activo")
 }
@@ -508,6 +517,7 @@ model GastoVehiculo {
 
 model InventarioItem {
   Id                                                                             Int                       @id(map: "PK__Inventar__3214EC07ABC0F2D5") @default(autoincrement())
+  IdCategoriaComision                                                            Int?
   IdUsuario                                                                      Int
   IdProveedor                                                                    Int
   Nombre                                                                         String                    @db.VarChar(255)
@@ -523,6 +533,7 @@ model InventarioItem {
   Anulado                                                                        Boolean                   @default(false, map: "DF__Inventari__Anula__02FC7413")
   IdUsuarioAnulador                                                              Int?
   FechaAnulacion                                                                 DateTime?                 @db.DateTime
+  CategoriaComision                                                              CategoriaComision?        @relation(fields: [IdCategoriaComision], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_InventarioItem_CategoriaComision")
   AjusteInventario                                                               AjusteInventario[]
   BitacoraInventario                                                             BitacoraInventario[]
   DetalleCompra                                                                  DetalleCompra[]
@@ -538,11 +549,13 @@ model InventarioItem {
   ReglaPrecioCliente                                                             ReglaPrecioCliente[]
   MovimientoEnvase                                                               MovimientoEnvase[]
   EnvaseClienteSaldo                                                             EnvaseClienteSaldo[]
-  OrdenesProduccionTerminadas                                                   OrdenProduccion[]         @relation("OrdenProduccion_ProductoTerminado")
-  DetallesOrdenProduccion                                                       DetalleOrdenProduccion[]
+  OrdenesProduccionTerminadas                                                    OrdenProduccion[]         @relation("OrdenProduccion_ProductoTerminado")
+  DetallesOrdenProduccion                                                        DetalleOrdenProduccion[]
   DespachosRuta                                                                  DespachoRutaDetalle[]
   DevolucionesRuta                                                               DevolucionRutaDetalle[]
   AjustesRuta                                                                    AjusteRuta[]
+
+  @@index([IdCategoriaComision, Anulado], map: "IX_InventarioItem_CategoriaComision_Activo")
 }
 
 model PagoVenta {
@@ -565,36 +578,36 @@ model PagoVenta {
 }
 
 model OrdenProduccion {
-  Id                          Int                      @id(map: "PK_OrdenProduccion") @default(autoincrement())
-  IdProductoTerminado         Int
-  NombreProductoTerminadoSnapshot String                @db.VarChar(255)
-  CantidadProducir            Float
-  UnidadMedidaSnapshot        String                   @db.VarChar(30)
-  Estado                      String                   @default("PENDIENTE", map: "DF_OrdenProduccion_Estado") @db.VarChar(20)
-  IdUsuario                   Int
-  FechaRegistro               DateTime?                @default(now(), map: "DF_OrdenProduccion_FechaRegistro") @db.DateTime
-  IdUsuarioModificador        Int?
-  FechaModificacion           DateTime?                @db.DateTime
-  Anulado                     Boolean                  @default(false, map: "DF_OrdenProduccion_Anulado")
-  IdUsuarioAnulador           Int?
-  FechaAnulacion              DateTime?                @db.DateTime
-  InventarioItem              InventarioItem           @relation("OrdenProduccion_ProductoTerminado", fields: [IdProductoTerminado], references: [Id], onUpdate: NoAction, map: "FK_OrdenProduccion_ProductoTerminado")
-  Usuario                     Usuario                  @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_OrdenProduccion_Usuario")
-  Detalles                    DetalleOrdenProduccion[]
+  Id                              Int                      @id(map: "PK_OrdenProduccion") @default(autoincrement())
+  IdProductoTerminado             Int
+  NombreProductoTerminadoSnapshot String                   @db.VarChar(255)
+  CantidadProducir                Float
+  UnidadMedidaSnapshot            String                   @db.VarChar(30)
+  Estado                          String                   @default("PENDIENTE", map: "DF_OrdenProduccion_Estado") @db.VarChar(20)
+  IdUsuario                       Int
+  FechaRegistro                   DateTime?                @default(now(), map: "DF_OrdenProduccion_FechaRegistro") @db.DateTime
+  IdUsuarioModificador            Int?
+  FechaModificacion               DateTime?                @db.DateTime
+  Anulado                         Boolean                  @default(false, map: "DF_OrdenProduccion_Anulado")
+  IdUsuarioAnulador               Int?
+  FechaAnulacion                  DateTime?                @db.DateTime
+  InventarioItem                  InventarioItem           @relation("OrdenProduccion_ProductoTerminado", fields: [IdProductoTerminado], references: [Id], onUpdate: NoAction, map: "FK_OrdenProduccion_ProductoTerminado")
+  Usuario                         Usuario                  @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_OrdenProduccion_Usuario")
+  Detalles                        DetalleOrdenProduccion[]
 
   @@index([Estado, Anulado, FechaRegistro], map: "IX_OrdenProduccion_Estado_Fecha")
 }
 
 model DetalleOrdenProduccion {
-  Id                    Int              @id(map: "PK_DetalleOrdenProduccion") @default(autoincrement())
-  IdOrdenProduccion     Int
-  IdInventarioItem      Int
-  NombreSnapshot        String           @db.VarChar(255)
-  CantidadPorUnidad     Float
-  CantidadTotal         Float
-  UnidadMedidaSnapshot  String           @db.VarChar(30)
-  OrdenProduccion       OrdenProduccion  @relation(fields: [IdOrdenProduccion], references: [Id], onUpdate: NoAction, map: "FK_DetalleOrdenProduccion_Orden")
-  InventarioItem        InventarioItem   @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_DetalleOrdenProduccion_InventarioItem")
+  Id                   Int             @id(map: "PK_DetalleOrdenProduccion") @default(autoincrement())
+  IdOrdenProduccion    Int
+  IdInventarioItem     Int
+  NombreSnapshot       String          @db.VarChar(255)
+  CantidadPorUnidad    Float
+  CantidadTotal        Float
+  UnidadMedidaSnapshot String          @db.VarChar(30)
+  OrdenProduccion      OrdenProduccion @relation(fields: [IdOrdenProduccion], references: [Id], onUpdate: NoAction, map: "FK_DetalleOrdenProduccion_Orden")
+  InventarioItem       InventarioItem  @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_DetalleOrdenProduccion_InventarioItem")
 
   @@unique([IdOrdenProduccion, IdInventarioItem], map: "UQ_DetalleOrdenProduccion_Orden_Item")
   @@index([IdInventarioItem], map: "IX_DetalleOrdenProduccion_InventarioItem")
@@ -613,6 +626,8 @@ model PlanillaMensual {
   TotalViaticos           Decimal                   @default(0, map: "DF__PlanillaM__Total__6EF57B66") @db.Decimal(10, 2)
   TotalDescuentos         Decimal                   @default(0, map: "DF__PlanillaM__Total__6FE99F9F") @db.Decimal(10, 2)
   SueldoLiquido           Decimal                   @db.Decimal(10, 2)
+  DiasTrabajados          Int?
+  TarifaViaticoAplicada   Decimal?                  @db.Decimal(10, 2)
   Observaciones           String?                   @db.VarChar(255)
   FechaRegistro           DateTime?                 @default(now(), map: "DF__PlanillaM__Fecha__70DDC3D8") @db.DateTime
   IdUsuarioModificador    Int?
@@ -623,32 +638,42 @@ model PlanillaMensual {
   Empleado                Empleado                  @relation(fields: [IdEmpleado], references: [Id], onUpdate: NoAction, map: "FK_PlanillaMensual_Empleado")
   PlanillaDetalleAjuste   PlanillaDetalleAjuste[]
   PlanillaDetalleComision PlanillaDetalleComision[]
+  Adelantos               AdelantoEmpleado[]
+  Faltantes               FaltanteEmpleado[]
+  Eventos                 PlanillaEvento[]
 
   @@index([IdEmpleado, Mes, Anio, Anulado], map: "IX_PlanillaMensual_EmpleadoPeriodoEstado")
   @@index([Mes, Anio, Anulado], map: "IX_PlanillaMensual_Periodo_Activo")
 }
 
 model PlanillaDetalleComision {
-  Id                      Int                             @id(map: "PK__Planilla__3214EC07DCOM001") @default(autoincrement())
-  IdPlanillaMensual       Int
-  IdInventarioItem        Int
-  IdConfiguracionComision Int?
-  IdReglaComision         Int?
-  CantidadMinimaAplicada  Float?
-  CantidadMaximaAplicada  Float?
-  Cantidad                Float
-  BaseCalculo             Decimal                         @db.Decimal(10, 2)
-  TipoCalculo             String                          @db.VarChar(30)
-  ValorAplicado           Decimal                         @db.Decimal(10, 4)
-  MontoComision           Decimal                         @db.Decimal(10, 2)
-  FechaRegistro           DateTime?                       @default(now(), map: "DF__PlanillaD__Fecha__74AE54BC") @db.DateTime
-  Anulado                 Boolean                         @default(false, map: "DF__PlanillaD__Anula__75A278F5")
-  IdUsuarioAnulador       Int?
-  FechaAnulacion          DateTime?                       @db.DateTime
-  InventarioItem          InventarioItem                  @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_PlanillaDetalleComision_InventarioItem")
-  PlanillaMensual         PlanillaMensual                 @relation(fields: [IdPlanillaMensual], references: [Id], onUpdate: NoAction, map: "FK_PlanillaDetalleComision_PlanillaMensual")
-  ReglaComision           ReglaComision?                  @relation(fields: [IdReglaComision], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_PlanillaDetalleComision_ReglaComision")
-  Fuentes                 PlanillaDetalleComisionFuente[]
+  Id                        Int                             @id(map: "PK__Planilla__3214EC07DCOM001") @default(autoincrement())
+  IdPlanillaMensual         Int
+  IdInventarioItem          Int
+  IdConfiguracionComision   Int?
+  IdReglaComision           Int?
+  IdCategoriaComision       Int?
+  IdReglaComisionCategoria  Int?
+  BaseCategoriaAplicada     Decimal?                        @db.Decimal(12, 2)
+  CategoriaComisionSnapshot String?                         @db.VarChar(50)
+  NombreProductoSnapshot    String?                         @db.VarChar(255)
+  CantidadMinimaAplicada    Float?
+  CantidadMaximaAplicada    Float?
+  Cantidad                  Float
+  BaseCalculo               Decimal                         @db.Decimal(10, 2)
+  TipoCalculo               String                          @db.VarChar(30)
+  ValorAplicado             Decimal                         @db.Decimal(10, 4)
+  MontoComision             Decimal                         @db.Decimal(10, 2)
+  FechaRegistro             DateTime?                       @default(now(), map: "DF__PlanillaD__Fecha__74AE54BC") @db.DateTime
+  Anulado                   Boolean                         @default(false, map: "DF__PlanillaD__Anula__75A278F5")
+  IdUsuarioAnulador         Int?
+  FechaAnulacion            DateTime?                       @db.DateTime
+  InventarioItem            InventarioItem                  @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_PlanillaDetalleComision_InventarioItem")
+  CategoriaComision         CategoriaComision?              @relation(fields: [IdCategoriaComision], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_PlanillaDetalleComision_CategoriaComision")
+  PlanillaMensual           PlanillaMensual                 @relation(fields: [IdPlanillaMensual], references: [Id], onUpdate: NoAction, map: "FK_PlanillaDetalleComision_PlanillaMensual")
+  ReglaComision             ReglaComision?                  @relation(fields: [IdReglaComision], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_PlanillaDetalleComision_ReglaComision")
+  ReglaComisionCategoria    ReglaComisionCategoria?         @relation(fields: [IdReglaComisionCategoria], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_PlanillaDetalleComision_ReglaCategoria")
+  Fuentes                   PlanillaDetalleComisionFuente[]
 
   @@index([IdPlanillaMensual, Anulado], map: "IX_PlanillaDetalleComision_Planilla_Activo")
 }
@@ -731,6 +756,125 @@ model ReglaComision {
   ConfiguracionComision   ConfiguracionComision     @relation(fields: [IdConfiguracionComision], references: [Id], onUpdate: NoAction, map: "FK_ReglaComision_ConfiguracionComision")
   InventarioItem          InventarioItem            @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_ReglaComision_InventarioItem")
   PlanillaDetalleComision PlanillaDetalleComision[]
+}
+
+model TipoTrabajador {
+  Id        Int        @id(map: "PK_TipoTrabajador") @default(autoincrement())
+  Clave     String     @unique(map: "UQ_TipoTrabajador_Clave") @db.VarChar(30)
+  Nombre    String     @db.VarChar(100)
+  Activo    Boolean    @default(true, map: "DF_TipoTrabajador_Activo")
+  Empleados Empleado[]
+}
+
+model EmpleadoSueldoVigencia {
+  Id                  Int       @id(map: "PK_EmpleadoSueldoVigencia") @default(autoincrement())
+  IdEmpleado          Int
+  SueldoBase          Decimal   @db.Decimal(10, 2)
+  FechaInicioVigencia DateTime  @db.Date
+  FechaFinVigencia    DateTime? @db.Date
+  IdUsuarioRegistro   Int?
+  FechaRegistro       DateTime  @default(now(), map: "DF_EmpleadoSueldoVigencia_FechaRegistro") @db.DateTime
+  Empleado            Empleado  @relation(fields: [IdEmpleado], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_EmpleadoSueldoVigencia_Empleado")
+  Usuario             Usuario?  @relation("EmpleadoSueldoVigencia_Usuario", fields: [IdUsuarioRegistro], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_EmpleadoSueldoVigencia_Usuario")
+
+  @@unique([IdEmpleado, FechaInicioVigencia], map: "UQ_EmpleadoSueldoVigencia_Empleado_Inicio")
+  @@index([IdEmpleado, FechaInicioVigencia, FechaFinVigencia], map: "IX_EmpleadoSueldoVigencia_Empleado_Periodo")
+}
+
+model CategoriaComision {
+  Id               Int                       @id(map: "PK_CategoriaComision") @default(autoincrement())
+  Clave            String                    @unique(map: "UQ_CategoriaComision_Clave") @db.VarChar(30)
+  Nombre           String                    @db.VarChar(100)
+  Activa           Boolean                   @default(true, map: "DF_CategoriaComision_Activa")
+  InventarioItems  InventarioItem[]
+  Reglas           ReglaComisionCategoria[]
+  DetallesPlanilla PlanillaDetalleComision[]
+}
+
+model ReglaComisionCategoria {
+  Id                      Int                       @id(map: "PK_ReglaComisionCategoria") @default(autoincrement())
+  IdConfiguracionComision Int
+  IdCategoriaComision     Int
+  MontoMinimoVenta        Decimal                   @db.Decimal(12, 2)
+  Porcentaje              Decimal                   @db.Decimal(5, 2)
+  FechaInicioVigencia     DateTime                  @db.Date
+  FechaFinVigencia        DateTime?                 @db.Date
+  FechaRegistro           DateTime                  @default(now(), map: "DF_ReglaComisionCategoria_FechaRegistro") @db.DateTime
+  IdUsuarioRegistro       Int
+  Anulado                 Boolean                   @default(false, map: "DF_ReglaComisionCategoria_Anulado")
+  ConfiguracionComision   ConfiguracionComision     @relation(fields: [IdConfiguracionComision], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_ReglaComisionCategoria_Configuracion")
+  CategoriaComision       CategoriaComision         @relation(fields: [IdCategoriaComision], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_ReglaComisionCategoria_Categoria")
+  Usuario                 Usuario                   @relation("ReglaComisionCategoria_Usuario", fields: [IdUsuarioRegistro], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_ReglaComisionCategoria_Usuario")
+  DetallesPlanilla        PlanillaDetalleComision[]
+
+  @@index([IdConfiguracionComision, IdCategoriaComision, FechaInicioVigencia, Anulado], map: "IX_ReglaComisionCategoria_Vigencia")
+}
+
+model AdelantoEmpleado {
+  Id                Int              @id(map: "PK_AdelantoEmpleado") @default(autoincrement())
+  IdEmpleado        Int
+  IdUsuarioRegistro Int
+  IdPlanillaMensual Int?
+  Fecha             DateTime         @db.Date
+  Monto             Decimal          @db.Decimal(10, 2)
+  Observacion       String?          @db.VarChar(255)
+  FechaRegistro     DateTime         @default(now(), map: "DF_AdelantoEmpleado_FechaRegistro") @db.DateTime
+  Anulado           Boolean          @default(false, map: "DF_AdelantoEmpleado_Anulado")
+  Empleado          Empleado         @relation(fields: [IdEmpleado], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_AdelantoEmpleado_Empleado")
+  Usuario           Usuario          @relation("AdelantoEmpleado_Usuario", fields: [IdUsuarioRegistro], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_AdelantoEmpleado_Usuario")
+  PlanillaMensual   PlanillaMensual? @relation(fields: [IdPlanillaMensual], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_AdelantoEmpleado_Planilla")
+
+  @@index([IdEmpleado, Fecha, Anulado], map: "IX_AdelantoEmpleado_Empleado_Fecha")
+  @@index([IdPlanillaMensual], map: "IX_AdelantoEmpleado_Planilla")
+}
+
+model FaltanteEmpleado {
+  Id                Int              @id(map: "PK_FaltanteEmpleado") @default(autoincrement())
+  IdEmpleado        Int
+  IdUsuarioRegistro Int
+  IdUsuarioRevision Int?
+  IdPlanillaMensual Int?
+  Fecha             DateTime         @db.Date
+  Monto             Decimal          @db.Decimal(10, 2)
+  Observacion       String?          @db.VarChar(255)
+  Estado            String           @default("PENDIENTE", map: "DF_FaltanteEmpleado_Estado") @db.VarChar(20)
+  MotivoRevision    String?          @db.VarChar(255)
+  FechaRevision     DateTime?        @db.DateTime
+  FechaRegistro     DateTime         @default(now(), map: "DF_FaltanteEmpleado_FechaRegistro") @db.DateTime
+  Anulado           Boolean          @default(false, map: "DF_FaltanteEmpleado_Anulado")
+  Empleado          Empleado         @relation(fields: [IdEmpleado], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_FaltanteEmpleado_Empleado")
+  UsuarioRegistro   Usuario          @relation("FaltanteEmpleado_UsuarioRegistro", fields: [IdUsuarioRegistro], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_FaltanteEmpleado_UsuarioRegistro")
+  UsuarioRevision   Usuario?         @relation("FaltanteEmpleado_UsuarioRevision", fields: [IdUsuarioRevision], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_FaltanteEmpleado_UsuarioRevision")
+  PlanillaMensual   PlanillaMensual? @relation(fields: [IdPlanillaMensual], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_FaltanteEmpleado_Planilla")
+
+  @@index([IdEmpleado, Fecha, Estado, Anulado], map: "IX_FaltanteEmpleado_Empleado_Fecha_Estado")
+  @@index([IdPlanillaMensual], map: "IX_FaltanteEmpleado_Planilla")
+}
+
+model TarifaViatico {
+  Id                  Int       @id(map: "PK_TarifaViatico") @default(autoincrement())
+  TarifaDiaria        Decimal   @db.Decimal(10, 2)
+  FechaInicioVigencia DateTime  @db.Date
+  FechaFinVigencia    DateTime? @db.Date
+  IdUsuarioRegistro   Int?
+  FechaRegistro       DateTime  @default(now(), map: "DF_TarifaViatico_FechaRegistro") @db.DateTime
+  Usuario             Usuario?  @relation("TarifaViatico_Usuario", fields: [IdUsuarioRegistro], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_TarifaViatico_Usuario")
+
+  @@index([FechaInicioVigencia, FechaFinVigencia], map: "IX_TarifaViatico_Vigencia")
+}
+
+model PlanillaEvento {
+  Id                Int             @id(map: "PK_PlanillaEvento") @default(autoincrement())
+  IdPlanillaMensual Int
+  IdUsuario         Int
+  Accion            String          @db.VarChar(30)
+  Motivo            String?         @db.VarChar(255)
+  Detalle           String?         @db.VarChar(Max)
+  FechaRegistro     DateTime        @default(now(), map: "DF_PlanillaEvento_FechaRegistro") @db.DateTime
+  PlanillaMensual   PlanillaMensual @relation(fields: [IdPlanillaMensual], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_PlanillaEvento_Planilla")
+  Usuario           Usuario         @relation("PlanillaEvento_Usuario", fields: [IdUsuario], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_PlanillaEvento_Usuario")
+
+  @@index([IdPlanillaMensual, FechaRegistro], map: "IX_PlanillaEvento_Planilla_Fecha")
 }
 
 model ReglaPrecioCliente {
@@ -942,6 +1086,13 @@ model Usuario {
   ReservasProformaConsumidas                                        ReservaProforma[]          @relation("ReservaProforma_Consumo")
   ReservasProformaLiberadas                                         ReservaProforma[]          @relation("ReservaProforma_Liberacion")
   RutaSesion_RutaSesion_IdUsuarioCierreToUsuario                    RutaSesion[]               @relation("RutaSesion_IdUsuarioCierreToUsuario")
+  HistorialSueldosRegistrados                                       EmpleadoSueldoVigencia[]   @relation("EmpleadoSueldoVigencia_Usuario")
+  AdelantosRegistrados                                              AdelantoEmpleado[]         @relation("AdelantoEmpleado_Usuario")
+  FaltantesRegistrados                                              FaltanteEmpleado[]         @relation("FaltanteEmpleado_UsuarioRegistro")
+  FaltantesResueltos                                                FaltanteEmpleado[]         @relation("FaltanteEmpleado_UsuarioRevision")
+  TarifasViaticoRegistradas                                         TarifaViatico[]            @relation("TarifaViatico_Usuario")
+  EventosPlanilla                                                   PlanillaEvento[]           @relation("PlanillaEvento_Usuario")
+  ReglasComisionCategoriaRegistradas                                ReglaComisionCategoria[]   @relation("ReglaComisionCategoria_Usuario")
 
   @@index([Correo, Anulado], map: "IX_Usuario_Correo_Activo")
   @@index([IdRol, Anulado], map: "IX_Usuario_Rol_Activo")

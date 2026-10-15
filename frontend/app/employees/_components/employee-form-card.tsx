@@ -9,6 +9,7 @@ import type { UserDto } from "@/types/users";
 export type EmployeeFormValues = {
   idUsuarioVinculado: string;
   idConfiguracionComision: string;
+  idTipoTrabajador: string;
   nombreCompleto: string;
   sexo: string;
   fechaNacimiento: string;
@@ -23,12 +24,14 @@ export type EmployeeFormValues = {
   fechaContratacion: string;
   fechaSalida: string;
   sueldoBase: string;
+  fechaInicioVigenciaSueldo: string;
 };
 
 type EmployeeFormCardProps = {
   title: string;
   users: UserDto[];
   commissionConfigs: Array<{ id: number; nombre: string }>;
+  workerTypes: Array<{ id: number; clave: string; nombre: string }>;
   form: EmployeeFormValues;
   saving: boolean;
   uploadingImage: boolean;
@@ -63,6 +66,7 @@ export function EmployeeFormCard({
   title,
   users,
   commissionConfigs,
+  workerTypes,
   form,
   saving,
   uploadingImage,
@@ -268,6 +272,21 @@ export function EmployeeFormCard({
               </div>
 
               <div className="space-y-1.5">
+                <Label htmlFor="employee-worker-type">Tipo de trabajador</Label>
+                <select
+                  id="employee-worker-type"
+                  className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
+                  value={form.idTipoTrabajador}
+                  onChange={(event) => onChange({ ...form, idTipoTrabajador: event.target.value })}
+                >
+                  <option value="">Selecciona un tipo</option>
+                  {workerTypes.map((type) => (
+                    <option key={type.id} value={String(type.id)}>{type.nombre}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
                 <Label htmlFor="sueldo">Sueldo base</Label>
                 <Input
                   id="sueldo"
@@ -277,6 +296,17 @@ export function EmployeeFormCard({
                   value={form.sueldoBase}
                   onChange={(event) => onChange({ ...form, sueldoBase: event.target.value })}
                   placeholder="0.00"
+                  className="h-10 bg-background"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="employee-salary-effective-date">Vigente desde (cambio salarial)</Label>
+                <Input
+                  id="employee-salary-effective-date"
+                  type="date"
+                  value={form.fechaInicioVigenciaSueldo}
+                  onChange={(event) => onChange({ ...form, fechaInicioVigenciaSueldo: event.target.value })}
                   className="h-10 bg-background"
                 />
               </div>

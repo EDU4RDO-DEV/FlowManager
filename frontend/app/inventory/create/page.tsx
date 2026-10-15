@@ -12,6 +12,7 @@ import { useAuth } from "@/components/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
+import { listCommissionCategories } from "@/services/commissions.service";
 import { createProduct, uploadProductImage } from "@/services/products.service";
 import { listProviders } from "@/services/providers.service";
 import type { ProviderDto } from "@/types/providers";
@@ -24,12 +25,14 @@ const EMPTY_FORM: ProductFormValues = {
   costoPromedio: "",
   precioVenta: "",
   rutaImagen: "",
+  idCategoriaComision: "",
 };
 
 export default function CreateProductPage() {
   const router = useRouter();
   const { user } = useAuth();
   const [providers, setProviders] = useState<ProviderDto[]>([]);
+  const [commissionCategories, setCommissionCategories] = useState<Array<{ id: number; clave: string; nombre: string }>>([]);
   const [loadingProviders, setLoadingProviders] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -39,8 +42,9 @@ export default function CreateProductPage() {
     async function loadProviders() {
       setLoadingProviders(true);
       try {
-        const data = await listProviders();
+        const [data, categories] = await Promise.all([listProviders(), listCommissionCategories()]);
         setProviders(data);
+        setCommissionCategories(categories);
       } catch (error) {
         toast.error(getApiErrorMessage(error, "No se pudo cargar la lista de proveedores."));
       } finally {
@@ -100,6 +104,7 @@ export default function CreateProductPage() {
         costoPromedio,
         precioVenta: isFinishedProduct ? precioVenta : undefined,
         rutaImagen: form.rutaImagen.trim() || undefined,
+        idCategoriaComision: form.idCategoriaComision ? Number(form.idCategoriaComision) : null,
       });
 
       toast.success("Producto creado correctamente.");
@@ -141,6 +146,7 @@ export default function CreateProductPage() {
               title="Nuevo producto"
               form={form}
               providers={providers}
+              commissionCategories={commissionCategories}
               saving={saving}
               uploadingImage={uploadingImage}
               onChange={setForm}

@@ -54,6 +54,7 @@ describe('Fase 12 - homologación estados/catálogos (MetodoPago y Sexo)', () =>
   it('createEmployeeSchema restringe entidad.sexo a M o F', () => {
     const base = {
       idUsuario: 1,
+      idTipoTrabajador: 1,
       puestoTrabajo: 'Chofer',
       fechaContratacion: '2026-01-01',
       sueldoBase: 3000,

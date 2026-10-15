@@ -3,11 +3,23 @@ import { prisma } from '../config/prisma';
 type CreateComisionConfigInput = {
   idUsuario: number;
   nombre: string;
+  esGeneral?: boolean;
+  fechaInicioVigencia?: string;
 };
 
 type UpdateComisionConfigInput = {
   nombre?: string;
+  esGeneral?: boolean;
   idUsuarioModificador?: number;
+};
+
+type CategoryCommissionScheduleInput = {
+  idUsuario: number;
+  fechaInicioVigencia: string;
+  categorias: Array<{
+    idCategoriaComision: number;
+    reglas: Array<{ montoMinimoVenta: number; porcentaje: number }>;
+  }>;
 };
 
 type CreateReglaComisionInput = {
@@ -33,6 +45,7 @@ function toComisionConfigDto(config: {
   Id: number;
   IdUsuario: number;
   Nombre: string;
+  EsGeneral: boolean;
   FechaRegistro: Date | null;
   IdUsuarioModificador: number | null;
   FechaModificacion: Date | null;
@@ -48,6 +61,7 @@ function toComisionConfigDto(config: {
     id: config.Id,
     idUsuario: config.IdUsuario,
     nombre: config.Nombre,
+    esGeneral: config.EsGeneral,
     fechaRegistro: config.FechaRegistro,
     idUsuarioModificador: config.IdUsuarioModificador,
     fechaModificacion: config.FechaModificacion,
@@ -261,6 +275,19 @@ export async function getComisionConfigById(id: number) {
         },
         orderBy: [{ IdInventarioItem: 'asc' }, { CantidadMinima: 'asc' }],
       },
+      ReglasPorCategoria: {
+        where: { Anulado: false },
+        include: {
+          CategoriaComision: {
+            select: { Id: true, Clave: true, Nombre: true },
+          },
+        },
+        orderBy: [
+          { IdCategoriaComision: 'asc' },
+          { FechaInicioVigencia: 'desc' },
+          { MontoMinimoVenta: 'asc' },
+        ],
+          },
     },
   });
 
@@ -271,19 +298,105 @@ export async function getComisionConfigById(id: number) {
   return {
     ...toComisionConfigDto(config),
     reglas: config.ReglaComision.map(toReglaComisionDto),
+    reglasPorCategoria: config.ReglasPorCategoria.map((rule) => ({
+      id: rule.Id,
+      idCategoriaComision: rule.IdCategoriaComision,
+      categoria: {
+        id: rule.CategoriaComision.Id,
+        clave: rule.CategoriaComision.Clave,
+        nombre: rule.CategoriaComision.Nombre,
+      },
+      montoMinimoVenta: Number(rule.MontoMinimoVenta),
+      porcentaje: Number(rule.Porcentaje),
+      fechaInicioVigencia: rule.FechaInicioVigencia,
+      fechaFinVigencia: rule.FechaFinVigencia,
+    })),
   };
+}
+
+function dateOnly(value: string): Date {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error('fechaInicioVigencia inválida');
+  }
+  return date;
+}
+
+const DEFAULT_CATEGORY_RATES = {
+  GARRAFONES: [{ montoMinimoVenta: 0, porcentaje: 3 }],
+  OTROS: [
+    { montoMinimoVenta: 0, porcentaje: 3.09 },
+    { montoMinimoVenta: 30000, porcentaje: 3.1 },
+    ...Array.from({ length: 12 }, (_, index) => ({
+      montoMinimoVenta: 35000 + index * 5000,
+      porcentaje: 3.11 + index * 0.01,
+    })),
+  ],
+};
+
+async function seedDefaultCategoryRates(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  idConfiguracionComision: number,
+  idUsuario: number,
+  fechaInicioVigencia: Date,
+) {
+  const categories = await tx.categoriaComision.findMany({
+    where: { Clave: { in: Object.keys(DEFAULT_CATEGORY_RATES) }, Activa: true },
+    select: { Id: true, Clave: true },
+  });
+  const categoryIds = new Map(categories.map((category) => [category.Clave, category.Id]));
+  if (categoryIds.size !== Object.keys(DEFAULT_CATEGORY_RATES).length) {
+    throw new Error('Faltan las categorías de comisión iniciales.');
+  }
+
+  const rows = Object.entries(DEFAULT_CATEGORY_RATES).flatMap(([key, rates]) => {
+    const idCategoriaComision = categoryIds.get(key);
+    if (!idCategoriaComision) {
+      throw new Error('Faltan las categorías de comisión iniciales.');
+    }
+    return rates.map((rate) => ({
+      IdConfiguracionComision: idConfiguracionComision,
+      IdCategoriaComision: idCategoriaComision,
+      MontoMinimoVenta: rate.montoMinimoVenta,
+      Porcentaje: Number(rate.porcentaje.toFixed(2)),
+      FechaInicioVigencia: fechaInicioVigencia,
+      IdUsuarioRegistro: idUsuario,
+      Anulado: false,
+    }));
+  });
+  await tx.reglaComisionCategoria.createMany({ data: rows });
 }
 
 export async function createComisionConfig(input: CreateComisionConfigInput) {
   await validateUsuarioExists(input.idUsuario);
   await validateConfiguracionNameAvailable(input.nombre);
 
-  const created = await prisma.configuracionComision.create({
-    data: {
-      IdUsuario: input.idUsuario,
-      Nombre: input.nombre,
-      Anulado: false,
-    },
+  if (input.esGeneral) {
+    const existingGeneral = await prisma.configuracionComision.findFirst({
+      where: { EsGeneral: true, Anulado: false },
+      select: { Id: true },
+    });
+    if (existingGeneral) {
+      throw new Error('Ya existe una configuración general de comisión activa.');
+    }
+  }
+
+  const created = await prisma.$transaction(async (tx) => {
+    const config = await tx.configuracionComision.create({
+      data: {
+        IdUsuario: input.idUsuario,
+        Nombre: input.nombre,
+        EsGeneral: input.esGeneral ?? false,
+        Anulado: false,
+      },
+    });
+    if (input.esGeneral) {
+      const effectiveDate = input.fechaInicioVigencia
+        ? dateOnly(input.fechaInicioVigencia)
+        : new Date(new Date().toISOString().slice(0, 10));
+      await seedDefaultCategoryRates(tx, config.Id, input.idUsuario, effectiveDate);
+    }
+    return config;
   });
 
   return toComisionConfigDto(created);
@@ -292,7 +405,7 @@ export async function createComisionConfig(input: CreateComisionConfigInput) {
 export async function updateComisionConfig(id: number, input: UpdateComisionConfigInput) {
   const existing = await prisma.configuracionComision.findFirst({
     where: { Id: id, Anulado: false },
-    select: { Id: true },
+    select: { Id: true, EsGeneral: true },
   });
 
   if (!existing) {
@@ -306,11 +419,21 @@ export async function updateComisionConfig(id: number, input: UpdateComisionConf
   if (input.nombre !== undefined) {
     await validateConfiguracionNameAvailable(input.nombre, id);
   }
+  if (input.esGeneral && !existing.EsGeneral) {
+    const existingGeneral = await prisma.configuracionComision.findFirst({
+      where: { EsGeneral: true, Anulado: false, NOT: { Id: id } },
+      select: { Id: true },
+    });
+    if (existingGeneral) {
+      throw new Error('Ya existe una configuración general de comisión activa.');
+    }
+  }
 
   const updated = await prisma.configuracionComision.update({
     where: { Id: id },
     data: {
       ...(input.nombre !== undefined ? { Nombre: input.nombre } : {}),
+      ...(input.esGeneral !== undefined ? { EsGeneral: input.esGeneral } : {}),
       ...(input.idUsuarioModificador !== undefined
         ? { IdUsuarioModificador: input.idUsuarioModificador }
         : {}),
@@ -354,6 +477,15 @@ export async function deleteComisionConfig(id: number, idUsuarioAnulador?: numbe
         Anulado: true,
         ...(idUsuarioAnulador !== undefined ? { IdUsuarioAnulador: idUsuarioAnulador } : {}),
         FechaAnulacion: new Date(),
+      },
+    });
+    await tx.reglaComisionCategoria.updateMany({
+      where: {
+        IdConfiguracionComision: id,
+        Anulado: false,
+      },
+      data: {
+        Anulado: true,
       },
     });
   });
@@ -414,6 +546,95 @@ export async function listReglasByComisionConfig(
   });
 
   return reglas.map(toReglaComisionDto);
+}
+
+export async function listCommissionCategories() {
+  return prisma.categoriaComision.findMany({
+    where: { Activa: true },
+    select: { Id: true, Clave: true, Nombre: true },
+    orderBy: { Id: 'asc' },
+  });
+}
+
+export async function setCategoryCommissionSchedule(
+  idConfiguracionComision: number,
+  input: CategoryCommissionScheduleInput,
+) {
+  await validateConfiguracionExists(idConfiguracionComision);
+  await validateUsuarioExists(input.idUsuario);
+  const effectiveDate = dateOnly(input.fechaInicioVigencia);
+  const categories = await listCommissionCategories();
+  const categoryIds = new Set(categories.map((category) => category.Id));
+  if (
+    input.categorias.length !== categoryIds.size ||
+    new Set(input.categorias.map((category) => category.idCategoriaComision)).size !== categoryIds.size ||
+    input.categorias.some((category) => !categoryIds.has(category.idCategoriaComision))
+  ) {
+    throw new Error('Debe configurar exactamente una escala para cada categoría de comisión activa.');
+  }
+
+  for (const category of input.categorias) {
+    if (
+      category.reglas.length === 0 ||
+      category.reglas[0].montoMinimoVenta !== 0 ||
+      category.reglas.some((rule, index) =>
+        rule.montoMinimoVenta < 0 ||
+        rule.porcentaje <= 0 ||
+        rule.porcentaje > 100 ||
+        (index > 0 && rule.montoMinimoVenta <= category.reglas[index - 1].montoMinimoVenta),
+      )
+    ) {
+      throw new Error('Cada escala debe comenzar en Q0 y tener umbrales crecientes y porcentajes válidos.');
+    }
+  }
+
+  const categoryIdList = input.categorias.map((category) => category.idCategoriaComision);
+  const futureRules = await prisma.reglaComisionCategoria.findFirst({
+    where: {
+      IdConfiguracionComision: idConfiguracionComision,
+      IdCategoriaComision: { in: categoryIdList },
+      Anulado: false,
+      FechaInicioVigencia: { gte: effectiveDate },
+    },
+    select: { Id: true },
+  });
+  if (futureRules) {
+    throw new Error('Ya existe una escala con vigencia igual o posterior a la fecha indicada.');
+  }
+
+  const previousDate = new Date(effectiveDate);
+  previousDate.setUTCDate(previousDate.getUTCDate() - 1);
+  await prisma.$transaction(async (tx) => {
+    await tx.reglaComisionCategoria.updateMany({
+      where: {
+        IdConfiguracionComision: idConfiguracionComision,
+        IdCategoriaComision: { in: categoryIdList },
+        Anulado: false,
+        FechaInicioVigencia: { lt: effectiveDate },
+        OR: [
+          { FechaFinVigencia: null },
+          { FechaFinVigencia: { gte: effectiveDate } },
+        ],
+      },
+      data: { FechaFinVigencia: previousDate },
+    });
+
+    await tx.reglaComisionCategoria.createMany({
+      data: input.categorias.flatMap((category) =>
+        category.reglas.map((rule) => ({
+          IdConfiguracionComision: idConfiguracionComision,
+          IdCategoriaComision: category.idCategoriaComision,
+          MontoMinimoVenta: rule.montoMinimoVenta,
+          Porcentaje: rule.porcentaje,
+          FechaInicioVigencia: effectiveDate,
+          IdUsuarioRegistro: input.idUsuario,
+          Anulado: false,
+        })),
+      ),
+    });
+  });
+
+  return getComisionConfigById(idConfiguracionComision);
 }
 
 export async function createReglaComision(

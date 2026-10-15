@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { ProviderDto } from "@/types/providers";
 import type { ProductDto } from "@/types/products";
+import type { CommissionCategoryDto } from "@/types/commissions";
 
 export type ProductFormValues = {
   nombre: string;
@@ -25,12 +26,14 @@ export type ProductFormValues = {
   costoPromedio: string;
   precioVenta: string;
   rutaImagen: string;
+  idCategoriaComision: string;
 };
 
 type ProductFormCardProps = {
   title: string;
   form: ProductFormValues;
   providers: ProviderDto[];
+  commissionCategories: CommissionCategoryDto[];
   saving: boolean;
   uploadingImage: boolean;
   onChange: (next: ProductFormValues) => void;
@@ -71,6 +74,7 @@ export function ProductFormCard({
   title,
   form,
   providers,
+  commissionCategories,
   saving,
   uploadingImage,
   onChange,
@@ -102,6 +106,26 @@ export function ProductFormCard({
               placeholder="Ej. Garrafon 18L"
               className="bg-background"
             />
+          </div>
+
+          <div className="space-y-1.5 md:col-span-2">
+            <Label htmlFor="product-commission-category">Clasificación de comisión (asignación manual)</Label>
+            <select
+              id="product-commission-category"
+              value={form.idCategoriaComision}
+              onChange={(event) => onChange({ ...form, idCategoriaComision: event.target.value })}
+              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
+            >
+              <option value="">Sin clasificar</option>
+              {commissionCategories.map((category) => (
+                <option key={category.id} value={String(category.id)}>
+                  {category.nombre}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              No se asigna automáticamente según el nombre o la categoría de inventario.
+            </p>
           </div>
 
           <div className="space-y-1.5">

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { finitePositiveNumber, optionalBooleanFromQuery, positiveInt } from './validation';
+import { dateString, finitePositiveNumber, optionalBooleanFromQuery, positiveInt } from './validation';
 
 const tipoCalculoSchema = z.enum(['PORCENTAJE_VENTA', 'MONTO_POR_UNIDAD']);
 
@@ -27,6 +27,8 @@ export const createComisionConfigSchema = z.object({
     .trim()
     .min(3, 'nombre debe tener al menos 3 caracteres')
     .max(100, 'nombre demasiado largo'),
+  esGeneral: z.boolean().optional(),
+  fechaInicioVigencia: dateString.optional(),
 });
 
 export const updateComisionConfigSchema = z
@@ -38,10 +40,23 @@ export const updateComisionConfigSchema = z
       .max(100, 'nombre demasiado largo')
       .optional(),
     idUsuarioModificador: positiveInt.optional(),
+    esGeneral: z.boolean().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: 'Debe enviar al menos un campo para actualizar',
   });
+
+export const categoryCommissionScheduleSchema = z.object({
+  idUsuario: positiveInt,
+  fechaInicioVigencia: dateString,
+  categorias: z.array(z.object({
+    idCategoriaComision: positiveInt,
+    reglas: z.array(z.object({
+      montoMinimoVenta: z.number().finite().nonnegative(),
+      porcentaje: z.number().finite().positive().max(100),
+    })).min(1),
+  })).min(1),
+});
 
 export const deleteComisionConfigBodySchema = z.object({
   idUsuarioAnulador: positiveInt.optional(),

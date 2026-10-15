@@ -13,7 +13,20 @@ import type {
   UpdateCommissionConfigPayload,
   UpdateCommissionRulePayload,
   CommissionRuleDto,
+  CommissionCategoryDto,
+  CommissionCategorySchedulePayload,
 } from "@/types/commissions";
+
+export async function listCommissionCategories(): Promise<CommissionCategoryDto[]> {
+  const { data } = await api.get<ApiResponse<Array<{ Id: number; Clave: string; Nombre: string }>>>(
+    "/api/planilla/comisiones/categorias",
+  );
+  return (data.data ?? []).map((category) => ({
+    id: category.Id,
+    clave: category.Clave,
+    nombre: category.Nombre,
+  }));
+}
 
 export async function listCommissionConfigs(): Promise<CommissionConfigDto[]> {
   const { data } = await api.get<CommissionsListResponse>("/api/planilla/comisiones");
@@ -52,6 +65,13 @@ export async function updateCommissionConfig(
     throw new Error(data.message || "Respuesta invalida al actualizar configuración");
   }
   return data.data;
+}
+
+export async function setCommissionCategorySchedule(
+  configId: number,
+  payload: CommissionCategorySchedulePayload,
+): Promise<void> {
+  await api.put(`/api/planilla/comisiones/${configId}/reglas-categoria`, payload);
 }
 
 export async function deleteCommissionConfig(

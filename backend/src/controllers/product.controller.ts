@@ -124,6 +124,7 @@ export async function createProductController(req: Request, res: Response) {
     if (
       message === 'Usuario no existe' ||
       message === 'Proveedor no existe' ||
+      message === 'Categoría de comisión no existe' ||
       message === 'Ya existe un producto activo con el mismo nombre y categoría'
     ) {
       return res.status(409).json({ ok: false, message });
@@ -172,6 +173,7 @@ export async function updateProductController(req: Request, res: Response) {
     if (
       message === 'Usuario no existe' ||
       message === 'Proveedor no existe' ||
+      message === 'Categoría de comisión no existe' ||
       message === 'Ya existe un producto activo con el mismo nombre y categoría'
     ) {
       return res.status(409).json({ ok: false, message });

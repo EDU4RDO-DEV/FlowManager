@@ -1,7 +1,7 @@
 import type { ApiResponse } from "@/types/auth";
 
 export type PayrollState = "BORRADOR" | "CERRADA";
-export type PayrollAdjustmentType = "BONO_META" | "VIATICO" | "DESCUENTO";
+export type PayrollAdjustmentType = "BONO_META" | "ADELANTO" | "FALTANTE";
 
 export interface PayrollDto {
   id: number;
@@ -14,6 +14,8 @@ export interface PayrollDto {
   totalComisiones: number;
   totalBonosMetas: number;
   totalViaticos: number;
+  diasTrabajados: number;
+  tarifaViaticoAplicada: number | null;
   totalDescuentos: number;
   sueldoLiquido: number;
   observaciones: string | null;
@@ -38,6 +40,10 @@ export interface PayrollCommissionDetailDto {
   idInventarioItem: number;
   idConfiguracionComision: number | null;
   idReglaComision: number | null;
+  idReglaComisionCategoria: number | null;
+  idCategoriaComision: number | null;
+  baseCategoriaAplicada: number | null;
+  categoriaComisionSnapshot: string | null;
   cantidadMinimaAplicada: number | null;
   cantidadMaximaAplicada: number | null;
   nombreProducto: string;
@@ -81,15 +87,21 @@ export interface PayrollDetailDto extends PayrollDto {
 export interface PayrollPreviewRow {
   idEmpleado: number;
   nombreEmpleado: string;
-  idUsuarioVinculado: number;
+  idUsuarioVinculado: number | null;
   sueldoBase: number;
   totalComisiones: number;
   totalBonosMetas: number;
   totalViaticos: number;
   totalDescuentos: number;
+  diasTrabajados: number;
+  tarifaViaticoAplicada: number | null;
   sueldoLiquido: number;
   detalleComisiones: Array<{
-    idReglaComision: number;
+    idReglaComision: number | null;
+    idReglaComisionCategoria?: number;
+    idCategoriaComision?: number;
+    baseCategoriaAplicada?: number;
+    categoriaComisionSnapshot?: string;
     idConfiguracionComision: number;
     cantidadMinimaAplicada: number;
     cantidadMaximaAplicada: number | null;
@@ -128,7 +140,10 @@ export interface PayrollValidation {
     | "REGLA_FALTANTE"
     | "REGLAS_SOLAPADAS"
     | "DATOS_CALCULO_INVALIDOS"
-    | "PLANILLA_EXISTENTE";
+    | "PLANILLA_EXISTENTE"
+    | "TIPO_TRABAJADOR_FALTANTE"
+    | "TARIFA_VIATICO_NO_CONFIGURADA"
+    | "CATEGORIA_COMISION_FALTANTE";
   mensaje: string;
   idInventarioItem?: number;
   nombreProducto?: string;
@@ -137,16 +152,22 @@ export interface PayrollValidation {
 export type PayrollListResponse = ApiResponse<PayrollDto[]>;
 
 export interface PayrollAdjustmentPayload {
-  tipoAjuste: PayrollAdjustmentType;
+  tipoAjuste: "BONO_META";
   descripcion: string;
   monto: number;
+}
+
+export interface PayrollEmployeeInputPayload {
+  idEmpleado: number;
+  diasTrabajados?: number;
+  ajustes?: PayrollAdjustmentPayload[];
 }
 
 export interface PreviewPayrollPayload {
   mes: number;
   anio: number;
   idEmpleado?: number;
-  ajustes?: PayrollAdjustmentPayload[];
+  empleados?: PayrollEmployeeInputPayload[];
 }
 
 export interface GeneratePayrollPayload extends PreviewPayrollPayload {
@@ -169,4 +190,8 @@ export interface RestorePayrollPayload {
 
 export interface ClosePayrollPayload {
   idUsuarioModificador?: number;
+}
+
+export interface ReopenPayrollPayload {
+  motivo: string;
 }

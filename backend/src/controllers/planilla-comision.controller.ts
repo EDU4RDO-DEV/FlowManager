@@ -9,15 +9,18 @@ import {
   getComisionConfigById,
   listAnulatedComisionConfigs,
   listComisionConfigs,
+  listCommissionCategories,
   listReglasByComisionConfig,
   restoreComisionConfig,
   restoreReglaComision,
   updateComisionConfig,
   updateReglaComision,
+  setCategoryCommissionSchedule,
 } from '../services/planilla-comision.service';
 import {
   comisionConfigIdParamsSchema,
   comisionRuleIdParamsSchema,
+  categoryCommissionScheduleSchema,
   createComisionConfigSchema,
   createReglaComisionSchema,
   deleteComisionConfigBodySchema,
@@ -41,6 +44,16 @@ export async function listComisionConfigsController(req: Request, res: Response)
       return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
     }
 
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function listCommissionCategoriesController(_req: Request, res: Response) {
+  try {
+    const data = await listCommissionCategories();
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno';
     return res.status(500).json({ ok: false, message });
   }
@@ -77,6 +90,53 @@ export async function getComisionConfigByIdController(req: Request, res: Respons
   }
 }
 
+export async function listCategoryCommissionRulesController(req: Request, res: Response) {
+  try {
+    const { id } = comisionConfigIdParamsSchema.parse(req.params);
+    const config = await getComisionConfigById(id);
+    return res.status(200).json({ ok: true, data: config.reglasPorCategoria });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+    const message = error instanceof Error ? error.message : 'Error interno';
+    if (message === 'Configuracion de comision no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function setCategoryCommissionRulesController(req: Request, res: Response) {
+  try {
+    const { id } = comisionConfigIdParamsSchema.parse(req.params);
+    const payload = categoryCommissionScheduleSchema.parse(req.body);
+    const data = await setCategoryCommissionSchedule(id, payload);
+    return res.status(200).json({
+      ok: true,
+      data: data.reglasPorCategoria,
+      message: 'Escalas de comisión actualizadas correctamente',
+    });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+    const message = error instanceof Error ? error.message : 'Error interno';
+    if (message === 'Configuracion de comision no existe' || message === 'Usuario no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+    if (
+      message.startsWith('Debe configurar exactamente') ||
+      message.startsWith('Cada escala debe comenzar') ||
+      message.startsWith('Ya existe una escala') ||
+      message === 'fechaInicioVigencia inválida'
+    ) {
+      return res.status(409).json({ ok: false, message });
+    }
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
 export async function createComisionConfigController(req: Request, res: Response) {
   try {
     const dataInput = createComisionConfigSchema.parse(req.body);
@@ -84,6 +144,8 @@ export async function createComisionConfigController(req: Request, res: Response
     const data = await createComisionConfig({
       idUsuario: dataInput.idUsuario,
       nombre: dataInput.nombre.trim(),
+      esGeneral: dataInput.esGeneral,
+      fechaInicioVigencia: dataInput.fechaInicioVigencia,
     });
 
     return res.status(201).json({ ok: true, data, message: 'Configuración creada correctamente' });
@@ -101,6 +163,12 @@ export async function createComisionConfigController(req: Request, res: Response
     if (message === 'Ya existe una configuracion de comision con ese nombre') {
       return res.status(409).json({ ok: false, message });
     }
+    if (
+      message === 'Ya existe una configuración general de comisión activa.' ||
+      message === 'Faltan las categorías de comisión iniciales.'
+    ) {
+      return res.status(409).json({ ok: false, message });
+    }
 
     return res.status(500).json({ ok: false, message });
   }
@@ -113,6 +181,7 @@ export async function updateComisionConfigController(req: Request, res: Response
 
     const data = await updateComisionConfig(id, {
       ...(dataInput.nombre !== undefined ? { nombre: dataInput.nombre.trim() } : {}),
+      ...(dataInput.esGeneral !== undefined ? { esGeneral: dataInput.esGeneral } : {}),
       ...(dataInput.idUsuarioModificador !== undefined
         ? { idUsuarioModificador: dataInput.idUsuarioModificador }
         : {}),

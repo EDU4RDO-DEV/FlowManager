@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Check, ChevronsUpDown, Eye, FileCheck2, Loader2, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import {
+  CalendarDays,
+  Check,
+  ChevronsUpDown,
+  Download,
+  Eye,
+  FileCheck2,
+  Loader2,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -39,10 +50,12 @@ import { listEmployees } from "@/services/employees.service";
 import {
   closePayroll,
   deletePayroll,
+  downloadPayrollReceipt,
   generatePayroll,
   getPayrollById,
   listPayrolls,
   previewPayroll,
+  reopenPayroll,
   restorePayroll,
 } from "@/services/payroll.service";
 import type {
@@ -77,20 +90,21 @@ function previewPayloadKey(payload: PreviewPayrollPayload) {
 
 export default function PayrollPage() {
   const { user } = useAuth();
+  const canRead = hasModulePermission(user, "planilla", "read");
   const canCreate = hasModulePermission(user, "planilla", "create");
   const canUpdate = hasModulePermission(user, "planilla", "update");
   const canDelete = hasModulePermission(user, "planilla", "delete");
 
   const [payrolls, setPayrolls] = useState<PayrollDto[]>([]);
   const [trashPayrolls, setTrashPayrolls] = useState<PayrollDto[]>([]);
-  const [employees, setEmployees] = useState<Array<{ id: number; nombre: string }>>([]);
+  const [employees, setEmployees] = useState<Array<{ id: number; nombre: string; tipoTrabajador: string | null }>>([]);
+  const [diasPorEmpleado, setDiasPorEmpleado] = useState<Record<number, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [mes, setMes] = useState(String(currentMonth()));
   const [anio, setAnio] = useState(String(currentYear()));
   const [idEmpleado, setIdEmpleado] = useState("");
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
-  const [ajusteTipo, setAjusteTipo] = useState<PayrollAdjustmentPayload["tipoAjuste"]>("BONO_META");
   const [ajusteDescripcion, setAjusteDescripcion] = useState("");
   const [ajusteMonto, setAjusteMonto] = useState("");
   const [ajustes, setAjustes] = useState<PayrollAdjustmentPayload[]>([]);
@@ -102,6 +116,8 @@ export default function PayrollPage() {
   const [selectedPayrollDetail, setSelectedPayrollDetail] = useState<PayrollDetailDto | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<PayrollDto | null>(null);
   const [closeCandidate, setCloseCandidate] = useState<PayrollDto | null>(null);
+  const [reopenCandidate, setReopenCandidate] = useState<PayrollDto | null>(null);
+  const [reopenReason, setReopenReason] = useState("");
 
   async function loadData() {
     setIsLoading(true);
@@ -113,7 +129,15 @@ export default function PayrollPage() {
       ]);
       setPayrolls(active);
       setTrashPayrolls(trash);
-      setEmployees(employeeList.map((item) => ({ id: item.id, nombre: item.entidad.nombreCompleto })));
+      setEmployees(employeeList.map((item) => ({
+        id: item.id,
+        nombre: item.entidad.nombreCompleto,
+        tipoTrabajador: item.tipoTrabajador?.clave ?? null,
+      })));
+      setDiasPorEmpleado((current) => Object.fromEntries(employeeList.map((item) => [
+        item.id,
+        current[item.id] ?? "0",
+      ])));
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cargar planillas"));
     } finally {
@@ -158,32 +182,6 @@ export default function PayrollPage() {
     [employees, idEmpleado],
   );
 
-  const adjustmentSummary = useMemo(() => {
-    const perEmployee = ajustes.reduce(
-      (totals, adjustment) => {
-        totals[adjustment.tipoAjuste] += adjustment.monto;
-        return totals;
-      },
-      { BONO_META: 0, VIATICO: 0, DESCUENTO: 0 },
-    );
-    const employeeIds = new Set<number>();
-
-    if (preview) {
-      preview.planillas.forEach((payroll) => employeeIds.add(payroll.idEmpleado));
-      preview.validaciones.forEach((issue) => employeeIds.add(issue.idEmpleado));
-    }
-
-    return {
-      employeeCount: employeeIds.size,
-      perEmployee,
-      period: {
-        BONO_META: Number((perEmployee.BONO_META * employeeIds.size).toFixed(2)),
-        VIATICO: Number((perEmployee.VIATICO * employeeIds.size).toFixed(2)),
-        DESCUENTO: Number((perEmployee.DESCUENTO * employeeIds.size).toFixed(2)),
-      },
-    };
-  }, [ajustes, preview]);
-
   function parsePeriod() {
     const mesNum = Number(mes);
     const anioNum = Number(anio);
@@ -202,10 +200,19 @@ export default function PayrollPage() {
     const period = parsePeriod();
     if (!period) return null;
 
+    const selectedIds = idEmpleado ? new Set([Number(idEmpleado)]) : null;
     return {
       ...period,
       ...(idEmpleado ? { idEmpleado: Number(idEmpleado) } : {}),
-      ...(ajustes.length > 0 ? { ajustes } : {}),
+      empleados: employees
+        .filter((employee) => !selectedIds || selectedIds.has(employee.id))
+        .map((employee) => ({
+          idEmpleado: employee.id,
+          diasTrabajados: employee.tipoTrabajador === "RUTA"
+            ? Number(diasPorEmpleado[employee.id] ?? 0)
+            : 0,
+          ...(idEmpleado && ajustes.length > 0 ? { ajustes } : {}),
+        })),
     };
   }
 
@@ -219,12 +226,24 @@ export default function PayrollPage() {
       mes: Number(mes),
       anio: Number(anio),
       ...(idEmpleado ? { idEmpleado: Number(idEmpleado) } : {}),
-      ...(ajustes.length > 0 ? { ajustes } : {}),
+      empleados: employees
+        .filter((employee) => !idEmpleado || employee.id === Number(idEmpleado))
+        .map((employee) => ({
+          idEmpleado: employee.id,
+          diasTrabajados: employee.tipoTrabajador === "RUTA"
+            ? Number(diasPorEmpleado[employee.id] ?? 0)
+            : 0,
+          ...(idEmpleado && ajustes.length > 0 ? { ajustes } : {}),
+        })),
     };
     return previewPayloadKey(payload);
   }
 
   function addAjuste() {
+    if (!idEmpleado) {
+      toast.error("Selecciona un empleado para registrar un bono individual.");
+      return;
+    }
     const monto = Number(ajusteMonto);
     if (!ajusteDescripcion.trim() || !Number.isFinite(monto) || monto < 0) {
       toast.error("Completa correctamente el ajuste");
@@ -235,7 +254,7 @@ export default function PayrollPage() {
     setAjustes((prev) => [
       ...prev,
       {
-        tipoAjuste: ajusteTipo,
+        tipoAjuste: "BONO_META",
         descripcion: ajusteDescripcion.trim(),
         monto,
       },
@@ -342,6 +361,23 @@ export default function PayrollPage() {
     }
   }
 
+  async function handleReopenPayroll() {
+    if (!reopenCandidate || reopenReason.trim().length < 5) {
+      toast.error("Escribe un motivo de al menos 5 caracteres.");
+      return;
+    }
+    try {
+      await reopenPayroll(reopenCandidate.id, { motivo: reopenReason.trim() });
+      setReopenCandidate(null);
+      setReopenReason("");
+      toast.success("Planilla reabierta; el motivo quedó registrado.");
+      await loadData();
+      setSelectedPayrollId(reopenCandidate.id);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo reabrir la planilla."));
+    }
+  }
+
   return (
     <RequireAuth moduleKey="planilla" action="read">
       <DashboardShell
@@ -425,6 +461,7 @@ export default function PayrollPage() {
                             onSelect={() => {
                               invalidatePreview();
                               setIdEmpleado("");
+                              setAjustes([]);
                               setEmployeePickerOpen(false);
                             }}
                           >
@@ -438,6 +475,7 @@ export default function PayrollPage() {
                               onSelect={() => {
                                 invalidatePreview();
                                 setIdEmpleado(String(employee.id));
+                                setAjustes([]);
                                 setEmployeePickerOpen(false);
                               }}
                             >
@@ -458,26 +496,52 @@ export default function PayrollPage() {
 
               <div className="rounded-xl border bg-muted/40 p-4 space-y-3">
                 <div>
-                  <p className="text-sm font-medium">Ajustes del período</p>
+                  <p className="text-sm font-medium">Días de viático por empleado de ruta</p>
                   <p className="text-xs text-muted-foreground">
-                    Los ajustes configurados se aplican a cada empleado seleccionado.
+                    El viático se calcula con la tarifa diaria vigente y se presenta separado del líquido.
+                    Los adelantos y faltantes aprobados se descuentan desde sus registros individuales.
                   </p>
                 </div>
-                <div className="grid gap-3 md:grid-cols-4">
-                  <select
-                    className="h-10 rounded-md border bg-background px-3 text-sm"
-                    value={ajusteTipo}
-                    onChange={(e) => setAjusteTipo(e.target.value as PayrollAdjustmentPayload["tipoAjuste"])}
-                  >
-                    <option value="BONO_META">Bono meta</option>
-                    <option value="VIATICO">Viático</option>
-                    <option value="DESCUENTO">Descuento</option>
-                  </select>
+                <div className="max-h-56 space-y-2 overflow-y-auto">
+                  {employees
+                    .filter((employee) => employee.tipoTrabajador === "RUTA" &&
+                      (!idEmpleado || employee.id === Number(idEmpleado)))
+                    .map((employee) => (
+                      <div key={employee.id} className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2">
+                        <Label htmlFor={`payroll-days-${employee.id}`} className="text-sm">{employee.nombre}</Label>
+                        <Input
+                          id={`payroll-days-${employee.id}`}
+                          type="number"
+                          min="0"
+                          max="31"
+                          step="1"
+                          className="w-28"
+                          value={diasPorEmpleado[employee.id] ?? "0"}
+                          onChange={(event) => {
+                            invalidatePreview();
+                            setDiasPorEmpleado((current) => ({
+                              ...current,
+                              [employee.id]: event.target.value,
+                            }));
+                          }}
+                        />
+                      </div>
+                    ))}
+                  {employees.every((employee) => employee.tipoTrabajador !== "RUTA") ? (
+                    <p className="text-sm text-muted-foreground">No hay empleados de ruta en la selección.</p>
+                  ) : null}
+                </div>
+                <div className="border-t pt-3">
+                  <p className="text-sm font-medium">Bono individual (opcional)</p>
+                  <p className="text-xs text-muted-foreground">
+                    Selecciona un empleado para agregar un bono; nunca se replica al resto de la planilla.
+                  </p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
                   <Input
                     placeholder="Descripción"
                     value={ajusteDescripcion}
                     onChange={(e) => setAjusteDescripcion(e.target.value)}
-                    className="md:col-span-2"
                   />
                   <Input
                     type="number"
@@ -487,7 +551,7 @@ export default function PayrollPage() {
                   />
                 </div>
                 <div className="flex justify-between">
-                  <Button variant="outline" onClick={addAjuste}>Agregar ajuste</Button>
+                  <Button variant="outline" onClick={addAjuste} disabled={!idEmpleado}>Agregar bono individual</Button>
                   <div className="flex gap-2">
                     <Button variant="outline" onClick={() => void handlePreview()} disabled={isPreviewing || isGenerating}>
                       {isPreviewing ? <Loader2 className="size-4 animate-spin" /> : <Eye className="size-4" />}
@@ -545,23 +609,6 @@ export default function PayrollPage() {
                       {preview.planillas.length} empleados calculados · {preview.validaciones.length} validaciones · Estado al generar: BORRADOR
                     </p>
                   </div>
-                  {ajustes.length > 0 ? (
-                    <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-                      <p className="font-medium">
-                        Ajustes para {adjustmentSummary.employeeCount} empleados
-                      </p>
-                      <p className="text-muted-foreground">
-                        Por empleado: bonos {money(adjustmentSummary.perEmployee.BONO_META)} ·
-                        viáticos {money(adjustmentSummary.perEmployee.VIATICO)} ·
-                        descuentos {money(adjustmentSummary.perEmployee.DESCUENTO)}
-                      </p>
-                      <p className="text-muted-foreground">
-                        Total del período: bonos {money(adjustmentSummary.period.BONO_META)} ·
-                        viáticos {money(adjustmentSummary.period.VIATICO)} ·
-                        descuentos {money(adjustmentSummary.period.DESCUENTO)}
-                      </p>
-                    </div>
-                  ) : null}
                   {preview.validaciones.length > 0 ? (
                     <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
                       <p className="text-sm font-semibold text-amber-900">Debe resolver estos puntos antes de generar</p>
@@ -583,7 +630,8 @@ export default function PayrollPage() {
                             <TableHead className="text-right">Base</TableHead>
                             <TableHead className="text-right">Comisión</TableHead>
                             <TableHead className="text-right">Bonos</TableHead>
-                            <TableHead className="text-right">Viáticos</TableHead>
+                            <TableHead className="text-right">Días</TableHead>
+                            <TableHead className="text-right">Viáticos separados</TableHead>
                             <TableHead className="text-right">Descuentos</TableHead>
                             <TableHead className="text-right">Líquido</TableHead>
                           </TableRow>
@@ -599,8 +647,12 @@ export default function PayrollPage() {
                                   </summary>
                                   <div className="mt-2 space-y-1">
                                     {item.detalleComisiones.map((commission) => (
-                                      <p key={`${commission.idReglaComision}-${commission.idInventarioItem}`}>
-                                        {commission.nombreProducto}: {commission.cantidad} × base {money(commission.baseCalculo)} · regla #{commission.idReglaComision} · {money(commission.montoComision)}
+                                      <p key={`${commission.idReglaComision ?? commission.idReglaComisionCategoria}-${commission.idInventarioItem}`}>
+                                        {commission.nombreProducto}: {commission.cantidad} × base {money(commission.baseCalculo)}
+                                        {commission.categoriaComisionSnapshot
+                                          ? ` · ${commission.categoriaComisionSnapshot}, umbral sobre ${money(commission.baseCategoriaAplicada ?? 0)}`
+                                          : ` · regla #${commission.idReglaComision}`}
+                                        {" · "}{money(commission.montoComision)}
                                       </p>
                                     ))}
                                     {item.detalleAjustes.map((adjustment, index) => (
@@ -614,6 +666,7 @@ export default function PayrollPage() {
                               <TableCell className="text-right">{money(item.sueldoBase)}</TableCell>
                               <TableCell className="text-right">{money(item.totalComisiones)}</TableCell>
                               <TableCell className="text-right">{money(item.totalBonosMetas)}</TableCell>
+                              <TableCell className="text-right">{item.diasTrabajados}</TableCell>
                               <TableCell className="text-right">{money(item.totalViaticos)}</TableCell>
                               <TableCell className="text-right">{money(item.totalDescuentos)}</TableCell>
                               <TableCell className="text-right font-semibold">{money(item.sueldoLiquido)}</TableCell>
@@ -682,6 +735,21 @@ export default function PayrollPage() {
                                   >
                                     <CalendarDays className="size-4" />
                                   </Button>
+                                  {canRead ? (
+                                    <Button
+                                      variant="outline"
+                                      size="xs"
+                                      title="Descargar recibo PDF"
+                                      aria-label="Descargar recibo PDF"
+                                      onClick={() => {
+                                        void downloadPayrollReceipt(item.id).catch((error) => {
+                                          toast.error(getApiErrorMessage(error, "No se pudo descargar el recibo"));
+                                        });
+                                      }}
+                                    >
+                                      <Download className="size-4" />
+                                    </Button>
+                                  ) : null}
                                   {canUpdate && item.estado === "BORRADOR" ? (
                                     <Button
                                       variant="outline"
@@ -693,7 +761,21 @@ export default function PayrollPage() {
                                       <FileCheck2 className="size-4" />
                                     </Button>
                                   ) : null}
-                                  {canDelete ? (
+                                  {canUpdate && item.estado === "CERRADA" ? (
+                                    <Button
+                                      variant="outline"
+                                      size="xs"
+                                      title="Reabrir planilla"
+                                      aria-label="Reabrir planilla"
+                                      onClick={() => {
+                                        setReopenCandidate(item);
+                                        setReopenReason("");
+                                      }}
+                                    >
+                                      <RotateCcw className="size-4" />
+                                    </Button>
+                                  ) : null}
+                                  {canDelete && item.estado === "BORRADOR" ? (
                                     <Button
                                       variant="ghost"
                                       size="xs"
@@ -705,6 +787,7 @@ export default function PayrollPage() {
                                     </Button>
                                   ) : null}
                                 </div>
+
                               </TableCell>
                             </TableRow>
                           ))}
@@ -757,9 +840,15 @@ export default function PayrollPage() {
                       <p>Sueldo base: {money(selectedPayrollDetail.sueldoBase)}</p>
                       <p>Comisiones: {money(selectedPayrollDetail.totalComisiones)}</p>
                       <p>Bonos metas: {money(selectedPayrollDetail.totalBonosMetas)}</p>
-                      <p>Viáticos: {money(selectedPayrollDetail.totalViaticos)}</p>
+                      <p>Días trabajados: {selectedPayrollDetail.diasTrabajados}</p>
+                      <p>Viáticos separados: {money(selectedPayrollDetail.totalViaticos)}
+                        {selectedPayrollDetail.tarifaViaticoAplicada !== null
+                          ? ` (${money(selectedPayrollDetail.tarifaViaticoAplicada)} / día)`
+                          : ""}
+                      </p>
                       <p>Descuentos: {money(selectedPayrollDetail.totalDescuentos)}</p>
                       <p className="font-semibold">Líquido: {money(selectedPayrollDetail.sueldoLiquido)}</p>
+                      <p className="text-xs text-muted-foreground">Los viáticos se muestran por separado y no se incluyen en el total líquido.</p>
                     </div>
                     <div className="space-y-1">
                       <p className="font-medium">Comisiones por producto</p>
@@ -770,7 +859,10 @@ export default function PayrollPage() {
                             <span>{money(item.montoComision)}</span>
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            Regla #{item.idReglaComision ?? "sin snapshot"} · Configuración #{item.idConfiguracionComision ?? "anterior"} · rango {item.cantidadMinimaAplicada ?? "—"}–{item.cantidadMaximaAplicada ?? "sin máximo"}
+                            {item.categoriaComisionSnapshot
+                              ? `${item.categoriaComisionSnapshot} · base categoría ${money(item.baseCategoriaAplicada ?? 0)}`
+                              : `Regla #${item.idReglaComision ?? "sin snapshot"} · rango ${item.cantidadMinimaAplicada ?? "—"}–${item.cantidadMaximaAplicada ?? "sin máximo"}`}
+                            {" · "}Configuración #{item.idConfiguracionComision ?? "anterior"}
                           </p>
                           {item.fuentes.map((source) => (
                             <p key={source.idDetalleVenta} className="text-xs text-muted-foreground">
@@ -794,6 +886,29 @@ export default function PayrollPage() {
               </CardContent>
             </Card>
           </div>
+          {reopenCandidate ? (
+            <Card className="rounded-xl border border-amber-300 bg-amber-50/50">
+              <CardHeader>
+                <CardTitle>Reabrir planilla cerrada</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  {reopenCandidate.empleado?.entidad.nombreCompleto} · {MONTH_NAMES[reopenCandidate.mes - 1]} {reopenCandidate.anio}.
+                  El motivo se guardará en la bitácora de la planilla.
+                </p>
+                <Input
+                  value={reopenReason}
+                  onChange={(event) => setReopenReason(event.target.value)}
+                  maxLength={255}
+                  placeholder="Motivo de reapertura"
+                />
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setReopenCandidate(null)}>Cancelar</Button>
+                  <Button onClick={() => void handleReopenPayroll()}>Confirmar reapertura</Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
 
         <ConfirmActionDialog

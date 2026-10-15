@@ -8,6 +8,7 @@ import {
   listAnulatedEmployees,
   listEmployeesAvailableForUserLink,
   listEmployees,
+  listWorkerTypes,
   restoreEmployee,
   updateEmployee,
 } from '../services/employee.service';
@@ -50,6 +51,16 @@ export async function uploadEmployeeImageController(req: Request, res: Response)
 export async function listEmployeesController(_req: Request, res: Response) {
   try {
     const data = await listEmployees();
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function listWorkerTypesController(_req: Request, res: Response) {
+  try {
+    const data = await listWorkerTypes();
     return res.status(200).json({ ok: true, data });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno';
@@ -146,7 +157,11 @@ export async function createEmployeeController(req: Request, res: Response) {
 
     const message = error instanceof Error ? error.message : 'Error interno';
 
-    if (message === 'Usuario no existe' || message === 'Configuracion de comision no existe') {
+    if (
+      message === 'Usuario no existe' ||
+      message === 'Configuracion de comision no existe' ||
+      message === 'Tipo de trabajador no existe'
+    ) {
       return res.status(404).json({ ok: false, message });
     }
 
@@ -157,7 +172,8 @@ export async function createEmployeeController(req: Request, res: Response) {
     if (
       message === 'fechaNacimiento inválida' ||
       message === 'fechaContratacion inválida' ||
-      message === 'fechaSalida inválida'
+      message === 'fechaSalida inválida' ||
+      message === 'fechaInicioVigenciaSueldo inválida'
     ) {
       return res.status(400).json({ ok: false, message });
     }
@@ -190,7 +206,8 @@ export async function updateEmployeeController(req: Request, res: Response) {
     if (
       message === 'Empleado no existe' ||
       message === 'Usuario no existe' ||
-      message === 'Configuracion de comision no existe'
+      message === 'Configuracion de comision no existe' ||
+      message === 'Tipo de trabajador no existe'
     ) {
       return res.status(404).json({ ok: false, message });
     }
@@ -202,7 +219,10 @@ export async function updateEmployeeController(req: Request, res: Response) {
     if (
       message === 'fechaNacimiento inválida' ||
       message === 'fechaContratacion inválida' ||
-      message === 'fechaSalida inválida'
+      message === 'fechaSalida inválida' ||
+      message === 'fechaInicioVigenciaSueldo inválida' ||
+      message === 'fechaInicioVigenciaSueldo es obligatoria al cambiar el sueldo' ||
+      message === 'La vigencia del nuevo sueldo debe ser posterior a la vigencia actual'
     ) {
       return res.status(400).json({ ok: false, message });
     }

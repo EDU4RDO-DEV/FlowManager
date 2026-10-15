@@ -10,6 +10,7 @@ import type {
   PayrollPreviewResult,
   PreviewPayrollPayload,
   RestorePayrollPayload,
+  ReopenPayrollPayload,
   UpdatePayrollPayload,
 } from "@/types/payroll";
 
@@ -29,6 +30,35 @@ export async function listPayrolls(params?: {
   });
 
   return data.data ?? [];
+}
+
+export async function listMyPayrolls(): Promise<PayrollDto[]> {
+  const { data } = await api.get<PayrollListResponse>("/api/planilla/mis-planillas");
+  return data.data ?? [];
+}
+
+export async function downloadMyPayrollReceipt(id: number): Promise<void> {
+  const { data } = await api.get<Blob>(`/api/planilla/mis-planillas/${id}/recibo.pdf`, {
+    responseType: "blob",
+  });
+  const url = URL.createObjectURL(data);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `recibo-planilla-${id}.pdf`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadPayrollReceipt(id: number): Promise<void> {
+  const { data } = await api.get<Blob>(`/api/planilla/mensuales/${id}/recibo.pdf`, {
+    responseType: "blob",
+  });
+  const url = URL.createObjectURL(data);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `recibo-planilla-${id}.pdf`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 export async function getPayrollById(id: number): Promise<PayrollDetailDto> {
@@ -79,6 +109,20 @@ export async function closePayroll(id: number, payload?: ClosePayrollPayload): P
   );
   if (!data.data) {
     throw new Error(data.message || "Respuesta invalida al cerrar planilla");
+  }
+  return data.data;
+}
+
+export async function reopenPayroll(
+  id: number,
+  payload: ReopenPayrollPayload,
+): Promise<PayrollDetailDto> {
+  const { data } = await api.patch<ApiResponse<PayrollDetailDto>>(
+    `/api/planilla/mensuales/${id}/reabrir`,
+    payload,
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al reabrir planilla");
   }
   return data.data;
 }

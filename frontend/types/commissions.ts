@@ -6,6 +6,7 @@ export interface CommissionConfigDto {
   id: number;
   idUsuario: number;
   nombre: string;
+  esGeneral: boolean;
   fechaRegistro: string | null;
   idUsuarioModificador: number | null;
   fechaModificacion: string | null;
@@ -38,6 +39,30 @@ export interface CommissionRuleDto {
 
 export interface CommissionConfigDetailDto extends CommissionConfigDto {
   reglas: CommissionRuleDto[];
+  reglasPorCategoria: Array<{
+    id: number;
+    idCategoriaComision: number;
+    categoria: CommissionCategoryDto;
+    montoMinimoVenta: number;
+    porcentaje: number;
+    fechaInicioVigencia: string;
+    fechaFinVigencia: string | null;
+  }>;
+}
+
+export interface CommissionCategoryDto {
+  id: number;
+  clave: string;
+  nombre: string;
+}
+
+export interface CommissionCategorySchedulePayload {
+  idUsuario: number;
+  fechaInicioVigencia: string;
+  categorias: Array<{
+    idCategoriaComision: number;
+    reglas: Array<{ montoMinimoVenta: number; porcentaje: number }>;
+  }>;
 }
 
 export type CommissionsListResponse = ApiResponse<CommissionConfigDto[]>;
@@ -45,10 +70,13 @@ export type CommissionsListResponse = ApiResponse<CommissionConfigDto[]>;
 export interface CreateCommissionConfigPayload {
   idUsuario: number;
   nombre: string;
+  esGeneral?: boolean;
+  fechaInicioVigencia?: string;
 }
 
 export interface UpdateCommissionConfigPayload {
   nombre?: string;
+  esGeneral?: boolean;
   idUsuarioModificador?: number;
 }
 

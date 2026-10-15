@@ -36,6 +36,7 @@ export const createEmployeeSchema = z.object({
   idUsuario: positiveInt,
   idUsuarioVinculado: positiveInt.optional(),
   idConfiguracionComision: positiveInt.optional(),
+  idTipoTrabajador: positiveInt,
   puestoTrabajo: z.string().trim().min(1, 'puestoTrabajo es obligatorio').max(255, 'puestoTrabajo demasiado largo'),
   descripcionPuesto: optionalString255,
   fechaContratacion: dateString,
@@ -50,11 +51,13 @@ export const updateEmployeeSchema = z
     idUsuarioVinculado: z.union([positiveInt, z.null()]).optional(),
     idUsuarioModificador: positiveInt.optional(),
     idConfiguracionComision: z.union([positiveInt, z.null()]).optional(),
+    idTipoTrabajador: z.union([positiveInt, z.null()]).optional(),
     puestoTrabajo: z.string().trim().min(1, 'puestoTrabajo no puede ir vacío').max(255, 'puestoTrabajo demasiado largo').optional(),
     descripcionPuesto: z.union([z.string().trim().max(255, 'descripcionPuesto demasiado larga'), z.null()]).optional(),
     fechaContratacion: dateString.optional(),
     fechaSalida: z.union([dateString, z.null()]).optional(),
     sueldoBase: finitePositiveNumber.optional(),
+    fechaInicioVigenciaSueldo: dateString.optional(),
     entidad: employeeEntityUpdateSchema.optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {

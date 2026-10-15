@@ -47,6 +47,7 @@ export const createProductSchema = z
     costoPromedio: finitePositiveNumber,
     precioVenta: finitePositiveNumber.optional(),
     rutaImagen: z.string().trim().max(255, 'rutaImagen demasiado larga').optional(),
+    idCategoriaComision: positiveInt.nullable().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.categoria !== 'PRODUCTO_TERMINADO') {
@@ -82,6 +83,7 @@ export const updateProductSchema = z
     costoPromedio: finitePositiveNumber.optional(),
     precioVenta: finitePositiveNumber.optional(),
     rutaImagen: z.string().trim().max(255, 'rutaImagen demasiado larga').optional(),
+    idCategoriaComision: positiveInt.nullable().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: 'Debe enviar al menos un campo para actualizar',

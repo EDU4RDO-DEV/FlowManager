@@ -5,9 +5,13 @@ import {
   deletePayrollController,
   generatePayrollController,
   getPayrollByIdController,
+  getPayrollReceiptController,
+  getMyPayrollReceiptController,
+  listMyPayrollsController,
   listPayrollsController,
   previewPayrollController,
   restorePayrollController,
+  reopenPayrollController,
   updatePayrollController,
 } from '../controllers/planilla-mensual.controller';
 import {
@@ -18,21 +22,31 @@ import {
   getComisionConfigByIdController,
   listAnulatedComisionConfigsController,
   listComisionConfigsController,
+  listCommissionCategoriesController,
+  listCategoryCommissionRulesController,
   listReglasComisionAnuladasController,
   listReglasComisionController,
   restoreComisionConfigController,
   restoreReglaComisionController,
   updateComisionConfigController,
   updateReglaComisionController,
+  setCategoryCommissionRulesController,
 } from '../controllers/planilla-comision.controller';
-import { requireModulePermission } from '../middlewares/auth.middleware';
+import { requireAuth, requireModulePermission } from '../middlewares/auth.middleware';
 
 const planillaRouter = Router();
 
+planillaRouter.get('/mis-planillas', requireAuth, listMyPayrollsController);
+planillaRouter.get('/mis-planillas/:id/recibo.pdf', requireAuth, getMyPayrollReceiptController);
 planillaRouter.get(
   '/mensuales',
   requireModulePermission('planilla', 'read'),
   listPayrollsController,
+);
+planillaRouter.get(
+  '/mensuales/:id/recibo.pdf',
+  requireModulePermission('planilla', 'read'),
+  getPayrollReceiptController,
 );
 planillaRouter.get(
   '/mensuales/:id',
@@ -59,6 +73,11 @@ planillaRouter.patch(
   requireModulePermission('planilla', 'update'),
   closePayrollController,
 );
+planillaRouter.patch(
+  '/mensuales/:id/reabrir',
+  requireModulePermission('planilla', 'update'),
+  reopenPayrollController,
+);
 planillaRouter.delete(
   '/mensuales/:id',
   requireModulePermission('planilla', 'delete'),
@@ -79,6 +98,11 @@ planillaRouter.get(
   '/comisiones/anulados',
   requireModulePermission('planilla', 'read'),
   listAnulatedComisionConfigsController,
+);
+planillaRouter.get(
+  '/comisiones/categorias',
+  requireModulePermission('planilla', 'read'),
+  listCommissionCategoriesController,
 );
 planillaRouter.get(
   '/comisiones/:id',
@@ -104,6 +128,16 @@ planillaRouter.patch(
   '/comisiones/:id/restaurar',
   requireModulePermission('planilla', 'update'),
   restoreComisionConfigController,
+);
+planillaRouter.get(
+  '/comisiones/:id/reglas-categoria',
+  requireModulePermission('planilla', 'read'),
+  listCategoryCommissionRulesController,
+);
+planillaRouter.put(
+  '/comisiones/:id/reglas-categoria',
+  requireModulePermission('planilla', 'update'),
+  setCategoryCommissionRulesController,
 );
 
 planillaRouter.get(

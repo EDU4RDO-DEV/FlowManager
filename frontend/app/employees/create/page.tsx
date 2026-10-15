@@ -13,13 +13,14 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
 import { listCommissionConfigs } from "@/services/commissions.service";
-import { createEmployee, uploadEmployeeImage } from "@/services/employees.service";
+import { createEmployee, listWorkerTypes, uploadEmployeeImage } from "@/services/employees.service";
 import { listAvailableUsers } from "@/services/users.service";
 import type { UserDto } from "@/types/users";
 
 const EMPTY_FORM: EmployeeFormValues = {
   idUsuarioVinculado: "",
   idConfiguracionComision: "",
+  idTipoTrabajador: "",
   nombreCompleto: "",
   sexo: "",
   fechaNacimiento: "",
@@ -34,6 +35,7 @@ const EMPTY_FORM: EmployeeFormValues = {
   fechaContratacion: "",
   fechaSalida: "",
   sueldoBase: "",
+  fechaInicioVigenciaSueldo: "",
 };
 
 export default function CreateEmployeePage() {
@@ -44,6 +46,7 @@ export default function CreateEmployeePage() {
   const [form, setForm] = useState<EmployeeFormValues>(EMPTY_FORM);
   const [users, setUsers] = useState<UserDto[]>([]);
   const [commissionConfigs, setCommissionConfigs] = useState<Array<{ id: number; nombre: string }>>([]);
+  const [workerTypes, setWorkerTypes] = useState<Array<{ id: number; clave: string; nombre: string }>>([]);
 
   async function handleUploadImage(file: File) {
     setUploadingImage(true);
@@ -61,12 +64,14 @@ export default function CreateEmployeePage() {
   useEffect(() => {
     async function loadUsers() {
       try {
-        const [usersData, configsData] = await Promise.all([
+        const [usersData, configsData, workerTypesData] = await Promise.all([
           listAvailableUsers(),
           listCommissionConfigs(),
+          listWorkerTypes(),
         ]);
         setUsers(usersData);
         setCommissionConfigs(configsData.map((item) => ({ id: item.id, nombre: item.nombre })));
+        setWorkerTypes(workerTypesData);
       } catch (error) {
         toast.error(getApiErrorMessage(error, "No se pudieron cargar los catálogos del formulario."));
       }
@@ -117,6 +122,10 @@ export default function CreateEmployeePage() {
       toast.error("La fecha de contratacion es obligatoria.");
       return;
     }
+    if (!form.idTipoTrabajador) {
+      toast.error("El tipo de trabajador es obligatorio.");
+      return;
+    }
 
     const sueldoBase = Number(form.sueldoBase);
     if (!Number.isFinite(sueldoBase) || sueldoBase < 0) {
@@ -134,6 +143,7 @@ export default function CreateEmployeePage() {
         idUsuario: user.id,
         ...(linkedUserId ? { idUsuarioVinculado: linkedUserId } : {}),
         ...(commissionConfigId ? { idConfiguracionComision: commissionConfigId } : {}),
+        idTipoTrabajador: Number(form.idTipoTrabajador),
         puestoTrabajo: form.puestoTrabajo.trim(),
         descripcionPuesto: form.descripcionPuesto.trim() || undefined,
         fechaContratacion: form.fechaContratacion,
@@ -173,6 +183,7 @@ export default function CreateEmployeePage() {
             title="Nuevo empleado"
             users={users}
             commissionConfigs={commissionConfigs}
+            workerTypes={workerTypes}
             form={form}
             saving={saving}
             uploadingImage={uploadingImage}

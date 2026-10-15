@@ -12,6 +12,7 @@ import { useAuth } from "@/components/auth-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
+import { listCommissionCategories } from "@/services/commissions.service";
 import { getProductById, updateProduct, uploadProductImage } from "@/services/products.service";
 import { listProviders } from "@/services/providers.service";
 import type { ProviderDto } from "@/types/providers";
@@ -24,6 +25,7 @@ const EMPTY_FORM: ProductFormValues = {
   costoPromedio: "",
   precioVenta: "",
   rutaImagen: "",
+  idCategoriaComision: "",
 };
 
 export default function EditProductPage() {
@@ -31,6 +33,7 @@ export default function EditProductPage() {
   const router = useRouter();
   const { user } = useAuth();
   const [providers, setProviders] = useState<ProviderDto[]>([]);
+  const [commissionCategories, setCommissionCategories] = useState<Array<{ id: number; clave: string; nombre: string }>>([]);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -47,12 +50,14 @@ export default function EditProductPage() {
 
       setLoading(true);
       try {
-        const [productData, providerData] = await Promise.all([
+        const [productData, providerData, categoryData] = await Promise.all([
           getProductById(productId),
           listProviders(),
+          listCommissionCategories(),
         ]);
 
         setProviders(providerData);
+        setCommissionCategories(categoryData);
         setForm({
           nombre: productData.nombre,
           categoria: productData.categoria,
@@ -64,6 +69,9 @@ export default function EditProductPage() {
               ? String(productData.precioVenta)
               : "",
           rutaImagen: productData.rutaImagen ?? "",
+          idCategoriaComision: productData.idCategoriaComision
+            ? String(productData.idCategoriaComision)
+            : "",
         });
       } catch (error) {
         toast.error(getApiErrorMessage(error, "No se pudo cargar el producto."));
@@ -131,6 +139,7 @@ export default function EditProductPage() {
         costoPromedio,
         precioVenta: isFinishedProduct ? precioVenta : undefined,
         rutaImagen: form.rutaImagen.trim() || undefined,
+        idCategoriaComision: form.idCategoriaComision ? Number(form.idCategoriaComision) : null,
       });
 
       toast.success("Producto actualizado correctamente.");
@@ -172,6 +181,7 @@ export default function EditProductPage() {
               title={`Editar producto #${params.id}`}
               form={form}
               providers={providers}
+              commissionCategories={commissionCategories}
               saving={saving}
               uploadingImage={uploadingImage}
               onChange={setForm}

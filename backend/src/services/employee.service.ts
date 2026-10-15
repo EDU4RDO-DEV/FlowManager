@@ -16,6 +16,7 @@ type CreateEmployeeInput = {
   idUsuario: number;
   idUsuarioVinculado?: number;
   idConfiguracionComision?: number;
+  idTipoTrabajador: number;
   puestoTrabajo: string;
   descripcionPuesto?: string;
   fechaContratacion: string;
@@ -29,11 +30,13 @@ type UpdateEmployeeInput = {
   idUsuarioVinculado?: number | null;
   idUsuarioModificador?: number;
   idConfiguracionComision?: number | null;
+  idTipoTrabajador?: number | null;
   puestoTrabajo?: string;
   descripcionPuesto?: string | null;
   fechaContratacion?: string;
   fechaSalida?: string | null;
   sueldoBase?: number;
+  fechaInicioVigenciaSueldo?: string;
   entidad?: Partial<EntidadInput>;
 };
 
@@ -43,6 +46,7 @@ function toEmployeeDto(empleado: {
   IdUsuario: number;
   IdUsuarioVinculado: number | null;
   IdConfiguracionComision: number | null;
+  IdTipoTrabajador: number | null;
   PuestoTrabajo: string;
   DescripcionPuesto: string | null;
   FechaContratacion: Date;
@@ -54,6 +58,17 @@ function toEmployeeDto(empleado: {
   Anulado: boolean;
   IdUsuarioAnulador: number | null;
   FechaAnulacion: Date | null;
+  TipoTrabajador?: {
+    Id: number;
+    Clave: string;
+    Nombre: string;
+  } | null;
+  HistorialSueldos?: Array<{
+    Id: number;
+    SueldoBase: unknown;
+    FechaInicioVigencia: Date;
+    FechaFinVigencia: Date | null;
+  }>;
   Entidad: {
     Id: number;
     NombreCompleto: string;
@@ -74,6 +89,20 @@ function toEmployeeDto(empleado: {
     idUsuario: empleado.IdUsuario,
     idUsuarioVinculado: empleado.IdUsuarioVinculado,
     idConfiguracionComision: empleado.IdConfiguracionComision,
+    idTipoTrabajador: empleado.IdTipoTrabajador,
+    tipoTrabajador: empleado.TipoTrabajador
+      ? {
+          id: empleado.TipoTrabajador.Id,
+          clave: empleado.TipoTrabajador.Clave,
+          nombre: empleado.TipoTrabajador.Nombre,
+        }
+      : null,
+    historialSueldos: empleado.HistorialSueldos?.map((vigencia) => ({
+      id: vigencia.Id,
+      sueldoBase: Number(vigencia.SueldoBase),
+      fechaInicioVigencia: vigencia.FechaInicioVigencia,
+      fechaFinVigencia: vigencia.FechaFinVigencia,
+    })) ?? [],
     puestoTrabajo: empleado.PuestoTrabajo,
     descripcionPuesto: empleado.DescripcionPuesto,
     fechaContratacion: empleado.FechaContratacion,
@@ -167,6 +196,17 @@ async function validateConfiguracionComisionExists(id: number) {
   }
 }
 
+async function validateTipoTrabajadorExists(id: number) {
+  const tipo = await prisma.tipoTrabajador.findFirst({
+    where: { Id: id, Activo: true },
+    select: { Id: true },
+  });
+
+  if (!tipo) {
+    throw new Error('Tipo de trabajador no existe');
+  }
+}
+
 function parseDate(value: string, fieldName: string): Date {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
@@ -192,6 +232,12 @@ export async function listEmployees() {
     },
     orderBy: { Id: 'desc' },
     include: {
+      TipoTrabajador: {
+        select: { Id: true, Clave: true, Nombre: true },
+      },
+      HistorialSueldos: {
+        orderBy: { FechaInicioVigencia: 'desc' },
+      },
       Entidad: {
         select: {
           Id: true,
@@ -233,6 +279,12 @@ export async function listEmployeesAvailableForUserLink(
     },
     orderBy: { Id: 'desc' },
     include: {
+      TipoTrabajador: {
+        select: { Id: true, Clave: true, Nombre: true },
+      },
+      HistorialSueldos: {
+        orderBy: { FechaInicioVigencia: 'desc' },
+      },
       Entidad: {
         select: {
           Id: true,
@@ -273,6 +325,12 @@ export async function listAnulatedEmployees() {
     },
     orderBy: { FechaAnulacion: 'desc' },
     include: {
+      TipoTrabajador: {
+        select: { Id: true, Clave: true, Nombre: true },
+      },
+      HistorialSueldos: {
+        orderBy: { FechaInicioVigencia: 'desc' },
+      },
       Entidad: {
         select: {
           Id: true,
@@ -304,6 +362,12 @@ export async function getEmployeeById(id: number) {
       },
     },
     include: {
+      TipoTrabajador: {
+        select: { Id: true, Clave: true, Nombre: true },
+      },
+      HistorialSueldos: {
+        orderBy: { FechaInicioVigencia: 'desc' },
+      },
       Entidad: {
         select: {
           Id: true,
@@ -331,6 +395,7 @@ export async function getEmployeeById(id: number) {
 
 export async function createEmployee(input: CreateEmployeeInput) {
   await validateUsuarioExists(input.idUsuario);
+  await validateTipoTrabajadorExists(input.idTipoTrabajador);
 
   if (input.idConfiguracionComision !== undefined) {
     await validateConfiguracionComisionExists(input.idConfiguracionComision);
@@ -415,12 +480,13 @@ export async function createEmployee(input: CreateEmployeeInput) {
       entidadId = entidadNueva.Id;
     }
 
-    return tx.empleado.create({
+    const employee = await tx.empleado.create({
       data: {
         IdEntidad: entidadId,
         IdUsuario: input.idUsuario,
         IdUsuarioVinculado: input.idUsuarioVinculado,
         IdConfiguracionComision: input.idConfiguracionComision,
+        IdTipoTrabajador: input.idTipoTrabajador,
         PuestoTrabajo: input.puestoTrabajo,
         DescripcionPuesto: input.descripcionPuesto,
         FechaContratacion: fechaContratacion,
@@ -429,6 +495,12 @@ export async function createEmployee(input: CreateEmployeeInput) {
         Anulado: false,
       },
       include: {
+        TipoTrabajador: {
+          select: { Id: true, Clave: true, Nombre: true },
+        },
+        HistorialSueldos: {
+          orderBy: { FechaInicioVigencia: 'desc' },
+        },
         Entidad: {
           select: {
             Id: true,
@@ -446,6 +518,17 @@ export async function createEmployee(input: CreateEmployeeInput) {
         },
       },
     });
+
+    await tx.empleadoSueldoVigencia.create({
+      data: {
+        IdEmpleado: employee.Id,
+        SueldoBase: input.sueldoBase,
+        FechaInicioVigencia: fechaContratacion,
+        IdUsuarioRegistro: input.idUsuario,
+      },
+    });
+
+    return employee;
   });
 
   return toEmployeeDto(created);
@@ -454,7 +537,16 @@ export async function createEmployee(input: CreateEmployeeInput) {
 export async function updateEmployee(id: number, input: UpdateEmployeeInput) {
   const existing = await prisma.empleado.findFirst({
     where: { Id: id, Anulado: false },
-    select: { Id: true, IdEntidad: true },
+    select: {
+      Id: true,
+      IdEntidad: true,
+      SueldoBase: true,
+      HistorialSueldos: {
+        orderBy: { FechaInicioVigencia: 'desc' },
+        take: 1,
+        select: { FechaInicioVigencia: true, SueldoBase: true },
+      },
+    },
   });
 
   if (!existing) {
@@ -477,6 +569,16 @@ export async function updateEmployee(id: number, input: UpdateEmployeeInput) {
     await validateConfiguracionComisionExists(input.idConfiguracionComision);
   }
 
+  if (input.idTipoTrabajador !== undefined && input.idTipoTrabajador !== null) {
+    await validateTipoTrabajadorExists(input.idTipoTrabajador);
+  }
+
+  const sueldoCambio = input.sueldoBase !== undefined &&
+    Number(input.sueldoBase) !== Number(existing.SueldoBase);
+  if (sueldoCambio && !input.fechaInicioVigenciaSueldo) {
+    throw new Error('fechaInicioVigenciaSueldo es obligatoria al cambiar el sueldo');
+  }
+
   const fechaNacimiento =
     input.entidad?.fechaNacimiento !== undefined
       ? parseOptionalDate(input.entidad.fechaNacimiento, 'fechaNacimiento')
@@ -493,6 +595,9 @@ export async function updateEmployee(id: number, input: UpdateEmployeeInput) {
       : input.fechaSalida === null
         ? null
         : undefined;
+  const fechaInicioVigenciaSueldo = input.fechaInicioVigenciaSueldo
+    ? parseDate(input.fechaInicioVigenciaSueldo, 'fechaInicioVigenciaSueldo')
+    : undefined;
 
   const updated = await prisma.$transaction(async (tx) => {
     let entidadIdObjetivo = existing.IdEntidad;
@@ -538,7 +643,7 @@ export async function updateEmployee(id: number, input: UpdateEmployeeInput) {
       });
     }
 
-    return tx.empleado.update({
+    const employee = await tx.empleado.update({
       where: { Id: id },
       data: {
         ...(entidadIdObjetivo !== existing.IdEntidad ? { IdEntidad: entidadIdObjetivo } : {}),
@@ -552,6 +657,9 @@ export async function updateEmployee(id: number, input: UpdateEmployeeInput) {
         ...(input.idConfiguracionComision !== undefined
           ? { IdConfiguracionComision: input.idConfiguracionComision }
           : {}),
+        ...(input.idTipoTrabajador !== undefined
+          ? { IdTipoTrabajador: input.idTipoTrabajador }
+          : {}),
         ...(input.puestoTrabajo !== undefined ? { PuestoTrabajo: input.puestoTrabajo } : {}),
         ...(input.descripcionPuesto !== undefined
           ? { DescripcionPuesto: input.descripcionPuesto }
@@ -562,6 +670,12 @@ export async function updateEmployee(id: number, input: UpdateEmployeeInput) {
         FechaModificacion: new Date(),
       },
       include: {
+        TipoTrabajador: {
+          select: { Id: true, Clave: true, Nombre: true },
+        },
+        HistorialSueldos: {
+          orderBy: { FechaInicioVigencia: 'desc' },
+        },
         Entidad: {
           select: {
             Id: true,
@@ -579,9 +693,48 @@ export async function updateEmployee(id: number, input: UpdateEmployeeInput) {
         },
       },
     });
+
+    if (sueldoCambio && fechaInicioVigenciaSueldo && input.sueldoBase !== undefined) {
+      const vigenciaActual = existing.HistorialSueldos[0];
+      if (vigenciaActual && vigenciaActual.FechaInicioVigencia >= fechaInicioVigenciaSueldo) {
+        throw new Error('La vigencia del nuevo sueldo debe ser posterior a la vigencia actual');
+      }
+
+      if (vigenciaActual) {
+        const fechaFinAnterior = new Date(fechaInicioVigenciaSueldo);
+        fechaFinAnterior.setUTCDate(fechaFinAnterior.getUTCDate() - 1);
+        await tx.empleadoSueldoVigencia.updateMany({
+          where: {
+            IdEmpleado: id,
+            FechaFinVigencia: null,
+            FechaInicioVigencia: vigenciaActual.FechaInicioVigencia,
+          },
+          data: { FechaFinVigencia: fechaFinAnterior },
+        });
+      }
+
+      await tx.empleadoSueldoVigencia.create({
+        data: {
+          IdEmpleado: id,
+          SueldoBase: input.sueldoBase,
+          FechaInicioVigencia: fechaInicioVigenciaSueldo,
+          IdUsuarioRegistro: input.idUsuarioModificador ?? input.idUsuario ?? null,
+        },
+      });
+    }
+
+    return employee;
   });
 
   return toEmployeeDto(updated);
+}
+
+export async function listWorkerTypes() {
+  return prisma.tipoTrabajador.findMany({
+    where: { Activo: true },
+    select: { Id: true, Clave: true, Nombre: true },
+    orderBy: { Id: 'asc' },
+  });
 }
 
 export async function deleteEmployee(id: number, idUsuarioAnulador?: number) {

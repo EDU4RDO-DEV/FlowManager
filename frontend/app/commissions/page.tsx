@@ -45,12 +45,19 @@ import {
   listAnulatedCommissionConfigs,
   listAnulatedCommissionRules,
   listCommissionConfigs,
+  listCommissionCategories,
   restoreCommissionConfig,
   restoreCommissionRule,
   updateCommissionRule,
+  setCommissionCategorySchedule,
 } from "@/services/commissions.service";
 import { listProducts } from "@/services/products.service";
-import type { CommissionConfigDto, CommissionRuleDto, CommissionRuleType } from "@/types/commissions";
+import type {
+  CommissionCategoryDto,
+  CommissionConfigDto,
+  CommissionRuleDto,
+  CommissionRuleType,
+} from "@/types/commissions";
 
 type ProductOption = { id: number; nombre: string };
 
@@ -72,6 +79,19 @@ const EMPTY_RULE_FORM: RuleFormState = {
   montoPorUnidad: "",
 };
 
+function formatCommissionScale(rules: Array<{ montoMinimoVenta: number; porcentaje: number }>) {
+  return rules.map((rule) => `${rule.montoMinimoVenta}:${rule.porcentaje}`).join(", ");
+}
+
+function defaultCommissionScale(key: string) {
+  if (key === "GARRAFONES") return "0:3";
+  return [
+    "0:3.09",
+    "30000:3.10",
+    ...Array.from({ length: 12 }, (_, index) => `${35000 + index * 5000}:${(3.11 + index * 0.01).toFixed(2)}`),
+  ].join(", ");
+}
+
 export default function CommissionsPage() {
   const { user } = useAuth();
   const canCreate = hasModulePermission(user, "planilla", "create");
@@ -84,7 +104,15 @@ export default function CommissionsPage() {
   const [activeRules, setActiveRules] = useState<CommissionRuleDto[]>([]);
   const [trashRules, setTrashRules] = useState<CommissionRuleDto[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
+  const [categories, setCategories] = useState<CommissionCategoryDto[]>([]);
   const [newConfigName, setNewConfigName] = useState("");
+  const [newConfigIsGeneral, setNewConfigIsGeneral] = useState(false);
+  const [categoryEffectiveDate, setCategoryEffectiveDate] = useState(() => {
+    const date = new Date();
+    date.setDate(date.getDate() + 1);
+    return date.toISOString().slice(0, 10);
+  });
+  const [categoryRateTexts, setCategoryRateTexts] = useState<Record<number, string>>({});
   const [ruleForm, setRuleForm] = useState<RuleFormState>(EMPTY_RULE_FORM);
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
@@ -103,14 +131,16 @@ export default function CommissionsPage() {
   async function loadAll() {
     setIsLoading(true);
     try {
-      const [active, trash, productsData] = await Promise.all([
+      const [active, trash, productsData, categoryData] = await Promise.all([
         listCommissionConfigs(),
         listAnulatedCommissionConfigs(),
         listProducts({ limit: 100 }),
+        listCommissionCategories(),
       ]);
       setConfigs(active);
       setTrashConfigs(trash);
       setProducts(productsData.items.map((item) => ({ id: item.id, nombre: item.nombre })));
+      setCategories(categoryData);
       setSelectedConfigId((prev) => prev ?? active[0]?.id ?? null);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cargar el módulo de comisiones"));
@@ -128,6 +158,28 @@ export default function CommissionsPage() {
       ]);
       setActiveRules(configDetail.reglas);
       setTrashRules(anulatedRules);
+      const latestDateByCategory = new Map<number, string>();
+      for (const rule of configDetail.reglasPorCategoria) {
+        const date = rule.fechaInicioVigencia.slice(0, 10);
+        const current = latestDateByCategory.get(rule.idCategoriaComision);
+        if (!current || date > current) latestDateByCategory.set(rule.idCategoriaComision, date);
+      }
+      setCategoryRateTexts(Object.fromEntries(categories.map((category) => {
+        const latestDate = latestDateByCategory.get(category.id);
+        const activeSchedule = configDetail.reglasPorCategoria.filter((rule) =>
+          rule.idCategoriaComision === category.id &&
+          (!latestDate || rule.fechaInicioVigencia.slice(0, 10) === latestDate),
+        );
+        return [
+          category.id,
+          activeSchedule.length > 0
+            ? formatCommissionScale(activeSchedule.map((rule) => ({
+                montoMinimoVenta: rule.montoMinimoVenta,
+                porcentaje: rule.porcentaje,
+              })))
+            : defaultCommissionScale(category.clave),
+        ];
+      })));
     } catch (error) {
       setActiveRules([]);
       setTrashRules([]);
@@ -146,7 +198,7 @@ export default function CommissionsPage() {
       return;
     }
     void loadRules(selectedConfigId);
-  }, [selectedConfigId]);
+  }, [selectedConfigId, categories]);
 
   const metrics = useMemo(() => {
     return {
@@ -176,15 +228,65 @@ export default function CommissionsPage() {
 
     setIsSavingConfig(true);
     try {
-      const created = await createCommissionConfig({ idUsuario: user.id, nombre });
+      const created = await createCommissionConfig({
+        idUsuario: user.id,
+        nombre,
+        esGeneral: newConfigIsGeneral,
+      });
       setConfigs((prev) => [created, ...prev]);
       setSelectedConfigId(created.id);
       setNewConfigName("");
+      setNewConfigIsGeneral(false);
       toast.success("Configuración creada");
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo crear la configuración"));
     } finally {
       setIsSavingConfig(false);
+    }
+  }
+
+  async function handleSaveCategorySchedule() {
+    if (!selectedConfigId || !user?.id) {
+      toast.error("Selecciona una configuración y verifica el usuario.");
+      return;
+    }
+    if (!canUpdate) {
+      toast.error("No tienes permisos para actualizar las escalas.");
+      return;
+    }
+    const parsedCategories = categories.map((category) => {
+      const rules = (categoryRateTexts[category.id] ?? "")
+        .split(",")
+        .map((entry) => {
+          const [thresholdText, percentageText] = entry.split(":").map((value) => value.trim());
+          return {
+            montoMinimoVenta: Number(thresholdText),
+            porcentaje: Number(percentageText),
+          };
+        });
+      return { idCategoriaComision: category.id, reglas: rules };
+    });
+
+    if (parsedCategories.some((category) =>
+      category.reglas.some((rule) =>
+        !Number.isFinite(rule.montoMinimoVenta) ||
+        !Number.isFinite(rule.porcentaje),
+      ),
+    )) {
+      toast.error("Usa el formato umbral:porcentaje, separados por coma; por ejemplo 0:3.09, 30000:3.10.");
+      return;
+    }
+
+    try {
+      await setCommissionCategorySchedule(selectedConfigId, {
+        idUsuario: user.id,
+        fechaInicioVigencia: categoryEffectiveDate,
+        categorias: parsedCategories,
+      });
+      await loadRules(selectedConfigId);
+      toast.success("Escalas de comisión versionadas desde la fecha indicada.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudieron guardar las escalas."));
     }
   }
 
@@ -371,6 +473,14 @@ export default function CommissionsPage() {
                         {isSavingConfig ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
                       </Button>
                     </div>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={newConfigIsGeneral}
+                        onChange={(event) => setNewConfigIsGeneral(event.target.checked)}
+                      />
+                      Usar como configuración general de respaldo (incluye escalas iniciales)
+                    </label>
                   </div>
                 ) : null}
 
@@ -398,7 +508,10 @@ export default function CommissionsPage() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="text-left">
                             <p className="font-medium">{item.nombre}</p>
-                            <p className="text-xs text-muted-foreground">{item.totalReglasActivas ?? 0} reglas activas</p>
+                            <p className="text-xs text-muted-foreground">
+                              {item.esGeneral ? "General · " : ""}
+                              {item.totalReglasActivas ?? 0} reglas por producto activas
+                            </p>
                           </div>
                           {canDelete ? (
                             <Button
@@ -451,6 +564,46 @@ export default function CommissionsPage() {
                   </div>
                 ) : (
                   <>
+                    <div className="rounded-xl border border-sky-200 bg-sky-50/40 p-4 dark:border-sky-900 dark:bg-sky-950/20">
+                      <div className="mb-3">
+                        <p className="font-medium">Comisión por categoría de ventas</p>
+                        <p className="text-xs text-muted-foreground">
+                          La tasa del umbral alcanzado se aplica a toda la base de venta de la categoría.
+                          Las categorías de producto se asignan manualmente en Inventario.
+                        </p>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="max-w-xs space-y-1.5">
+                          <Label htmlFor="category-effective-date">Vigente desde</Label>
+                          <Input
+                            id="category-effective-date"
+                            type="date"
+                            value={categoryEffectiveDate}
+                            onChange={(event) => setCategoryEffectiveDate(event.target.value)}
+                          />
+                        </div>
+                        {categories.map((category) => (
+                          <div key={category.id} className="space-y-1.5">
+                            <Label htmlFor={`category-scale-${category.id}`}>{category.nombre}</Label>
+                            <Input
+                              id={`category-scale-${category.id}`}
+                              value={categoryRateTexts[category.id] ?? ""}
+                              onChange={(event) => setCategoryRateTexts((current) => ({
+                                ...current,
+                                [category.id]: event.target.value,
+                              }))}
+                              placeholder="0:3.09, 30000:3.10"
+                            />
+                          </div>
+                        ))}
+                        {canUpdate ? (
+                          <Button onClick={() => void handleSaveCategorySchedule()}>
+                            Guardar nueva versión de escalas
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+
                     {canCreate || canUpdate ? (
                       <div className="rounded-xl border bg-muted/40 p-4 space-y-3">
                         <div className="flex items-center justify-between gap-2">

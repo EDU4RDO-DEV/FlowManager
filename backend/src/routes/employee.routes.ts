@@ -7,6 +7,7 @@ import {
   listAvailableEmployeesController,
   listAnulatedEmployeesController,
   listEmployeesController,
+  listWorkerTypesController,
   restoreEmployeeController,
   uploadEmployeeImageController,
   updateEmployeeController,
@@ -17,6 +18,7 @@ import { uploadEmployeeImage } from '../middlewares/upload.middleware';
 const employeeRouter = Router();
 
 employeeRouter.get('/', requireModulePermission('empleados', 'read'), listEmployeesController);
+employeeRouter.get('/tipos-trabajador', requireModulePermission('empleados', 'read'), listWorkerTypesController);
 employeeRouter.get('/disponibles', requireModulePermission('empleados', 'read'), listAvailableEmployeesController);
 employeeRouter.get('/anulados', requireModulePermission('empleados', 'read'), listAnulatedEmployeesController);
 employeeRouter.post(

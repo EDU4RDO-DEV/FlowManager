@@ -13,13 +13,14 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
 import { listCommissionConfigs } from "@/services/commissions.service";
-import { getEmployeeById, updateEmployee, uploadEmployeeImage } from "@/services/employees.service";
+import { getEmployeeById, listWorkerTypes, updateEmployee, uploadEmployeeImage } from "@/services/employees.service";
 import { getUserById, listAvailableUsers } from "@/services/users.service";
 import type { UserDto } from "@/types/users";
 
 const EMPTY_FORM: EmployeeFormValues = {
   idUsuarioVinculado: "",
   idConfiguracionComision: "",
+  idTipoTrabajador: "",
   nombreCompleto: "",
   sexo: "",
   fechaNacimiento: "",
@@ -34,6 +35,7 @@ const EMPTY_FORM: EmployeeFormValues = {
   fechaContratacion: "",
   fechaSalida: "",
   sueldoBase: "",
+  fechaInicioVigenciaSueldo: "",
 };
 
 function toInputDate(value: string | null): string {
@@ -53,6 +55,8 @@ export default function EditEmployeePage() {
   const [form, setForm] = useState<EmployeeFormValues>(EMPTY_FORM);
   const [users, setUsers] = useState<UserDto[]>([]);
   const [commissionConfigs, setCommissionConfigs] = useState<Array<{ id: number; nombre: string }>>([]);
+  const [workerTypes, setWorkerTypes] = useState<Array<{ id: number; clave: string; nombre: string }>>([]);
+  const [originalSalary, setOriginalSalary] = useState<number | null>(null);
 
   async function handleUploadImage(file: File) {
     setUploadingImage(true);
@@ -78,10 +82,11 @@ export default function EditEmployeePage() {
 
       setLoading(true);
       try {
-        const [employeeData, usersData, configsData] = await Promise.all([
+        const [employeeData, usersData, configsData, workerTypesData] = await Promise.all([
           getEmployeeById(employeeId),
           listAvailableUsers(employeeId),
           listCommissionConfigs(),
+          listWorkerTypes(),
         ]);
 
         let usersForForm = usersData;
@@ -95,12 +100,17 @@ export default function EditEmployeePage() {
 
         setUsers(usersForForm);
         setCommissionConfigs(configsData.map((item) => ({ id: item.id, nombre: item.nombre })));
+        setWorkerTypes(workerTypesData);
+        setOriginalSalary(employeeData.sueldoBase);
         setForm({
           idUsuarioVinculado: employeeData.idUsuarioVinculado
             ? String(employeeData.idUsuarioVinculado)
             : "",
           idConfiguracionComision: employeeData.idConfiguracionComision
             ? String(employeeData.idConfiguracionComision)
+            : "",
+          idTipoTrabajador: employeeData.idTipoTrabajador
+            ? String(employeeData.idTipoTrabajador)
             : "",
           nombreCompleto: employeeData.entidad.nombreCompleto,
           sexo: employeeData.entidad.sexo ?? "",
@@ -116,6 +126,7 @@ export default function EditEmployeePage() {
           fechaContratacion: toInputDate(employeeData.fechaContratacion),
           fechaSalida: toInputDate(employeeData.fechaSalida),
           sueldoBase: String(employeeData.sueldoBase ?? ""),
+          fechaInicioVigenciaSueldo: "",
         });
       } catch (error) {
         toast.error(getApiErrorMessage(error, "No se pudo cargar el empleado."));
@@ -176,10 +187,18 @@ export default function EditEmployeePage() {
       toast.error("La fecha de contratacion es obligatoria.");
       return;
     }
+    if (!form.idTipoTrabajador) {
+      toast.error("El tipo de trabajador es obligatorio.");
+      return;
+    }
 
     const sueldoBase = Number(form.sueldoBase);
     if (!Number.isFinite(sueldoBase) || sueldoBase < 0) {
       toast.error("El sueldo base debe ser un numero valido.");
+      return;
+    }
+    if (originalSalary !== null && sueldoBase !== originalSalary && !form.fechaInicioVigenciaSueldo) {
+      toast.error("Indica desde cuándo entra en vigor el nuevo sueldo.");
       return;
     }
 
@@ -193,11 +212,15 @@ export default function EditEmployeePage() {
         idUsuarioModificador: user.id,
         idUsuarioVinculado: linkedUserId,
         idConfiguracionComision: commissionConfigId,
+        idTipoTrabajador: Number(form.idTipoTrabajador),
         puestoTrabajo: form.puestoTrabajo.trim(),
         descripcionPuesto: form.descripcionPuesto.trim() || null,
         fechaContratacion: form.fechaContratacion,
         fechaSalida: form.fechaSalida || null,
         sueldoBase,
+        ...(sueldoBase !== originalSalary
+          ? { fechaInicioVigenciaSueldo: form.fechaInicioVigenciaSueldo }
+          : {}),
         entidad: {
           nombreCompleto: form.nombreCompleto.trim(),
           sexo: form.sexo.trim() || undefined,
@@ -237,6 +260,7 @@ export default function EditEmployeePage() {
               title={`Editar empleado #${params.id}`}
               users={users}
               commissionConfigs={commissionConfigs}
+              workerTypes={workerTypes}
               form={form}
               saving={saving}
               uploadingImage={uploadingImage}

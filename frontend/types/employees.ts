@@ -20,6 +20,14 @@ export interface EmployeeDto {
   idUsuario: number;
   idUsuarioVinculado: number | null;
   idConfiguracionComision: number | null;
+  idTipoTrabajador: number | null;
+  tipoTrabajador: { id: number; clave: string; nombre: string } | null;
+  historialSueldos: Array<{
+    id: number;
+    sueldoBase: number;
+    fechaInicioVigencia: string;
+    fechaFinVigencia: string | null;
+  }>;
   puestoTrabajo: string;
   descripcionPuesto: string | null;
   fechaContratacion: string;
@@ -40,6 +48,7 @@ export interface CreateEmployeePayload {
   idUsuario: number;
   idUsuarioVinculado?: number;
   idConfiguracionComision?: number;
+  idTipoTrabajador: number;
   puestoTrabajo: string;
   descripcionPuesto?: string;
   fechaContratacion: string;
@@ -63,11 +72,13 @@ export interface UpdateEmployeePayload {
   idUsuarioVinculado?: number | null;
   idUsuarioModificador?: number;
   idConfiguracionComision?: number | null;
+  idTipoTrabajador?: number | null;
   puestoTrabajo?: string;
   descripcionPuesto?: string | null;
   fechaContratacion?: string;
   fechaSalida?: string | null;
   sueldoBase?: number;
+  fechaInicioVigenciaSueldo?: string;
   entidad?: {
     nombreCompleto?: string;
     sexo?: string;

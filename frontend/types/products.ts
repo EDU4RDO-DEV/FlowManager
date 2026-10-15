@@ -12,6 +12,7 @@ export interface ProductDto {
   idProveedor: number;
   nombre: string;
   categoria: "ENVASE" | "INSUMO" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA";
+  idCategoriaComision: number | null;
   unidadMedida: string | null;
   existencia: number;
   costoPromedio: number;
@@ -59,6 +60,7 @@ export interface CreateProductPayload {
   costoPromedio: number;
   precioVenta?: number;
   rutaImagen?: string;
+  idCategoriaComision?: number | null;
 }
 
 export interface UpdateProductPayload {
@@ -71,6 +73,7 @@ export interface UpdateProductPayload {
   costoPromedio?: number;
   precioVenta?: number;
   rutaImagen?: string;
+  idCategoriaComision?: number | null;
 }
 
 export interface DeleteProductPayload {

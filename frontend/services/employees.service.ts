@@ -16,6 +16,17 @@ export async function listEmployees(): Promise<EmployeeDto[]> {
   return data.data ?? [];
 }
 
+export async function listWorkerTypes(): Promise<Array<{ id: number; clave: string; nombre: string }>> {
+  const { data } = await api.get<ApiResponse<Array<{ Id: number; Clave: string; Nombre: string }>>>(
+    "/api/employees/tipos-trabajador",
+  );
+  return (data.data ?? []).map((item) => ({
+    id: item.Id,
+    clave: item.Clave,
+    nombre: item.Nombre,
+  }));
+}
+
 export async function listAvailableEmployees(includeUserId?: number): Promise<EmployeeDto[]> {
   const { data } = await api.get<EmployeesListResponse>("/api/employees/disponibles", {
     params: includeUserId ? { includeUserId } : undefined,
