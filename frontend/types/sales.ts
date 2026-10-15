@@ -44,6 +44,26 @@ export interface SaleDetailItemDto {
   };
 }
 
+export type CommercialReturnCondition = "VENDIBLE" | "DANADO" | "NO_VENDIBLE";
+
+export interface SaleCommercialReturnDetailDto {
+  id: number;
+  idDetalleVenta: number;
+  nombreProducto: string;
+  cantidad: number;
+  motivo: string;
+  condicionFisica: CommercialReturnCondition;
+  ubicacionNoVendible: string | null;
+}
+
+export interface SaleCommercialReturnDto {
+  id: number;
+  idUsuarioAutorizacion: number;
+  usuarioAutorizacion: { id: number; nombre: string };
+  fechaAutorizacion: string;
+  detalle: SaleCommercialReturnDetailDto[];
+}
+
 export interface SalePaymentDto {
   id: number;
   idVenta: number;
@@ -70,6 +90,13 @@ export interface SaleDto {
   numeroVenta: number;
   numeroProForma: number | null;
   tipoRegistro: "VENTA" | "PROFORMA";
+  reservaProforma: {
+    estado: "ACTIVA" | "CONSUMIDA" | "LIBERADA" | "VENCIDA";
+    fechaExpiracion: string;
+    fechaConsumo: string | null;
+    fechaLiberacion: string | null;
+    motivoLiberacion: string | null;
+  } | null;
   condicionPago: "CONTADO" | "CREDITO";
   estadoPago: "PENDIENTE" | "PARCIAL" | "PAGADO";
   estadoEntrega: "PENDIENTE" | "EN_RUTA" | "ENTREGADO" | "PARCIAL";
@@ -94,6 +121,7 @@ export interface SaleDto {
   rutaSesion?: SaleRouteDto | null;
   talonario?: SaleTalonarioRefDto | null;
   detalle?: SaleDetailItemDto[];
+  devolucionesComerciales?: SaleCommercialReturnDto[];
   pagos?: SalePaymentDto[];
   subtotal: number;
   totalBonificado?: number;
@@ -217,6 +245,7 @@ export interface CreateSalePayload {
   idTalonario?: number;
   numeroProForma?: number;
   tipoRegistro: "VENTA" | "PROFORMA";
+  fechaExpiracionProforma?: string;
   estadoEntrega: "PENDIENTE" | "EN_RUTA" | "ENTREGADO" | "PARCIAL";
   condicionPago: "CONTADO" | "CREDITO";
   requiereFactura: boolean;
@@ -240,6 +269,33 @@ export type CreateSaleResponse = ApiResponse<CreateSaleResult>;
 
 export type SaleByIdResponse = ApiResponse<SaleDto>;
 export type SalePaymentsResponse = ApiResponse<SalePaymentDto[]>;
+
+export interface CreateCommercialReturnPayload {
+  detalle: Array<{
+    idDetalleVenta: number;
+    cantidad: number;
+    motivo: string;
+    condicionFisica: CommercialReturnCondition;
+    ubicacionNoVendible?: string;
+  }>;
+}
+
+export interface CreateCommercialReturnResult {
+  id: number;
+  idVenta: number;
+  idUsuarioAutorizacion: number;
+  fechaAutorizacion: string;
+  detalle: Array<{
+    id: number;
+    idDetalleVenta: number;
+    cantidad: number;
+    motivo: string;
+    condicionFisica: CommercialReturnCondition;
+    ubicacionNoVendible: string | null;
+  }>;
+}
+
+export type CreateCommercialReturnResponse = ApiResponse<CreateCommercialReturnResult>;
 
 export interface CreateSalePaymentPayload {
   idUsuario: number;

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
+import { assertRouteCanClose, transferVerifiedRouteReturnToPlant } from './route-inventory.service';
 import { runSerializableTransaction } from '../utils/serializable-transaction';
 import { NotificationEvents, send } from './notification.service';
 
@@ -147,6 +148,8 @@ function toRutaSesionDto(sesion: {
   KmInicial: number | null;
   KmFinal: number | null;
   Estado: string;
+  FechaCierre: Date | null;
+  IdUsuarioCierre: number | null;
   FechaRegistro: Date | null;
   IdUsuarioModificador: number | null;
   FechaModificacion: Date | null;
@@ -184,6 +187,8 @@ function toRutaSesionDto(sesion: {
     kmInicial: sesion.KmInicial,
     kmFinal: sesion.KmFinal,
     estado: sesion.Estado,
+    fechaCierre: sesion.FechaCierre,
+    idUsuarioCierre: sesion.IdUsuarioCierre,
     fechaRegistro: sesion.FechaRegistro,
     idUsuarioModificador: sesion.IdUsuarioModificador,
     fechaModificacion: sesion.FechaModificacion,
@@ -905,6 +910,10 @@ export async function getRutaSesionById(id: number) {
 export async function createRutaSesion(input: CreateRutaSesionInput) {
   const fechaSesion = parseDateOnlyUtc(input.fechaSesion);
 
+  if (input.estado === 'CERRADA') {
+    throw new Error('No se puede crear una sesión directamente en estado CERRADA');
+  }
+
   await validateRutaExists(input.idRuta);
   await validateEmpleadoVinculado(input.idUsuarioChofer, 'Chofer');
   await validateEmpleadoVinculado(input.idUsuarioVendedor, 'Vendedor');
@@ -975,11 +984,33 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
         KmInicial: true,
         KmFinal: true,
         Estado: true,
+        DespachoRuta: { select: { Id: true } },
+        Venta: {
+          where: { Anulado: false },
+          select: { Id: true },
+          take: 1,
+        },
       },
     });
 
     if (!existing) {
       throw new Error('RutaSesion no existe');
+    }
+    if (existing.Estado === 'CERRADA') {
+      throw new Error('La sesión está cerrada y no admite modificaciones');
+    }
+
+    const hasOperationalRecords = Boolean(existing.DespachoRuta || existing.Venta.length);
+    if (
+      hasOperationalRecords &&
+      (input.idRuta !== undefined ||
+        input.idVehiculo !== undefined ||
+        input.idUsuarioChofer !== undefined ||
+        input.idUsuarioVendedor !== undefined ||
+        input.fechaSesion !== undefined ||
+        input.kmInicial !== undefined)
+    ) {
+      throw new Error('No se puede modificar la asignación de una sesión con operaciones registradas');
     }
 
     const nextRuta = input.idRuta ?? existing.IdRuta;
@@ -1002,6 +1033,13 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
       kmInicial: nextKmInicial,
       kmFinal: nextKmFinal,
     });
+    if (nextEstado === 'CERRADA') {
+      if (input.idUsuarioModificador === undefined) {
+        throw new Error('El usuario responsable del cierre es requerido');
+      }
+      await assertRouteCanClose(tx, id);
+      await transferVerifiedRouteReturnToPlant(tx, id, input.idUsuarioModificador);
+    }
 
     await assertVehicleAvailableForSession(tx, {
       idVehiculo: nextVehiculo,
@@ -1021,6 +1059,8 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
         KmInicial: nextKmInicial,
         KmFinal: nextKmFinal,
         Estado: nextEstado,
+        FechaCierre: nextEstado === 'CERRADA' ? new Date() : null,
+        IdUsuarioCierre: nextEstado === 'CERRADA' ? input.idUsuarioModificador : null,
         ...(input.idUsuarioModificador !== undefined
           ? { IdUsuarioModificador: input.idUsuarioModificador }
           : {}),
@@ -1059,11 +1099,19 @@ export async function deleteRutaSesion(id: number, idUsuarioAnulador: number) {
   await runSerializableTransaction(async (tx) => {
     const existing = await tx.rutaSesion.findFirst({
       where: { Id: id, Anulado: false },
-      select: { Id: true, IdVehiculo: true },
+      select: {
+        Id: true,
+        IdVehiculo: true,
+        DespachoRuta: { select: { Id: true } },
+        Venta: { where: { Anulado: false }, select: { Id: true }, take: 1 },
+      },
     });
 
     if (!existing) {
       throw new Error('RutaSesion no existe');
+    }
+    if (existing.DespachoRuta || existing.Venta.length) {
+      throw new Error('No se puede anular una sesión con operaciones de inventario o ventas');
     }
 
     await tx.rutaSesion.update({

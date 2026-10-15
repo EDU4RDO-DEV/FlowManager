@@ -36,12 +36,16 @@ import { formatSatNameForDisplay } from "@/lib/sales-formatters";
 import {
   anulateSale,
   anulateSalePayment,
+  confirmRouteProforma,
+  createCommercialReturn,
   createSalePayment,
   getSaleById,
   listSalePayments,
   uploadSaleProofImage,
 } from "@/services/sales.service";
 import type {
+  CommercialReturnCondition,
+  CreateCommercialReturnPayload,
   CreateSalePaymentPayload,
   SaleDto,
   SalePaymentDto,
@@ -93,10 +97,19 @@ export default function SaleDetailPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [isSavingPayment, setIsSavingPayment] = useState(false);
   const paymentIdempotencyKey = useRef<{ fingerprint: string; key: string } | null>(null);
+  const commercialReturnIdempotencyKey = useRef<{ fingerprint: string; key: string } | null>(null);
+  const [isSavingCommercialReturn, setIsSavingCommercialReturn] = useState(false);
+  const [commercialReturnLineId, setCommercialReturnLineId] = useState("");
+  const [commercialReturnQuantity, setCommercialReturnQuantity] = useState(1);
+  const [commercialReturnReason, setCommercialReturnReason] = useState("");
+  const [commercialReturnCondition, setCommercialReturnCondition] = useState<CommercialReturnCondition>("VENDIBLE");
+  const [commercialReturnLocation, setCommercialReturnLocation] = useState("");
   const [paymentToAnulate, setPaymentToAnulate] = useState<SalePaymentDto | null>(null);
   const [isAnulatingPayment, setIsAnulatingPayment] = useState(false);
   const [isAnulateSaleDialogOpen, setIsAnulateSaleDialogOpen] = useState(false);
   const [isAnulatingSale, setIsAnulatingSale] = useState(false);
+  const [isConfirmProformaDialogOpen, setIsConfirmProformaDialogOpen] = useState(false);
+  const [isConfirmingProforma, setIsConfirmingProforma] = useState(false);
 
   const [monto, setMonto] = useState(0);
   const [metodoPago, setMetodoPago] = useState<PaymentMethod>("EFECTIVO");
@@ -110,6 +123,15 @@ export default function SaleDetailPage() {
   const canCreatePayments = hasModulePermission(user, "ventas", "create");
   const canAnulatePayments = hasModulePermission(user, "ventas", "delete");
   const canAnulateSale = hasModulePermission(user, "ventas", "delete");
+  const canConfirmProforma = hasModulePermission(user, "ventas", "update");
+  const canCreateCommercialReturn = hasModulePermission(user, "ventas", "update");
+  const isOpenRouteSale = Boolean(
+    sale &&
+    !sale.anulado &&
+    sale.tipoRegistro === "VENTA" &&
+    sale.idRutaSesion !== null &&
+    sale.rutaSesion?.estado === "EN_CURSO",
+  );
 
   const loadData = useCallback(async () => {
     if (!Number.isInteger(saleId) || saleId <= 0) {
@@ -259,11 +281,90 @@ export default function SaleDetailPage() {
     }
   }
 
+  async function handleConfirmRouteProforma() {
+    if (!sale) {
+      return;
+    }
+
+    setIsConfirmingProforma(true);
+    try {
+      await confirmRouteProforma(sale.id);
+      toast.success("Proforma confirmada como venta; la reserva se consumió sin descontar de nuevo el inventario");
+      setIsConfirmProformaDialogOpen(false);
+      await loadData();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo confirmar la proforma"));
+    } finally {
+      setIsConfirmingProforma(false);
+    }
+  }
+
+  async function handleRegisterCommercialReturn() {
+    if (!user || !sale) {
+      return;
+    }
+    const sourceLine = sale.detalle?.find((line) => String(line.id) === commercialReturnLineId);
+    if (!sourceLine) {
+      toast.error("Selecciona el producto de la venta que se devuelve");
+      return;
+    }
+    if (commercialReturnQuantity <= 0) {
+      toast.error("La cantidad devuelta debe ser mayor a cero");
+      return;
+    }
+    if (commercialReturnReason.trim().length < 3) {
+      toast.error("El motivo debe tener al menos 3 caracteres");
+      return;
+    }
+    if (commercialReturnCondition !== "VENDIBLE" && !commercialReturnLocation.trim()) {
+      toast.error("Indica la ubicación segregada del producto no vendible");
+      return;
+    }
+
+    const payload: CreateCommercialReturnPayload = {
+      detalle: [{
+        idDetalleVenta: sourceLine.id,
+        cantidad: commercialReturnQuantity,
+        motivo: commercialReturnReason.trim(),
+        condicionFisica: commercialReturnCondition,
+        ...(commercialReturnCondition !== "VENDIBLE"
+          ? { ubicacionNoVendible: commercialReturnLocation.trim() }
+          : {}),
+      }],
+    };
+
+    setIsSavingCommercialReturn(true);
+    try {
+      const fingerprint = JSON.stringify(payload);
+      if (
+        !commercialReturnIdempotencyKey.current ||
+        commercialReturnIdempotencyKey.current.fingerprint !== fingerprint
+      ) {
+        commercialReturnIdempotencyKey.current = { fingerprint, key: crypto.randomUUID() };
+      }
+      await createCommercialReturn(sale.id, payload, commercialReturnIdempotencyKey.current.key);
+      commercialReturnIdempotencyKey.current = null;
+      toast.success(
+        commercialReturnCondition === "VENDIBLE"
+          ? "Producto devuelto agregado al inventario disponible del vehículo"
+          : "Producto no vendible registrado y segregado; no aumenta el inventario vendible",
+      );
+      setCommercialReturnLineId("");
+      setCommercialReturnQuantity(1);
+      setCommercialReturnReason("");
+      setCommercialReturnLocation("");
+      await loadData();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo registrar la devolución comercial"));
+    } finally {
+      setIsSavingCommercialReturn(false);
+    }
+  }
+
   async function handleConfirmAnulateSale() {
     if (!user || !sale) {
       return;
     }
-
     setIsAnulatingSale(true);
     try {
       await anulateSale(sale.id, { idUsuarioAnulador: user.id });
@@ -296,6 +397,16 @@ export default function SaleDetailPage() {
               {sale ? (
                 <Button asChild variant="outline">
                   <Link href={`/credits/customers/${sale.idCliente}`}>Abrir Créditos y Abonos</Link>
+                </Button>
+              ) : null}
+              {canConfirmProforma &&
+              sale &&
+              !sale.anulado &&
+              sale.tipoRegistro === "PROFORMA" &&
+              sale.idRutaSesion !== null &&
+              sale.reservaProforma?.estado === "ACTIVA" ? (
+                <Button onClick={() => setIsConfirmProformaDialogOpen(true)}>
+                  Confirmar proforma
                 </Button>
               ) : null}
               {canAnulateSale && sale && !sale.anulado ? (
@@ -474,6 +585,111 @@ export default function SaleDetailPage() {
                 </CardContent>
               </Card>
 
+              {isOpenRouteSale && canCreateCommercialReturn ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Devolución comercial de ruta</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Se registra contra el detalle original. Los productos vendibles vuelven al vehículo;
+                      los demás quedan segregados. No cambia pagos, CxC, FEL ni comisiones.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="space-y-1">
+                        <Label>Producto de la venta</Label>
+                        <Select value={commercialReturnLineId} onValueChange={setCommercialReturnLineId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleccionar detalle original" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(sale.detalle ?? []).map((line) => (
+                              <SelectItem key={line.id} value={String(line.id)}>
+                                {line.nombre} — vendido {line.cantidad.toFixed(2)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="commercial-return-quantity">Cantidad devuelta</Label>
+                        <Input
+                          id="commercial-return-quantity"
+                          type="number"
+                          min={0.01}
+                          step="0.01"
+                          value={commercialReturnQuantity}
+                          onChange={(event) => setCommercialReturnQuantity(Number(event.target.value || 0))}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Condición física</Label>
+                        <Select
+                          value={commercialReturnCondition}
+                          onValueChange={(value) => setCommercialReturnCondition(value as CommercialReturnCondition)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="VENDIBLE">Vendible y apto para reventa</SelectItem>
+                            <SelectItem value="DANADO">Dañado</SelectItem>
+                            <SelectItem value="NO_VENDIBLE">No vendible</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="commercial-return-reason">Motivo</Label>
+                        <Input
+                          id="commercial-return-reason"
+                          value={commercialReturnReason}
+                          onChange={(event) => setCommercialReturnReason(event.target.value)}
+                        />
+                      </div>
+                      {commercialReturnCondition !== "VENDIBLE" ? (
+                        <div className="space-y-1 md:col-span-2">
+                          <Label htmlFor="commercial-return-location">Ubicación segregada</Label>
+                          <Input
+                            id="commercial-return-location"
+                            value={commercialReturnLocation}
+                            onChange={(event) => setCommercialReturnLocation(event.target.value)}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                    <Button onClick={handleRegisterCommercialReturn} disabled={isSavingCommercialReturn}>
+                      {isSavingCommercialReturn ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                      Autorizar y registrar devolución
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {(sale.devolucionesComerciales?.length ?? 0) > 0 ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Historial de devoluciones comerciales</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {sale.devolucionesComerciales?.map((commercialReturn) => (
+                      <div key={commercialReturn.id} className="rounded-lg border p-3">
+                        <p className="text-sm text-muted-foreground">
+                          {formatDate(commercialReturn.fechaAutorizacion)} · autorizó {commercialReturn.usuarioAutorizacion.nombre}
+                        </p>
+                        <ul className="mt-2 space-y-1 text-sm">
+                          {commercialReturn.detalle.map((line) => (
+                            <li key={line.id}>
+                              {line.nombreProducto}: {line.cantidad.toFixed(2)} · {line.condicionFisica} · {line.motivo}
+                              {line.ubicacionNoVendible ? ` · ${line.ubicacionNoVendible}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ) : null}
+
               <Card>
                 <CardHeader>
                   <CardTitle>Pagos y cuenta por cobrar</CardTitle>
@@ -631,6 +847,16 @@ export default function SaleDetailPage() {
             </>
           ) : null}
         </div>
+
+        <ConfirmActionDialog
+          open={isConfirmProformaDialogOpen}
+          onOpenChange={setIsConfirmProformaDialogOpen}
+          title="Confirmar proforma de ruta"
+          description="La reserva de inventario del camión pasará a venta confirmada. No se hará un segundo descuento de inventario."
+          confirmLabel="Confirmar proforma"
+          loading={isConfirmingProforma}
+          onConfirm={handleConfirmRouteProforma}
+        />
 
         <ConfirmActionDialog
           open={Boolean(paymentToAnulate)}

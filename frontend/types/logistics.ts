@@ -38,6 +38,8 @@ export interface RutaSesionDto {
   kmInicial: number | null;
   kmFinal: number | null;
   estado: RutaSesionEstado;
+  fechaCierre: string | null;
+  idUsuarioCierre: number | null;
   fechaRegistro: string | null;
   idUsuarioModificador: number | null;
   fechaModificacion: string | null;
@@ -64,6 +66,32 @@ export interface RutaSesionDto {
     nombre: string;
     correo: string;
   };
+}
+
+export interface RouteInventoryLineDto {
+  idInventarioItem: number;
+  nombre: string;
+  unidadMedida: string | null;
+  despachado: number;
+  vendido: number;
+  devolucionComercial: number;
+  noVendibleComercial: number;
+  devuelto: number;
+  danado: number;
+  ajustado: number;
+  reservado: number;
+  pendienteConciliacion: number;
+  disponible: number;
+}
+
+export interface RouteInventoryDto {
+  idRutaSesion: number;
+  estado: RutaSesionEstado;
+  despacho: { id: number; observaciones: string | null; fechaRegistro: string | null } | null;
+  devolucion: { id: number; observaciones: string | null; fechaRegistro: string | null } | null;
+  productos: RouteInventoryLineDto[];
+  diferenciasPendientes?: RouteInventoryLineDto[];
+  conciliada?: boolean;
 }
 
 export interface GastoVehiculoDto {

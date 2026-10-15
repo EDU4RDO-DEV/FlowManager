@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
     usuario: { findFirst: vi.fn() },
+    rutaSesion: { findFirst: vi.fn() },
+    despachoRuta: { findUnique: vi.fn() },
+    devolucionRuta: { findUnique: vi.fn() },
+    devolucionComercial: { findFirst: vi.fn() },
     venta: { findFirst: vi.fn(), update: vi.fn() },
     detalleVenta: { updateMany: vi.fn() },
     pagoVenta: { updateMany: vi.fn() },
@@ -35,7 +39,7 @@ vi.mock('../services/inventory-movement.service', () => ({
 
 import { anulateSale, updateSale } from '../services/sale.service';
 
-function buildAnulateSaleRow() {
+function buildAnulateSaleRow(overrides: Record<string, unknown> = {}) {
   return {
     Id: 7,
     NumeroVenta: 1007,
@@ -47,6 +51,7 @@ function buildAnulateSaleRow() {
     DetalleVenta: [],
     PagoVenta: [],
     Cliente: { Entidad: { NombreCompleto: 'Cliente de Prueba' } },
+    ...overrides,
   };
 }
 
@@ -58,6 +63,17 @@ describe('Fase 23 - VENTA_ANULADA (anulateSale)', () => {
     prismaMock.$transaction.mockImplementation(async (callback: (tx: typeof prismaMock) => unknown) =>
       callback(prismaMock),
     );
+  });
+
+  it('blocks cancellation after a commercial return has been authorized', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
+    prismaMock.venta.findFirst.mockResolvedValueOnce(buildAnulateSaleRow());
+    prismaMock.devolucionComercial.findFirst.mockResolvedValueOnce({ Id: 91 });
+
+    await expect(anulateSale(7, 9)).rejects.toThrow(
+      'No se puede anular una venta que tiene devoluciones comerciales autorizadas',
+    );
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 
   it('notifica VENTA_ANULADA una sola vez, después de completar la transacción de anulación', async () => {
@@ -97,6 +113,47 @@ describe('Fase 23 - VENTA_ANULADA (anulateSale)', () => {
     sendMock.mockRejectedValueOnce(new Error('fallo inesperado de red'));
 
     await expect(anulateSale(7, 9)).resolves.toBeUndefined();
+  });
+
+  it('does not restore route sales into plant stock when cancelling before route receipt', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
+    prismaMock.venta.findFirst
+      .mockResolvedValueOnce(buildAnulateSaleRow({
+        IdRutaSesion: 12,
+        TipoRegistro: 'VENTA',
+        DetalleVenta: [{ Id: 8, IdInventarioItem: 5, Cantidad: 2, Nombre: 'Producto ruta' }],
+      }))
+      .mockResolvedValueOnce(buildAnulateSaleRow({
+        IdRutaSesion: 12,
+        TipoRegistro: 'VENTA',
+        DetalleVenta: [{ Id: 8, IdInventarioItem: 5, Cantidad: 2, Nombre: 'Producto ruta' }],
+      }));
+    prismaMock.despachoRuta.findUnique.mockResolvedValue({ Id: 31 });
+    prismaMock.rutaSesion.findFirst.mockResolvedValue({ Estado: 'EN_CURSO' });
+    prismaMock.devolucionRuta.findUnique.mockResolvedValue(null);
+    prismaMock.detalleVenta.updateMany.mockResolvedValueOnce({});
+    prismaMock.pagoVenta.updateMany.mockResolvedValueOnce({});
+    prismaMock.venta.update.mockResolvedValueOnce({});
+    prismaMock.cuentaPorCobrar.updateMany.mockResolvedValueOnce({});
+
+    await expect(anulateSale(7, 9)).resolves.toBeUndefined();
+    expect(prismaMock.despachoRuta.findUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects cancelling a route sale after the physical return was received', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
+    prismaMock.venta.findFirst.mockResolvedValueOnce(buildAnulateSaleRow({
+      IdRutaSesion: 12,
+      TipoRegistro: 'VENTA',
+    }));
+    prismaMock.despachoRuta.findUnique.mockResolvedValueOnce({ Id: 31 });
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Estado: 'EN_CURSO' });
+    prismaMock.devolucionRuta.findUnique.mockResolvedValueOnce({ Id: 32 });
+
+    await expect(anulateSale(7, 9)).rejects.toThrow(
+      'No se puede anular una venta después de liquidar o recibir la ruta',
+    );
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 });
 

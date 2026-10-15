@@ -7,6 +7,9 @@ import type {
   CreateSalePaymentPayload,
   CreateSalePaymentResponse,
   CreateSalePaymentResult,
+  CreateCommercialReturnPayload,
+  CreateCommercialReturnResponse,
+  CreateCommercialReturnResult,
   CreateSalePayload,
   CreateSaleResponse,
   CreateSaleResult,
@@ -166,6 +169,22 @@ export async function createSalePayment(
   return data.data;
 }
 
+export async function createCommercialReturn(
+  idVenta: number,
+  payload: CreateCommercialReturnPayload,
+  idempotencyKey: string,
+): Promise<CreateCommercialReturnResult> {
+  const { data } = await api.post<CreateCommercialReturnResponse>(
+    `/api/ventas/${idVenta}/devoluciones-comerciales`,
+    payload,
+    { headers: { "Idempotency-Key": idempotencyKey } },
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta inválida al registrar devolución comercial");
+  }
+  return data.data;
+}
+
 export async function anulateSalePayment(idVenta: number, idPago: number, idUsuarioAnulador?: number): Promise<void> {
   await api.patch(`/api/ventas/${idVenta}/pagos/${idPago}/anular`, {
     ...(idUsuarioAnulador ? { idUsuarioAnulador } : {}),
@@ -217,4 +236,8 @@ export async function listAvailableRouteSessions(idUsuarioVendedor?: number): Pr
 
 export async function anulateSale(id: number, payload?: AnulateSalePayload): Promise<void> {
   await api.patch(`/api/ventas/${id}/anular`, payload ?? {});
+}
+
+export async function confirmRouteProforma(id: number): Promise<void> {
+  await api.post(`/api/ventas/${id}/confirmar-proforma`);
 }

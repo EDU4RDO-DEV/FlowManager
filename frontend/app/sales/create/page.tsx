@@ -98,6 +98,8 @@ export default function CreateSalePage() {
   const [idCliente, setIdCliente] = useState<number | null>(null);
   const [idRutaSesion, setIdRutaSesion] = useState<number | null>(null);
   const [idTalonario, setIdTalonario] = useState<number | null>(null);
+  const [tipoRegistro, setTipoRegistro] = useState<"VENTA" | "PROFORMA">("VENTA");
+  const [fechaExpiracionProforma, setFechaExpiracionProforma] = useState("");
   const [condicionPago, setCondicionPago] = useState<"CONTADO" | "CREDITO">("CONTADO");
   const [requiereFactura, setRequiereFactura] = useState(false);
   const [nitFacturado, setNitFacturado] = useState("");
@@ -401,6 +403,20 @@ export default function CreateSalePage() {
       return "Selecciona un cliente";
     }
 
+    if (tipoRegistro === "PROFORMA") {
+      const expirationDate = new Date(fechaExpiracionProforma);
+      if (!idRutaSesion) {
+        return "Selecciona una sesión de ruta para reservar inventario en el vehículo";
+      }
+      if (
+        !fechaExpiracionProforma ||
+        Number.isNaN(expirationDate.getTime()) ||
+        expirationDate <= new Date()
+      ) {
+        return "Indica una fecha y hora futura para liberar la reserva de la proforma";
+      }
+    }
+
     if (detalle.length === 0) {
       return "Agrega al menos un producto al detalle";
     }
@@ -480,7 +496,10 @@ export default function CreateSalePage() {
         idCliente,
         idRutaSesion: idRutaSesion ?? undefined,
         idTalonario: idTalonario ?? undefined,
-        tipoRegistro: "VENTA",
+        tipoRegistro,
+        ...(tipoRegistro === "PROFORMA"
+          ? { fechaExpiracionProforma: new Date(fechaExpiracionProforma).toISOString() }
+          : {}),
         estadoEntrega: "PENDIENTE",
         condicionPago,
         requiereFactura,
@@ -492,7 +511,7 @@ export default function CreateSalePage() {
         pagoInicial: paymentPayload,
       });
 
-      toast.success(`Venta #${result.numeroVenta} registrada correctamente`);
+      toast.success(`${tipoRegistro === "PROFORMA" ? "Proforma" : "Venta"} #${result.numeroVenta} registrada correctamente`);
       router.push(`/sales/${result.id}`);
       router.refresh();
     } catch (error) {
@@ -625,7 +644,14 @@ export default function CreateSalePage() {
                 <Label>Sesión de ruta (opcional)</Label>
                 <Select
                   value={idRutaSesion ? String(idRutaSesion) : "none"}
-                  onValueChange={(value) => setIdRutaSesion(value === "none" ? null : Number(value))}
+                  onValueChange={(value) => {
+                    const selectedSession = value === "none" ? null : Number(value);
+                    setIdRutaSesion(selectedSession);
+                    if (!selectedSession && tipoRegistro === "PROFORMA") {
+                      setTipoRegistro("VENTA");
+                      setFechaExpiracionProforma("");
+                    }
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Sin sesión de ruta" />
@@ -643,6 +669,40 @@ export default function CreateSalePage() {
                   Requerido para que la venta cuente en comisiones del vendedor/chofer.
                 </p>
               </div>
+
+              <div className="space-y-1">
+                <Label>Tipo de registro</Label>
+                <Select
+                  value={tipoRegistro}
+                  onValueChange={(value) => setTipoRegistro(value as "VENTA" | "PROFORMA")}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="VENTA">Venta confirmada</SelectItem>
+                    <SelectItem value="PROFORMA" disabled={!idRutaSesion}>Proforma con reserva de ruta</SelectItem>
+                  </SelectContent>
+                </Select>
+                {tipoRegistro === "PROFORMA" ? (
+                  <p className="text-xs text-muted-foreground">
+                    Las unidades se reservan en el vehículo hasta el vencimiento, cancelación o confirmación de la proforma.
+                  </p>
+                ) : null}
+              </div>
+
+              {tipoRegistro === "PROFORMA" ? (
+                <div className="space-y-1">
+                  <Label htmlFor="proforma-expiracion">Fecha y hora de expiración *</Label>
+                  <Input
+                    id="proforma-expiracion"
+                    type="datetime-local"
+                    value={fechaExpiracionProforma}
+                    onChange={(event) => setFechaExpiracionProforma(event.target.value)}
+                    required
+                  />
+                </div>
+              ) : null}
 
               <div className="space-y-1">
                 <Label htmlFor="lugar-entrega">Lugar de entrega</Label>
@@ -961,7 +1021,7 @@ export default function CreateSalePage() {
               <div className="md:col-span-2">
                 <Button className="w-full" disabled={isSubmitting || isLoading} onClick={handleSubmit}>
                   {isSubmitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                  Registrar venta
+                  {tipoRegistro === "PROFORMA" ? "Registrar proforma" : "Registrar venta"}
                 </Button>
               </div>
             </CardContent>

@@ -37,6 +37,38 @@ export const salePaymentIdParamsSchema = z.object({
   idPago: z.coerce.number().int('idPago debe ser entero').positive('idPago debe ser mayor a 0'),
 });
 
+export const createCommercialReturnIdempotencyKeySchema = z.string().uuid();
+
+export const createCommercialReturnSchema = z.object({
+  detalle: z.array(z.object({
+    idDetalleVenta: positiveInt,
+    cantidad: finitePositiveNumber,
+    motivo: z.string().trim().min(3).max(255),
+    condicionFisica: z.enum(['VENDIBLE', 'DANADO', 'NO_VENDIBLE']),
+    ubicacionNoVendible: z.string().trim().min(1).max(255).optional(),
+  }).superRefine((detail, ctx) => {
+    if (detail.condicionFisica !== 'VENDIBLE' && !detail.ubicacionNoVendible) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'ubicacionNoVendible es obligatoria para productos no vendibles',
+        path: ['ubicacionNoVendible'],
+      });
+    }
+  })).min(1).superRefine((details, ctx) => {
+    const seen = new Set<number>();
+    for (const [index, detail] of details.entries()) {
+      if (seen.has(detail.idDetalleVenta)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'No se permite repetir el detalle de venta',
+          path: [index, 'idDetalleVenta'],
+        });
+      }
+      seen.add(detail.idDetalleVenta);
+    }
+  }),
+});
+
 export const listSalesQuerySchema = z
   .object({
     page: optionalPageFromQuery,
@@ -76,6 +108,7 @@ export const createSaleSchema = z
     idTalonario: positiveInt.optional(),
     numeroProForma: positiveInt.optional(),
     tipoRegistro: tipoRegistroSchema.default('VENTA'),
+    fechaExpiracionProforma: z.string().datetime({ offset: true }).optional(),
     estadoEntrega: estadoEntregaSchema.default('PENDIENTE'),
     condicionPago: condicionPagoSchema,
     requiereFactura: z.boolean().default(false),
@@ -88,6 +121,27 @@ export const createSaleSchema = z
     pagoInicial: salePaymentSchema.optional(),
   })
   .superRefine((data, ctx) => {
+    const isRouteProforma = Boolean(data.idRutaSesion && data.tipoRegistro === 'PROFORMA');
+    if (isRouteProforma && !data.fechaExpiracionProforma) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'fechaExpiracionProforma es obligatoria para proformas de ruta',
+        path: ['fechaExpiracionProforma'],
+      });
+    } else if (!isRouteProforma && data.fechaExpiracionProforma) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'fechaExpiracionProforma solo aplica a proformas asociadas a una ruta',
+        path: ['fechaExpiracionProforma'],
+      });
+    } else if (data.fechaExpiracionProforma && new Date(data.fechaExpiracionProforma) <= new Date()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'fechaExpiracionProforma debe ser futura',
+        path: ['fechaExpiracionProforma'],
+      });
+    }
+
     const uniqueIds = new Set<number>();
 
     for (const [index, item] of data.detalle.entries()) {

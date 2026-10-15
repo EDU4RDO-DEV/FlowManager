@@ -5,6 +5,7 @@ import { ZodError } from 'zod';
 import {
   anulateSale,
   anulateSalePayment,
+  confirmRouteProforma,
   createSale,
   createSalePayment,
   getSaleById,
@@ -255,6 +256,8 @@ export async function createSaleController(req: Request, res: Response) {
 
     if (
       message.startsWith('Stock insuficiente') ||
+      message.startsWith('Existencia insuficiente en el vehículo') ||
+      message.startsWith('La fecha de expiración de la proforma') ||
       message.startsWith('Venta de contado') ||
       message.startsWith('Pago inicial') ||
       message === 'Cliente no tiene habilitado el crédito' ||
@@ -262,6 +265,15 @@ export async function createSaleController(req: Request, res: Response) {
       message.includes('No fue posible reservar correlativo de talonario')
     ) {
       return res.status(400).json({ ok: false, message });
+    }
+
+    if (
+      message.includes('debe estar EN_CURSO para vender') ||
+      message.includes('No existe un despacho confirmado') ||
+      message.includes('no forma parte del despacho de la ruta') ||
+      message.includes('No se puede anular una venta después de liquidar o recibir la ruta')
+    ) {
+      return res.status(409).json({ ok: false, message });
     }
 
     if (message.startsWith('FEL:')) {
@@ -296,6 +308,46 @@ export async function updateSaleController(req: Request, res: Response) {
 
     if (message.startsWith('No se puede modificar')) {
       return res.status(400).json({ ok: false, message });
+    }
+
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function confirmRouteProformaController(req: Request, res: Response) {
+  try {
+    const { id } = saleIdParamsSchema.parse(req.params);
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
+    }
+
+    const data = await confirmRouteProforma(id, userId);
+    return res.status(200).json({ ok: true, data, message: 'Proforma confirmada como venta' });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return res.status(409).json({
+        ok: false,
+        message: 'Conflicto concurrente al confirmar la proforma; consulte el estado antes de reintentar',
+      });
+    }
+
+    const message = error instanceof Error ? error.message : 'Error interno';
+    if (message === 'Venta no existe o está anulada' || message === 'Usuario no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+    if (
+      message.includes('proforma') ||
+      message.includes('reserva') ||
+      message.includes('sesión de ruta') ||
+      message.includes('despacho confirmado') ||
+      message.includes('devolución')
+    ) {
+      return res.status(409).json({ ok: false, message });
     }
 
     return res.status(500).json({ ok: false, message });

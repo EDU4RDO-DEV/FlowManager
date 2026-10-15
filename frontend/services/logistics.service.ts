@@ -11,6 +11,7 @@ import type {
   MantenimientoVehiculoDto,
   RutaDto,
   RutaSesionDto,
+  RouteInventoryDto,
   UpdateGastoVehiculoPayload,
   UpdateMantenimientoPayload,
   UpdateRutaPayload,
@@ -142,6 +143,64 @@ export async function updateRutaSesion(
     throw new Error(data.message || "Respuesta invalida al actualizar sesión");
   }
   return data.data;
+}
+
+export async function getRouteInventory(idRutaSesion: number): Promise<RouteInventoryDto> {
+  const { data } = await api.get<ApiResponse<RouteInventoryDto>>(
+    `/api/logistics/rutas/sesiones/${idRutaSesion}/inventario`,
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al consultar inventario de ruta");
+  }
+  return data.data;
+}
+
+export async function getRouteSettlement(idRutaSesion: number): Promise<RouteInventoryDto> {
+  const { data } = await api.get<ApiResponse<RouteInventoryDto>>(
+    `/api/logistics/rutas/sesiones/${idRutaSesion}/liquidacion`,
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al consultar liquidación de ruta");
+  }
+  return data.data;
+}
+
+export async function createRouteDispatch(
+  idRutaSesion: number,
+  payload: {
+    observaciones?: string;
+    detalle: Array<{ idInventarioItem: number; cantidad: number }>;
+  },
+): Promise<void> {
+  await api.post(`/api/logistics/rutas/sesiones/${idRutaSesion}/despacho`, payload);
+}
+
+export async function createRouteReturn(
+  idRutaSesion: number,
+  payload: {
+    observaciones?: string;
+    detalle: Array<{
+      idInventarioItem: number;
+      cantidadRecibida: number;
+      cantidadDanada: number;
+      observaciones?: string;
+      ubicacionDanada?: string;
+    }>;
+  },
+): Promise<void> {
+  await api.post(`/api/logistics/rutas/sesiones/${idRutaSesion}/devolucion`, payload);
+}
+
+export async function createRouteAdjustment(
+  idRutaSesion: number,
+  payload: {
+    idInventarioItem: number;
+    clasificacion: "FALTANTE" | "DANADO" | "OTRO";
+    cantidad: number;
+    motivo: string;
+  },
+): Promise<void> {
+  await api.post(`/api/logistics/rutas/sesiones/${idRutaSesion}/ajustes`, payload);
 }
 
 export async function deleteRutaSesion(

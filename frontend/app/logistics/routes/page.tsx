@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Loader2, MapPinned, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -300,7 +301,13 @@ export default function LogisticsRoutesPage() {
         description="Gestión de rutas, sesiones operativas y asignación de chofer, vendedor y vehículo."
       >
         <div className="space-y-6">
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <Button asChild variant="outline">
+              <Link href="/logistics/routes/operations">
+                <MapPinned className="size-4" />
+                Despacho y liquidación
+              </Link>
+            </Button>
             <Button variant="outline" onClick={loadData} disabled={isLoading}>
               {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
               Recargar

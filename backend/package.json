@@ -11,6 +11,7 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "test": "vitest run",
+    "test:integration:routes": "node scripts/run-route-integration-tests.js",
     "test:watch": "vitest"
   },
   "keywords": [],

@@ -137,6 +137,8 @@ describe('logistics vehicle reservation transactions', () => {
         KmInicial: null,
         KmFinal: null,
         Estado: 'PROGRAMADA',
+        DespachoRuta: null,
+        Venta: [],
       })
       .mockResolvedValueOnce({ Id: 71 });
     prismaMock.ruta.findFirst.mockResolvedValueOnce({ Id: 1 });
@@ -155,6 +157,18 @@ describe('logistics vehicle reservation transactions', () => {
       expect.any(Function),
       { isolationLevel: 'Serializable' },
     );
+    expect(prismaMock.rutaSesion.update).not.toHaveBeenCalled();
+  });
+
+  it('blocks ordinary updates to a closed route session', async () => {
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({
+      Id: 70,
+      Estado: 'CERRADA',
+      DespachoRuta: { Id: 80 },
+      Venta: [],
+    });
+
+    await expect(updateRutaSesion(70, {})).rejects.toThrow('La sesión está cerrada y no admite modificaciones');
     expect(prismaMock.rutaSesion.update).not.toHaveBeenCalled();
   });
 });

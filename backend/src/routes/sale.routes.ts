@@ -3,6 +3,7 @@ import { Router } from 'express';
 import {
   anulateSaleController,
   anulateSalePaymentController,
+  confirmRouteProformaController,
   createSaleController,
   createSalePaymentController,
   getSaleByIdController,
@@ -18,6 +19,7 @@ import {
 } from '../controllers/sale.controller';
 import { requireModulePermission } from '../middlewares/auth.middleware';
 import { uploadSaleProofImage } from '../middlewares/upload.middleware';
+import { createCommercialReturnController } from '../controllers/commercial-return.controller';
 
 const saleRouter = Router();
 
@@ -40,6 +42,8 @@ saleRouter.get('/', requireModulePermission('ventas', 'read'), listSalesControll
 saleRouter.get('/:id', requireModulePermission('ventas', 'read'), getSaleByIdController);
 saleRouter.post('/', requireModulePermission('ventas', 'create'), createSaleController);
 saleRouter.patch('/:id', requireModulePermission('ventas', 'update'), updateSaleController);
+saleRouter.post('/:id/confirmar-proforma', requireModulePermission('ventas', 'update'), confirmRouteProformaController);
+saleRouter.post('/:id/devoluciones-comerciales', requireModulePermission('ventas', 'update'), createCommercialReturnController);
 saleRouter.patch('/:id/anular', requireModulePermission('ventas', 'delete'), anulateSaleController);
 
 saleRouter.get('/:id/pagos', requireModulePermission('ventas', 'read'), listSalePaymentsController);

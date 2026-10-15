@@ -32,7 +32,7 @@ export type ClientsListResponse = ApiResponse<ClientDto[]>;
 
 export interface CreateClientPayload {
   idUsuario: number;
-  habilitadoCredito: boolean;
+  habilitadoCredito?: boolean;
   entidad: {
     nombreCompleto: string;
     sexo?: string;

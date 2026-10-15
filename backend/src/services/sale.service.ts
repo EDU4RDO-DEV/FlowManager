@@ -6,6 +6,8 @@ import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
 import { anulateFelInvoice, emitFelInvoice } from './fel.service';
 import { registerInventoryMovement } from './inventory-movement.service';
 import { NotificationEvents, send } from './notification.service';
+import { processExpiredProformaReservations } from './proforma-reservation.service';
+import { getRouteAvailableQuantities } from './route-inventory.service';
 
 type ListSalesInput = {
   page?: number;
@@ -48,6 +50,7 @@ type CreateSaleInput = {
   idTalonario?: number;
   numeroProForma?: number;
   tipoRegistro: 'VENTA' | 'PROFORMA';
+  fechaExpiracionProforma?: string;
   estadoEntrega: 'PENDIENTE' | 'EN_RUTA' | 'ENTREGADO' | 'PARCIAL';
   condicionPago: 'CONTADO' | 'CREDITO';
   requiereFactura: boolean;
@@ -493,6 +496,30 @@ async function getSaleByIdInternal(
           },
         },
       },
+      ReservaProforma: {
+        select: {
+          Estado: true,
+          FechaExpiracion: true,
+          FechaConsumo: true,
+          FechaLiberacion: true,
+          MotivoLiberacion: true,
+        },
+      },
+      DevolucionesComerciales: {
+        include: {
+          UsuarioAutorizacion: {
+            select: { Id: true, Nombre: true },
+          },
+          Detalles: {
+            include: {
+              DetalleVenta: {
+                select: { Id: true, Nombre: true },
+              },
+            },
+          },
+        },
+        orderBy: { FechaAutorizacion: 'desc' },
+      },
     },
   });
 }
@@ -558,6 +585,33 @@ function toSaleDto(sale: NonNullable<Awaited<ReturnType<typeof getSaleByIdIntern
     numeroVenta: sale.NumeroVenta,
     numeroProForma: sale.NumeroProForma,
     tipoRegistro: sale.TipoRegistro,
+    reservaProforma: sale.ReservaProforma
+      ? {
+          estado: sale.ReservaProforma.Estado,
+          fechaExpiracion: sale.ReservaProforma.FechaExpiracion,
+          fechaConsumo: sale.ReservaProforma.FechaConsumo,
+          fechaLiberacion: sale.ReservaProforma.FechaLiberacion,
+          motivoLiberacion: sale.ReservaProforma.MotivoLiberacion,
+        }
+      : null,
+    devolucionesComerciales: (sale.DevolucionesComerciales ?? []).map((commercialReturn) => ({
+      id: commercialReturn.Id,
+      idUsuarioAutorizacion: commercialReturn.IdUsuarioAutorizacion,
+      usuarioAutorizacion: {
+        id: commercialReturn.UsuarioAutorizacion.Id,
+        nombre: commercialReturn.UsuarioAutorizacion.Nombre,
+      },
+      fechaAutorizacion: commercialReturn.FechaAutorizacion,
+      detalle: commercialReturn.Detalles.map((detail) => ({
+        id: detail.Id,
+        idDetalleVenta: detail.IdDetalleVenta,
+        nombreProducto: detail.DetalleVenta.Nombre,
+        cantidad: detail.Cantidad,
+        motivo: detail.Motivo,
+        condicionFisica: detail.CondicionFisica,
+        ubicacionNoVendible: detail.UbicacionNoVendible,
+      })),
+    })),
     estadoEntrega: sale.EstadoEntrega,
     condicionPago: sale.CondicionPago,
     estadoPago: sale.EstadoPago,
@@ -749,6 +803,30 @@ export async function listSales(input: ListSalesInput) {
             },
           },
         },
+        ReservaProforma: {
+          select: {
+            Estado: true,
+            FechaExpiracion: true,
+            FechaConsumo: true,
+            FechaLiberacion: true,
+            MotivoLiberacion: true,
+          },
+        },
+        DevolucionesComerciales: {
+          include: {
+            UsuarioAutorizacion: {
+              select: { Id: true, Nombre: true },
+            },
+            Detalles: {
+              include: {
+                DetalleVenta: {
+                  select: { Id: true, Nombre: true },
+                },
+              },
+            },
+          },
+          orderBy: { FechaAutorizacion: 'desc' },
+        },
       },
     }),
   ]);
@@ -882,9 +960,20 @@ export async function createSale(input: CreateSaleInput) {
     validatePaymentRules(input.pagoInicial);
   }
 
+  const isRouteProforma = Boolean(input.idRutaSesion && input.tipoRegistro === 'PROFORMA');
+  const proformaExpiration = input.fechaExpiracionProforma
+    ? new Date(input.fechaExpiracionProforma)
+    : null;
+  if (isRouteProforma && (!proformaExpiration || !Number.isFinite(proformaExpiration.getTime()) || proformaExpiration <= new Date())) {
+    throw new Error('La fecha de expiración de la proforma debe ser futura');
+  }
+
   const created = await prisma.$transaction(
     async (tx) => {
       const fechaOperacion = new Date();
+      if (isRouteProforma && proformaExpiration! <= fechaOperacion) {
+        throw new Error('La fecha de expiración de la proforma debe ser futura');
+      }
       if (input.condicionPago === 'CREDITO') {
         await validateClienteCreditoHabilitado(tx, input.idCliente);
       }
@@ -960,10 +1049,37 @@ export async function createSale(input: CreateSaleInput) {
           throw new Error(`InventarioItem ${idItem} no existe o está anulado`);
         }
 
+        if (input.idRutaSesion && (input.tipoRegistro === 'VENTA' || input.tipoRegistro === 'PROFORMA')) {
+          continue;
+        }
+
         if (item.existencia < requiredQty) {
           throw new Error(
             `Stock insuficiente para ${item.nombre}. Existencia actual ${item.existencia}, requerida ${requiredQty}`,
           );
+        }
+      }
+
+      const routeAvailableByItem =
+        input.idRutaSesion && (input.tipoRegistro === 'VENTA' || input.tipoRegistro === 'PROFORMA')
+          ? await getRouteAvailableQuantities(tx, input.idRutaSesion)
+          : null;
+
+      if (routeAvailableByItem) {
+        for (const [idItem, requiredQty] of requiredByItem) {
+          const item = itemCache.get(idItem);
+          const available = routeAvailableByItem.get(idItem);
+          if (!item) {
+            throw new Error(`InventarioItem ${idItem} no existe o está anulado`);
+          }
+          if (available === undefined) {
+            throw new Error(`El producto ${item.nombre} no forma parte del despacho de la ruta`);
+          }
+          if (available + 0.009 < requiredQty) {
+            throw new Error(
+              `Existencia insuficiente en el vehículo para ${item.nombre}. Disponible ${available}, requerida ${requiredQty}`,
+            );
+          }
         }
       }
 
@@ -1041,8 +1157,9 @@ export async function createSale(input: CreateSaleInput) {
         },
       });
 
+      const reservedDetailRows: Array<{ idDetalleVenta: number; cantidad: number }> = [];
       for (const detail of detailRows) {
-        await tx.detalleVenta.create({
+        const createdDetail = await tx.detalleVenta.create({
           data: {
             IdVenta: createdSale.Id,
             IdInventarioItem: detail.idInventarioItem,
@@ -1052,36 +1169,65 @@ export async function createSale(input: CreateSaleInput) {
             EsBonificacion: detail.esBonificacion,
             Anulado: false,
           },
+          select: { Id: true },
         });
+
+        if (isRouteProforma) {
+          reservedDetailRows.push({
+            idDetalleVenta: createdDetail.Id,
+            cantidad: detail.cantidad,
+          });
+        }
 
         const item = itemCache.get(detail.idInventarioItem);
         if (!item) {
           throw new Error(`InventarioItem ${detail.idInventarioItem} no existe o está anulado`);
         }
 
-        const existenciaAnterior = item.existencia;
-        const nuevaExistencia = Number((existenciaAnterior - detail.cantidad).toFixed(2));
+        if (!(input.idRutaSesion && (input.tipoRegistro === 'VENTA' || input.tipoRegistro === 'PROFORMA'))) {
+          const existenciaAnterior = item.existencia;
+          const nuevaExistencia = Number((existenciaAnterior - detail.cantidad).toFixed(2));
 
-        await tx.inventarioItem.update({
-          where: { Id: detail.idInventarioItem },
+          await tx.inventarioItem.update({
+            where: { Id: detail.idInventarioItem },
+            data: {
+              Existencia: nuevaExistencia,
+            },
+          });
+
+          await registerInventoryMovement(tx, {
+            idInventarioItem: detail.idInventarioItem,
+            idUsuario: input.idUsuario,
+            tipoDocumento: 'VEN',
+            documento: createdSale.Id.toString(),
+            nombre: `Salida venta #${createdSale.NumeroVenta} - ${detail.nombre}`,
+            tipoMovimiento: false,
+            existenciaAnterior,
+            cantidad: detail.cantidad,
+            nuevaExistencia,
+          });
+
+          item.existencia = nuevaExistencia;
+        }
+      }
+
+      if (isRouteProforma) {
+        if (proformaExpiration! <= new Date()) {
+          throw new Error('La fecha de expiración de la proforma debe ser futura');
+        }
+        await tx.reservaProforma.create({
           data: {
-            Existencia: nuevaExistencia,
+            IdVenta: createdSale.Id,
+            IdUsuario: input.idUsuario,
+            FechaExpiracion: proformaExpiration!,
+            Detalles: {
+              create: reservedDetailRows.map((detail) => ({
+                IdDetalleVenta: detail.idDetalleVenta,
+                CantidadReservada: detail.cantidad,
+              })),
+            },
           },
         });
-
-        await registerInventoryMovement(tx, {
-          idInventarioItem: detail.idInventarioItem,
-          idUsuario: input.idUsuario,
-          tipoDocumento: 'VEN',
-          documento: createdSale.Id.toString(),
-          nombre: `Salida venta #${createdSale.NumeroVenta} - ${detail.nombre}`,
-          tipoMovimiento: false,
-          existenciaAnterior,
-          cantidad: detail.cantidad,
-          nuevaExistencia,
-        });
-
-        item.existencia = nuevaExistencia;
       }
 
       if (input.pagoInicial && totalPagoInicial > 0) {
@@ -1181,6 +1327,88 @@ export async function createSale(input: CreateSaleInput) {
   }
 
   return created;
+}
+
+export async function confirmRouteProforma(id: number, idUsuario: number) {
+  await validateUsuarioExists(idUsuario);
+  await processExpiredProformaReservations();
+
+  return prisma.$transaction(
+    async (tx) => {
+      const sale = await tx.venta.findFirst({
+        where: { Id: id, Anulado: false },
+        select: {
+          Id: true,
+          IdRutaSesion: true,
+          TipoRegistro: true,
+          ReservaProforma: {
+            select: {
+              Id: true,
+              Estado: true,
+              FechaExpiracion: true,
+            },
+          },
+        },
+      });
+
+      if (!sale) {
+        throw new Error('Venta no existe o está anulada');
+      }
+      if (sale.TipoRegistro !== 'PROFORMA' || !sale.IdRutaSesion) {
+        throw new Error('Solo se pueden confirmar proformas asociadas a una sesión de ruta');
+      }
+      if (!sale.ReservaProforma) {
+        throw new Error('La proforma no tiene una reserva de inventario de ruta');
+      }
+      if (sale.ReservaProforma.Estado !== 'ACTIVA' || sale.ReservaProforma.FechaExpiracion <= new Date()) {
+        throw new Error('La reserva de la proforma ya no está activa o venció');
+      }
+
+      await getRouteAvailableQuantities(tx, sale.IdRutaSesion);
+
+      const now = new Date();
+      const consumed = await tx.reservaProforma.updateMany({
+        where: {
+          Id: sale.ReservaProforma.Id,
+          Estado: 'ACTIVA',
+          FechaExpiracion: { gt: now },
+        },
+        data: {
+          Estado: 'CONSUMIDA',
+          FechaConsumo: now,
+          IdUsuarioConsumo: idUsuario,
+        },
+      });
+      if (consumed.count !== 1) {
+        throw new Error('La reserva de la proforma cambió de estado; vuelva a consultar la venta');
+      }
+
+      const updated = await tx.venta.updateMany({
+        where: {
+          Id: id,
+          IdRutaSesion: sale.IdRutaSesion,
+          TipoRegistro: 'PROFORMA',
+          Anulado: false,
+        },
+        data: {
+          TipoRegistro: 'VENTA',
+          IdUsuarioModificador: idUsuario,
+          FechaModificacion: now,
+        },
+      });
+      if (updated.count !== 1) {
+        throw new Error('La proforma cambió de estado; vuelva a consultar la venta');
+      }
+
+      const convertedSale = await getSaleByIdInternal(tx, id, true);
+      if (!convertedSale) {
+        throw new Error('No se pudo confirmar la proforma');
+      }
+
+      return toSaleDto(convertedSale);
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+  );
 }
 
 export function buildPedidoEntregadoDatos(sale: ReturnType<typeof toSaleDto>) {
@@ -1361,6 +1589,33 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
     throw new Error('Venta no existe o ya está anulada');
   }
 
+  if (await prisma.devolucionComercial.findFirst({
+    where: { IdVenta: sale.Id },
+    select: { Id: true },
+  })) {
+    throw new Error('No se puede anular una venta que tiene devoluciones comerciales autorizadas');
+  }
+
+  if (sale.IdRutaSesion && sale.TipoRegistro === 'VENTA') {
+    const routeDispatch = await prisma.despachoRuta.findUnique({
+      where: { IdRutaSesion: sale.IdRutaSesion },
+      select: { Id: true },
+    });
+    if (routeDispatch) {
+      const route = await prisma.rutaSesion.findFirst({
+        where: { Id: sale.IdRutaSesion },
+        select: { Estado: true },
+      });
+      const routeReturn = await prisma.devolucionRuta.findUnique({
+        where: { IdRutaSesion: sale.IdRutaSesion },
+        select: { Id: true },
+      });
+      if (route?.Estado === 'CERRADA' || routeReturn) {
+        throw new Error('No se puede anular una venta después de liquidar o recibir la ruta');
+      }
+    }
+  }
+
   let rutaPdfFelAnulacion: string | null = null;
 
   if (sale.RequiereFactura && sale.AutorizacionFel && sale.SerieFel && sale.NumeroFel) {
@@ -1393,6 +1648,9 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
             Nombre: true,
           },
         },
+        ReservaProforma: {
+          select: { Id: true },
+        },
       },
     });
 
@@ -1400,9 +1658,61 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
       throw new Error('Venta no existe o ya está anulada');
     }
 
+    if (await tx.devolucionComercial.findFirst({
+      where: { IdVenta: saleToAnulate.Id },
+      select: { Id: true },
+    })) {
+      throw new Error('No se puede anular una venta que tiene devoluciones comerciales autorizadas');
+    }
+
     const fechaAnulacion = new Date();
 
+    const routeDispatch =
+      saleToAnulate.IdRutaSesion && saleToAnulate.TipoRegistro === 'VENTA'
+        ? await tx.despachoRuta.findUnique({
+            where: { IdRutaSesion: saleToAnulate.IdRutaSesion },
+            select: { Id: true },
+          })
+        : null;
+    const saleWasDeductedFromRoute = Boolean(routeDispatch);
+    const isReservedRouteProforma =
+      Boolean(saleToAnulate.IdRutaSesion) &&
+      saleToAnulate.TipoRegistro === 'PROFORMA' &&
+      Boolean(saleToAnulate.ReservaProforma);
+    if (saleWasDeductedFromRoute) {
+      const route = await tx.rutaSesion.findFirst({
+        where: { Id: saleToAnulate.IdRutaSesion! },
+        select: { Estado: true },
+      });
+      const routeReturn = await tx.devolucionRuta.findUnique({
+        where: { IdRutaSesion: saleToAnulate.IdRutaSesion! },
+        select: { Id: true },
+      });
+      if (route?.Estado === 'CERRADA' || routeReturn) {
+        throw new Error('No se puede anular una venta después de liquidar o recibir la ruta');
+      }
+    }
+
+    if (isReservedRouteProforma && saleToAnulate.ReservaProforma) {
+      await tx.reservaProforma.updateMany({
+        where: {
+          Id: saleToAnulate.ReservaProforma.Id,
+          Estado: 'ACTIVA',
+        },
+        data: {
+          Estado: 'LIBERADA',
+          FechaLiberacion: fechaAnulacion,
+          IdUsuarioLiberacion: idUsuarioAnulador ?? saleToAnulate.IdUsuario,
+          MotivoLiberacion: 'CANCELACION',
+        },
+      });
+    }
+
     for (const detail of saleToAnulate.DetalleVenta) {
+      if (saleWasDeductedFromRoute || isReservedRouteProforma) {
+        continue;
+      }
+
       const item = await tx.inventarioItem.findFirst({
         where: {
           Id: detail.IdInventarioItem,
@@ -1840,6 +2150,7 @@ export async function createSalePayment(
         };
       }, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        timeout: 15_000,
       });
       break;
     } catch (error) {

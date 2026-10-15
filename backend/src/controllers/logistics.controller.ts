@@ -430,7 +430,8 @@ export async function createRutaSesionController(req: Request, res: Response) {
       message === 'kmInicial es requerido cuando la sesión está CERRADA' ||
       message === 'kmFinal es requerido cuando la sesión está CERRADA' ||
       message === 'kmFinal no puede ser menor que kmInicial' ||
-      message === 'Fecha de sesión inválida'
+      message === 'Fecha de sesión inválida' ||
+      message === 'No se puede crear una sesión directamente en estado CERRADA'
     ) {
       return res.status(400).json({ ok: false, message });
     }
@@ -441,10 +442,15 @@ export async function createRutaSesionController(req: Request, res: Response) {
 
 export async function updateRutaSesionController(req: Request, res: Response) {
   try {
+    const idUsuario = req.auth?.userId;
+    if (!idUsuario) return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
     const { idSesion } = logisticsTwoIdParamsSchema.parse(req.params);
     const payload = updateRutaSesionSchema.parse(req.body);
 
-    const data = await updateRutaSesion(idSesion, payload);
+    const data = await updateRutaSesion(idSesion, {
+      ...payload,
+      idUsuarioModificador: idUsuario,
+    });
     return res.status(200).json({ ok: true, data, message: 'Sesion de ruta actualizada correctamente' });
   } catch (error) {
     const parsed = handleValidationError(error, res);
@@ -471,7 +477,10 @@ export async function updateRutaSesionController(req: Request, res: Response) {
 
     if (
       message === 'Vehiculo no disponible para la fecha seleccionada' ||
-      message === 'Vehiculo no disponible por estado actual'
+      message === 'Vehiculo no disponible por estado actual' ||
+      message === 'La sesión está cerrada y no admite modificaciones' ||
+      message === 'No se puede modificar la asignación de una sesión con operaciones registradas' ||
+      message === 'La ruta tiene productos pendientes de devolución o ajuste autorizado'
     ) {
       return res.status(409).json({ ok: false, message });
     }
@@ -481,7 +490,9 @@ export async function updateRutaSesionController(req: Request, res: Response) {
       message === 'kmInicial es requerido cuando la sesión está CERRADA' ||
       message === 'kmFinal es requerido cuando la sesión está CERRADA' ||
       message === 'kmFinal no puede ser menor que kmInicial' ||
-      message === 'Fecha de sesión inválida'
+      message === 'Fecha de sesión inválida' ||
+      message === 'No se puede crear una sesión directamente en estado CERRADA' ||
+      message === 'El usuario responsable del cierre es requerido'
     ) {
       return res.status(400).json({ ok: false, message });
     }
@@ -516,6 +527,9 @@ export async function deleteRutaSesionController(req: Request, res: Response) {
     const message = getMessage(error);
     if (message === 'RutaSesion no existe' || message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
+    }
+    if (message === 'No se puede anular una sesión con operaciones de inventario o ventas') {
+      return res.status(409).json({ ok: false, message });
     }
 
     return res.status(500).json({ ok: false, message });

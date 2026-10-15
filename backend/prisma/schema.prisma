@@ -198,19 +198,149 @@ model DetalleGasto {
 }
 
 model DetalleVenta {
-  Id                Int            @id(map: "PK__DetalleV__3214EC074961FD0D") @default(autoincrement())
-  IdVenta           Int
-  IdInventarioItem  Int
-  Nombre            String         @db.VarChar(255)
-  Cantidad          Float
-  PrecioUnitario    Decimal        @db.Decimal(10, 2)
-  EsBonificacion    Boolean        @default(false, map: "DF__DetalleVe__EsBon__19DFD96B")
-  FechaRegistro     DateTime?      @default(now(), map: "DF__DetalleVe__Fecha__1AD3FDA4") @db.DateTime
-  Anulado           Boolean        @default(false, map: "DF__DetalleVe__Anula__1BC821DD")
-  IdUsuarioAnulador Int?
-  FechaAnulacion    DateTime?      @db.DateTime
-  InventarioItem    InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_DetalleVenta_InventarioItem")
-  Venta             Venta          @relation(fields: [IdVenta], references: [Id], onUpdate: NoAction, map: "FK_DetalleVenta_Venta")
+  Id                      Int                          @id(map: "PK__DetalleV__3214EC074961FD0D") @default(autoincrement())
+  IdVenta                 Int
+  IdInventarioItem        Int
+  Nombre                  String                       @db.VarChar(255)
+  Cantidad                Float
+  PrecioUnitario          Decimal                      @db.Decimal(10, 2)
+  EsBonificacion          Boolean                      @default(false, map: "DF__DetalleVe__EsBon__19DFD96B")
+  FechaRegistro           DateTime?                    @default(now(), map: "DF__DetalleVe__Fecha__1AD3FDA4") @db.DateTime
+  Anulado                 Boolean                      @default(false, map: "DF__DetalleVe__Anula__1BC821DD")
+  IdUsuarioAnulador       Int?
+  FechaAnulacion          DateTime?                    @db.DateTime
+  ReservaProformaDetalle  ReservaProformaDetalle?
+  DevolucionesComerciales DevolucionComercialDetalle[]
+  InventarioItem          InventarioItem               @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_DetalleVenta_InventarioItem")
+  Venta                   Venta                        @relation(fields: [IdVenta], references: [Id], onUpdate: NoAction, map: "FK_DetalleVenta_Venta")
+}
+
+model ReservaProforma {
+  Id                  Int                      @id(map: "PK_ReservaProforma") @default(autoincrement())
+  IdVenta             Int                      @unique(map: "UQ_ReservaProforma_Venta")
+  IdUsuario           Int
+  Estado              String                   @default("ACTIVA", map: "DF_ReservaProforma_Estado") @db.VarChar(20)
+  FechaExpiracion     DateTime                 @db.DateTime2
+  FechaRegistro       DateTime                 @default(now(), map: "DF_ReservaProforma_FechaRegistro") @db.DateTime2
+  FechaConsumo        DateTime?                @db.DateTime2
+  IdUsuarioConsumo    Int?
+  FechaLiberacion     DateTime?                @db.DateTime2
+  IdUsuarioLiberacion Int?
+  MotivoLiberacion    String?                  @db.VarChar(20)
+  Venta               Venta                    @relation(fields: [IdVenta], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_ReservaProforma_Venta")
+  Usuario             Usuario                  @relation("ReservaProforma_Creador", fields: [IdUsuario], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_ReservaProforma_Usuario")
+  UsuarioConsumo      Usuario?                 @relation("ReservaProforma_Consumo", fields: [IdUsuarioConsumo], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_ReservaProforma_UsuarioConsumo")
+  UsuarioLiberacion   Usuario?                 @relation("ReservaProforma_Liberacion", fields: [IdUsuarioLiberacion], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_ReservaProforma_UsuarioLiberacion")
+  Detalles            ReservaProformaDetalle[]
+
+  @@index([Estado, FechaExpiracion], map: "IX_ReservaProforma_Estado_Expiracion")
+}
+
+model ReservaProformaDetalle {
+  Id                Int             @id(map: "PK_ReservaProformaDetalle") @default(autoincrement())
+  IdReservaProforma Int
+  IdDetalleVenta    Int             @unique(map: "UQ_ReservaProformaDetalle_DetalleVenta")
+  CantidadReservada Float
+  ReservaProforma   ReservaProforma @relation(fields: [IdReservaProforma], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_ReservaProformaDetalle_Reserva")
+  DetalleVenta      DetalleVenta    @relation(fields: [IdDetalleVenta], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_ReservaProformaDetalle_DetalleVenta")
+
+  @@index([IdReservaProforma], map: "IX_ReservaProformaDetalle_Reserva")
+}
+
+model DespachoRuta {
+  Id            Int                   @id(map: "PK_DespachoRuta") @default(autoincrement())
+  IdRutaSesion  Int                   @unique(map: "UQ_DespachoRuta_RutaSesion")
+  IdUsuario     Int
+  Observaciones String?               @db.VarChar(255)
+  FechaRegistro DateTime?             @default(now(), map: "DF_DespachoRuta_FechaRegistro") @db.DateTime
+  RutaSesion    RutaSesion            @relation(fields: [IdRutaSesion], references: [Id], onUpdate: NoAction, map: "FK_DespachoRuta_RutaSesion")
+  Usuario       Usuario               @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_DespachoRuta_Usuario")
+  Detalles      DespachoRutaDetalle[]
+}
+
+model DespachoRutaDetalle {
+  Id                   Int            @id(map: "PK_DespachoRutaDetalle") @default(autoincrement())
+  IdDespachoRuta       Int
+  IdInventarioItem     Int
+  NombreSnapshot       String         @db.VarChar(255)
+  UnidadMedidaSnapshot String?        @db.VarChar(30)
+  Cantidad             Float
+  DespachoRuta         DespachoRuta   @relation(fields: [IdDespachoRuta], references: [Id], onUpdate: NoAction, map: "FK_DespachoRutaDetalle_DespachoRuta")
+  InventarioItem       InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_DespachoRutaDetalle_InventarioItem")
+
+  @@unique([IdDespachoRuta, IdInventarioItem], map: "UQ_DespachoRutaDetalle_Despacho_Item")
+  @@index([IdInventarioItem], map: "IX_DespachoRutaDetalle_InventarioItem")
+}
+
+model DevolucionRuta {
+  Id            Int                     @id(map: "PK_DevolucionRuta") @default(autoincrement())
+  IdRutaSesion  Int                     @unique(map: "UQ_DevolucionRuta_RutaSesion")
+  IdUsuario     Int
+  Observaciones String?                 @db.VarChar(255)
+  FechaRegistro DateTime?               @default(now(), map: "DF_DevolucionRuta_FechaRegistro") @db.DateTime
+  RutaSesion    RutaSesion              @relation(fields: [IdRutaSesion], references: [Id], onUpdate: NoAction, map: "FK_DevolucionRuta_RutaSesion")
+  Usuario       Usuario                 @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_DevolucionRuta_Usuario")
+  Detalles      DevolucionRutaDetalle[]
+}
+
+model DevolucionRutaDetalle {
+  Id               Int            @id(map: "PK_DevolucionRutaDetalle") @default(autoincrement())
+  IdDevolucionRuta Int
+  IdInventarioItem Int
+  CantidadRecibida Float
+  CantidadDanada   Float          @default(0, map: "DF_DevolucionRutaDetalle_CantidadDanada")
+  Observaciones    String?        @db.VarChar(255)
+  UbicacionDanada  String?        @db.VarChar(255)
+  DevolucionRuta   DevolucionRuta @relation(fields: [IdDevolucionRuta], references: [Id], onUpdate: NoAction, map: "FK_DevolucionRutaDetalle_DevolucionRuta")
+  InventarioItem   InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_DevolucionRutaDetalle_InventarioItem")
+
+  @@unique([IdDevolucionRuta, IdInventarioItem], map: "UQ_DevolucionRutaDetalle_Devolucion_Item")
+  @@index([IdInventarioItem], map: "IX_DevolucionRutaDetalle_InventarioItem")
+}
+
+model DevolucionComercial {
+  Id                    Int                          @id(map: "PK_DevolucionComercial") @default(autoincrement())
+  IdVenta               Int
+  IdUsuarioAutorizacion Int
+  IdempotencyKey        String                       @unique(map: "UQ_DevolucionComercial_IdempotencyKey") @db.VarChar(100)
+  PayloadHash           String                       @db.VarChar(64)
+  FechaAutorizacion     DateTime                     @default(now(), map: "DF_DevolucionComercial_FechaAutorizacion") @db.DateTime2
+  Venta                 Venta                        @relation(fields: [IdVenta], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_DevolucionComercial_Venta")
+  UsuarioAutorizacion   Usuario                      @relation("DevolucionComercial_Autorizador", fields: [IdUsuarioAutorizacion], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_DevolucionComercial_Usuario")
+  Detalles              DevolucionComercialDetalle[]
+
+  @@index([IdVenta, FechaAutorizacion], map: "IX_DevolucionComercial_Venta_Fecha")
+}
+
+model DevolucionComercialDetalle {
+  Id                    Int                 @id(map: "PK_DevolucionComercialDetalle") @default(autoincrement())
+  IdDevolucionComercial Int
+  IdDetalleVenta        Int
+  Cantidad              Float
+  Motivo                String              @db.VarChar(255)
+  CondicionFisica       String              @db.VarChar(20)
+  UbicacionNoVendible   String?             @db.VarChar(255)
+  DevolucionComercial   DevolucionComercial @relation(fields: [IdDevolucionComercial], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_DevolucionComercialDetalle_Devolucion")
+  DetalleVenta          DetalleVenta        @relation(fields: [IdDetalleVenta], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_DevolucionComercialDetalle_DetalleVenta")
+
+  @@index([IdDetalleVenta], map: "IX_DevolucionComercialDetalle_DetalleVenta")
+  @@index([IdDevolucionComercial], map: "IX_DevolucionComercialDetalle_Devolucion")
+}
+
+model AjusteRuta {
+  Id               Int            @id(map: "PK_AjusteRuta") @default(autoincrement())
+  IdRutaSesion     Int
+  IdInventarioItem Int
+  IdUsuario        Int
+  Clasificacion    String         @db.VarChar(30)
+  Cantidad         Float
+  Motivo           String         @db.VarChar(255)
+  FechaRegistro    DateTime?      @default(now(), map: "DF_AjusteRuta_FechaRegistro") @db.DateTime
+  RutaSesion       RutaSesion     @relation(fields: [IdRutaSesion], references: [Id], onUpdate: NoAction, map: "FK_AjusteRuta_RutaSesion")
+  InventarioItem   InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_AjusteRuta_InventarioItem")
+  Usuario          Usuario        @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_AjusteRuta_Usuario")
+
+  @@unique([IdRutaSesion, IdInventarioItem], map: "UQ_AjusteRuta_Sesion_Item")
 }
 
 model Empleado {
@@ -410,6 +540,9 @@ model InventarioItem {
   EnvaseClienteSaldo                                                             EnvaseClienteSaldo[]
   OrdenesProduccionTerminadas                                                   OrdenProduccion[]         @relation("OrdenProduccion_ProductoTerminado")
   DetallesOrdenProduccion                                                       DetalleOrdenProduccion[]
+  DespachosRuta                                                                  DespachoRutaDetalle[]
+  DevolucionesRuta                                                               DevolucionRutaDetalle[]
+  AjustesRuta                                                                    AjusteRuta[]
 }
 
 model PagoVenta {
@@ -689,6 +822,8 @@ model RutaSesion {
   KmInicial                                     Float?
   KmFinal                                       Float?
   Estado                                        String          @db.VarChar(20)
+  FechaCierre                                   DateTime?       @db.DateTime
+  IdUsuarioCierre                               Int?
   FechaRegistro                                 DateTime?       @default(now(), map: "DF__RutaSesio__Fecha__2A164134") @db.DateTime
   IdUsuarioModificador                          Int?
   FechaModificacion                             DateTime?       @db.DateTime
@@ -701,6 +836,12 @@ model RutaSesion {
   Vehiculo                                      Vehiculo        @relation(fields: [IdVehiculo], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Vehiculo")
   Usuario_RutaSesion_IdUsuarioVendedorToUsuario Usuario         @relation("RutaSesion_IdUsuarioVendedorToUsuario", fields: [IdUsuarioVendedor], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Vendedor")
   Venta                                         Venta[]
+  DespachoRuta                                  DespachoRuta?
+  DevolucionRuta                                DevolucionRuta?
+  AjustesRuta                                   AjusteRuta[]
+  Usuario_RutaSesion_IdUsuarioCierreToUsuario   Usuario?        @relation("RutaSesion_IdUsuarioCierreToUsuario", fields: [IdUsuarioCierre], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_RutaSesion_UsuarioCierre")
+
+  @@index([Estado, Anulado, FechaSesion], map: "IX_RutaSesion_Estado_Activo_Fecha")
 }
 
 model Sesion {
@@ -793,6 +934,14 @@ model Usuario {
   ReporteHistorial                                                  ReporteHistorial[]
   SolicitudPagoIdempotente                                          SolicitudPagoIdempotente[]
   OrdenesProduccion                                                 OrdenProduccion[]
+  DespachosRuta                                                     DespachoRuta[]
+  DevolucionesRuta                                                  DevolucionRuta[]
+  DevolucionesComercialesAutorizadas                                DevolucionComercial[]      @relation("DevolucionComercial_Autorizador")
+  AjustesRuta                                                       AjusteRuta[]
+  ReservasProformaCreadas                                           ReservaProforma[]          @relation("ReservaProforma_Creador")
+  ReservasProformaConsumidas                                        ReservaProforma[]          @relation("ReservaProforma_Consumo")
+  ReservasProformaLiberadas                                         ReservaProforma[]          @relation("ReservaProforma_Liberacion")
+  RutaSesion_RutaSesion_IdUsuarioCierreToUsuario                    RutaSesion[]               @relation("RutaSesion_IdUsuarioCierreToUsuario")
 
   @@index([Correo, Anulado], map: "IX_Usuario_Correo_Activo")
   @@index([IdRol, Anulado], map: "IX_Usuario_Rol_Activo")
@@ -908,11 +1057,15 @@ model Venta {
   SolicitudPagoIdempotente  SolicitudPagoIdempotente[]
   DetalleVenta              DetalleVenta[]
   PagoVenta                 PagoVenta[]
+  ReservaProforma           ReservaProforma?
+  DevolucionesComerciales   DevolucionComercial[]
   Cliente                   Cliente                    @relation(fields: [IdCliente], references: [Id], onUpdate: NoAction, map: "FK_Venta_Cliente")
   RutaSesion                RutaSesion?                @relation(fields: [IdRutaSesion], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Venta_RutaSesion")
   Talonario                 Talonario?                 @relation(fields: [IdTalonario], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_Venta_Talonario")
   Usuario                   Usuario                    @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_Venta_Usuario")
   MovimientoEnvase          MovimientoEnvase[]
+
+  @@index([IdRutaSesion, Anulado, TipoRegistro], map: "IX_Venta_RutaSesion_Activo_Tipo")
 }
 
 // Bitácora de control de pH y Cloro Residual (registro diario de planta).

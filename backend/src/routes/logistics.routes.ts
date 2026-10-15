@@ -29,6 +29,13 @@ import {
 } from '../controllers/logistics.controller';
 import { requireModulePermission } from '../middlewares/auth.middleware';
 import { uploadVehicleExpenseImage } from '../middlewares/upload.middleware';
+import {
+  createRouteAdjustmentController,
+  createRouteDispatchController,
+  createRouteReturnController,
+  getRouteInventoryController,
+  getRouteSettlementController,
+} from '../controllers/route-inventory.controller';
 
 const logisticsRouter = Router();
 
@@ -41,6 +48,31 @@ logisticsRouter.patch('/vehiculos/:id/restaurar', requireModulePermission('logis
 
 logisticsRouter.get('/rutas', requireModulePermission('logistica', 'read'), listRutasController);
 logisticsRouter.get('/rutas/sesiones', requireModulePermission('logistica', 'read'), listRutaSesionesController);
+logisticsRouter.get(
+  '/rutas/sesiones/:id/inventario',
+  requireModulePermission('logistica', 'read'),
+  getRouteInventoryController,
+);
+logisticsRouter.get(
+  '/rutas/sesiones/:id/liquidacion',
+  requireModulePermission('logistica', 'read'),
+  getRouteSettlementController,
+);
+logisticsRouter.post(
+  '/rutas/sesiones/:id/despacho',
+  requireModulePermission('logistica', 'create'),
+  createRouteDispatchController,
+);
+logisticsRouter.post(
+  '/rutas/sesiones/:id/devolucion',
+  requireModulePermission('logistica', 'create'),
+  createRouteReturnController,
+);
+logisticsRouter.post(
+  '/rutas/sesiones/:id/ajustes',
+  requireModulePermission('logistica', 'update'),
+  createRouteAdjustmentController,
+);
 logisticsRouter.get('/rutas/:id/sesiones/:idSesion', requireModulePermission('logistica', 'read'), getRutaSesionByIdController);
 logisticsRouter.post('/rutas/sesiones', requireModulePermission('logistica', 'create'), createRutaSesionController);
 logisticsRouter.patch('/rutas/:id/sesiones/:idSesion', requireModulePermission('logistica', 'update'), updateRutaSesionController);
