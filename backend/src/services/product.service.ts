@@ -20,6 +20,7 @@ type CreateProductInput = {
   idProveedor: number;
   nombre: string;
   categoria: string;
+  unidadMedida?: string;
   costoPromedio: number;
   precioVenta?: number;
   rutaImagen?: string;
@@ -31,6 +32,7 @@ type UpdateProductInput = {
   idProveedor?: number;
   nombre?: string;
   categoria?: string;
+  unidadMedida?: string | null;
   costoPromedio?: number;
   precioVenta?: number;
   rutaImagen?: string;
@@ -66,6 +68,7 @@ function toProductDto(product: {
   IdProveedor: number;
   Nombre: string;
   Categoria: string;
+  UnidadMedida: string | null;
   Existencia: number;
   CostoPromedio: unknown;
   PrecioVenta: unknown;
@@ -91,6 +94,7 @@ function toProductDto(product: {
     idProveedor: product.IdProveedor,
     nombre: product.Nombre,
     categoria: product.Categoria,
+    unidadMedida: product.UnidadMedida,
     existencia: product.Existencia,
     costoPromedio: Number(product.CostoPromedio),
     precioVenta: Number(product.PrecioVenta),
@@ -264,6 +268,7 @@ export async function createProduct(input: CreateProductInput) {
         IdProveedor: input.idProveedor,
         Nombre: input.nombre,
         Categoria: input.categoria,
+        UnidadMedida: input.unidadMedida ?? null,
         Existencia: 0,
         CostoPromedio: input.costoPromedio,
         PrecioVenta: precioVenta,
@@ -352,6 +357,7 @@ export async function updateProduct(id: number, input: UpdateProductInput) {
       ...(input.idProveedor !== undefined ? { IdProveedor: input.idProveedor } : {}),
       ...(input.nombre !== undefined ? { Nombre: input.nombre } : {}),
       ...(input.categoria !== undefined ? { Categoria: input.categoria } : {}),
+      ...(input.unidadMedida !== undefined ? { UnidadMedida: input.unidadMedida } : {}),
       ...(input.costoPromedio !== undefined ? { CostoPromedio: input.costoPromedio } : {}),
       PrecioVenta: precioVenta,
       ...(input.rutaImagen !== undefined ? { RutaImagen: input.rutaImagen } : {}),

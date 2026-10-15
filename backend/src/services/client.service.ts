@@ -1,5 +1,3 @@
-import { Prisma } from '@prisma/client';
-
 import { prisma } from '../config/prisma';
 
 type EntidadInput = {
@@ -16,14 +14,14 @@ type EntidadInput = {
 
 type CreateClientInput = {
   idUsuario: number;
-  idTipoCliente?: number | null;
+  habilitadoCredito?: boolean;
   entidad: EntidadInput;
 };
 
 type UpdateClientInput = {
   idUsuario?: number;
   idUsuarioModificador?: number;
-  idTipoCliente?: number | null;
+  habilitadoCredito?: boolean;
   entidad?: Partial<EntidadInput>;
 };
 
@@ -31,7 +29,7 @@ function toClientDto(cliente: {
   Id: number;
   IdEntidad: number;
   IdUsuario: number;
-  IdTipoCliente: number | null;
+  HabilitadoCredito: boolean;
   FechaRegistro: Date | null;
   IdUsuarioModificador: number | null;
   FechaModificacion: Date | null;
@@ -56,7 +54,7 @@ function toClientDto(cliente: {
     id: cliente.Id,
     idEntidad: cliente.IdEntidad,
     idUsuario: cliente.IdUsuario,
-    idTipoCliente: cliente.IdTipoCliente,
+    habilitadoCredito: cliente.HabilitadoCredito,
     fechaRegistro: cliente.FechaRegistro,
     idUsuarioModificador: cliente.IdUsuarioModificador,
     fechaModificacion: cliente.FechaModificacion,
@@ -87,17 +85,6 @@ async function validateUsuarioExists(idUsuario: number) {
 
   if (!usuario) {
     throw new Error('Usuario no existe');
-  }
-}
-
-async function validateTipoClienteExists(tx: Prisma.TransactionClient, idTipoCliente: number) {
-  const tipoCliente = await tx.tipoCliente.findFirst({
-    where: { Id: idTipoCliente, Anulado: false },
-    select: { Id: true },
-  });
-
-  if (!tipoCliente) {
-    throw new Error('Tipo de cliente no existe o está inactivo');
   }
 }
 
@@ -216,10 +203,6 @@ export async function createClient(input: CreateClientInput) {
   const fechaNacimiento = parseFechaNacimiento(input.entidad.fechaNacimiento);
 
   const created = await prisma.$transaction(async (tx) => {
-    if (input.idTipoCliente !== undefined && input.idTipoCliente !== null) {
-      await validateTipoClienteExists(tx, input.idTipoCliente);
-    }
-
     const entidad = await tx.entidad.create({
       data: {
         IdUsuario: input.idUsuario,
@@ -241,7 +224,7 @@ export async function createClient(input: CreateClientInput) {
       data: {
         IdEntidad: entidad.Id,
         IdUsuario: input.idUsuario,
-        IdTipoCliente: input.idTipoCliente ?? null,
+        HabilitadoCredito: input.habilitadoCredito ?? false,
         Anulado: false,
       },
       include: {
@@ -270,7 +253,7 @@ export async function createClient(input: CreateClientInput) {
 export async function updateClient(id: number, input: UpdateClientInput) {
   const existing = await prisma.cliente.findFirst({
     where: { Id: id, Anulado: false },
-    select: { Id: true, IdEntidad: true, IdTipoCliente: true },
+    select: { Id: true, IdEntidad: true },
   });
 
   if (!existing) {
@@ -291,14 +274,6 @@ export async function updateClient(id: number, input: UpdateClientInput) {
       : undefined;
 
   const updated = await prisma.$transaction(async (tx) => {
-    if (
-      input.idTipoCliente !== undefined &&
-      input.idTipoCliente !== null &&
-      input.idTipoCliente !== existing.IdTipoCliente
-    ) {
-      await validateTipoClienteExists(tx, input.idTipoCliente);
-    }
-
     if (input.entidad) {
       await tx.entidad.update({
         where: { Id: existing.IdEntidad },
@@ -333,8 +308,8 @@ export async function updateClient(id: number, input: UpdateClientInput) {
       where: { Id: id },
       data: {
         ...(input.idUsuario !== undefined ? { IdUsuario: input.idUsuario } : {}),
-        ...(input.idTipoCliente !== undefined
-          ? { IdTipoCliente: input.idTipoCliente }
+        ...(input.habilitadoCredito !== undefined
+          ? { HabilitadoCredito: input.habilitadoCredito }
           : {}),
         ...(input.idUsuarioModificador !== undefined
           ? { IdUsuarioModificador: input.idUsuarioModificador }

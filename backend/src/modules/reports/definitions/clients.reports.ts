@@ -14,14 +14,9 @@ const estadoClienteOptions = [
   { value: 'todos', label: 'Todos' },
 ];
 
-function tipoClienteParam(): ReportParamField {
-  return { key: 'idTipoCliente', label: 'Tipo de cliente', type: 'select', optionsEndpoint: '/api/client-catalog/tipos-cliente' };
-}
-
 // 13. Listado de clientes (activos/inactivos) ------------------------------------------------
 const clientesListadoSchema = z.object({
   estado: z.enum(['activos', 'anulados', 'todos']).default('activos'),
-  idTipoCliente: optionalPositiveIntParam,
 });
 
 type ClientesListadoParams = z.infer<typeof clientesListadoSchema>;
@@ -31,11 +26,10 @@ const clientesListado: ReportDefinition<ClientesListadoParams> = {
   categoria: CATEGORIA,
   categoriaLabel: CATEGORIA_LABEL,
   nombre: 'Listado de clientes',
-  descripcion: 'Clientes activos, anulados o todos, con su tipo.',
+  descripcion: 'Clientes activos, anulados o todos.',
   moduloPermiso: 'clientes',
   parametros: [
     { key: 'estado', label: 'Estado', type: 'select', options: estadoClienteOptions },
-    tipoClienteParam(),
   ],
   schema: clientesListadoSchema,
   async run(params) {
@@ -43,7 +37,6 @@ const clientesListado: ReportDefinition<ClientesListadoParams> = {
       where: {
         ...(params.estado === 'activos' ? { Anulado: false } : {}),
         ...(params.estado === 'anulados' ? { Anulado: true } : {}),
-        ...(params.idTipoCliente ? { IdTipoCliente: params.idTipoCliente } : {}),
       },
       orderBy: { Id: 'desc' },
       take: 5000,
@@ -52,7 +45,6 @@ const clientesListado: ReportDefinition<ClientesListadoParams> = {
         Anulado: true,
         FechaRegistro: true,
         Entidad: { select: { NombreCompleto: true, Nit: true, Telefono1: true } },
-        TipoCliente: { select: { Nombre: true } },
       },
     });
 
@@ -60,7 +52,6 @@ const clientesListado: ReportDefinition<ClientesListadoParams> = {
       cliente: cliente.Entidad.NombreCompleto,
       nit: cliente.Entidad.Nit ?? '—',
       telefono: cliente.Entidad.Telefono1 ?? '—',
-      tipoCliente: cliente.TipoCliente?.Nombre ?? 'Sin tipo',
       estado: cliente.Anulado ? 'Anulado' : 'Activo',
       fechaRegistro: cliente.FechaRegistro,
     }));
@@ -70,7 +61,6 @@ const clientesListado: ReportDefinition<ClientesListadoParams> = {
         { key: 'cliente', label: 'Cliente', type: 'text' },
         { key: 'nit', label: 'NIT', type: 'text' },
         { key: 'telefono', label: 'Teléfono', type: 'text' },
-        { key: 'tipoCliente', label: 'Tipo de cliente', type: 'text' },
         { key: 'estado', label: 'Estado', type: 'badge' },
         { key: 'fechaRegistro', label: 'Fecha de registro', type: 'date' },
       ],
@@ -81,55 +71,7 @@ const clientesListado: ReportDefinition<ClientesListadoParams> = {
   },
 };
 
-// 14. Clientes por tipo -----------------------------------------------------------------------
-const clientesPorTipoSchema = z.object({});
-type ClientesPorTipoParams = z.infer<typeof clientesPorTipoSchema>;
-
-const clientesPorTipo: ReportDefinition<ClientesPorTipoParams> = {
-  id: 'clientes-por-tipo',
-  categoria: CATEGORIA,
-  categoriaLabel: CATEGORIA_LABEL,
-  nombre: 'Clientes por tipo',
-  descripcion: 'Distribución de clientes activos según su tipo.',
-  moduloPermiso: 'clientes',
-  parametros: [],
-  schema: clientesPorTipoSchema,
-  async run() {
-    const clientes = await prisma.cliente.findMany({
-      where: { Anulado: false },
-      select: { TipoCliente: { select: { Nombre: true } } },
-      take: 5000,
-    });
-
-    const byTipo = new Map<string, number>();
-    for (const cliente of clientes) {
-      const nombre = cliente.TipoCliente?.Nombre ?? 'Sin tipo';
-      byTipo.set(nombre, (byTipo.get(nombre) ?? 0) + 1);
-    }
-
-    const total = clientes.length;
-    const rows = Array.from(byTipo.entries())
-      .sort(([, a], [, b]) => b - a)
-      .map(([tipoCliente, conteo]) => ({
-        tipoCliente,
-        conteo,
-        porcentaje: total > 0 ? round2((conteo / total) * 100) : 0,
-      }));
-
-    return {
-      columns: [
-        { key: 'tipoCliente', label: 'Tipo de cliente', type: 'text' },
-        { key: 'conteo', label: '# Clientes', type: 'number' },
-        { key: 'porcentaje', label: '% del total', type: 'percent' },
-      ],
-      rows,
-      totals: { conteo: total },
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
-    };
-  },
-};
-
-// 15. Ficha 360° de cliente (multimódulo) ------------------------------------------------------
+// 14. Ficha 360° de cliente (multimódulo) ------------------------------------------------------
 const cliente360Schema = withDateRangeValidation(
   z.object({
     idCliente: optionalPositiveIntParam.refine((v) => v !== undefined, 'idCliente es obligatorio'),
@@ -243,7 +185,6 @@ const clientesSinCompras: ReportDefinition<ClientesSinComprasParams> = {
       select: {
         Id: true,
         Entidad: { select: { NombreCompleto: true, Telefono1: true } },
-        TipoCliente: { select: { Nombre: true } },
       },
       take: 5000,
     });
@@ -253,14 +194,12 @@ const clientesSinCompras: ReportDefinition<ClientesSinComprasParams> = {
       .map((c) => ({
         cliente: c.Entidad.NombreCompleto,
         telefono: c.Entidad.Telefono1 ?? '—',
-        tipoCliente: c.TipoCliente?.Nombre ?? 'Sin tipo',
       }));
 
     return {
       columns: [
         { key: 'cliente', label: 'Cliente', type: 'text' },
         { key: 'telefono', label: 'Teléfono', type: 'text' },
-        { key: 'tipoCliente', label: 'Tipo de cliente', type: 'text' },
       ],
       rows,
       indicators: [{ label: 'Clientes inactivos en el período', value: rows.length }],
@@ -330,4 +269,4 @@ const topClientesVolumen: ReportDefinition<TopClientesParams> = {
   },
 };
 
-export const clientsReports = [clientesListado, clientesPorTipo, cliente360, clientesSinCompras, topClientesVolumen];
+export const clientsReports = [clientesListado, cliente360, clientesSinCompras, topClientesVolumen];

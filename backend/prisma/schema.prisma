@@ -48,6 +48,7 @@ model Cliente {
   IdEntidad               Int
   IdUsuario               Int
   IdTipoCliente           Int?
+  HabilitadoCredito       Boolean                   @default(false, map: "DF_Cliente_HabilitadoCredito")
   FechaRegistro           DateTime?                 @default(now(), map: "DF__Cliente__FechaRe__5CD6CB2B") @db.DateTime
   IdUsuarioModificador    Int?
   FechaModificacion       DateTime?                 @db.DateTime
@@ -381,6 +382,7 @@ model InventarioItem {
   IdProveedor                                                                    Int
   Nombre                                                                         String                    @db.VarChar(255)
   Categoria                                                                      String                    @db.VarChar(50)
+  UnidadMedida                                                                   String?                   @db.VarChar(30)
   Existencia                                                                     Float
   CostoPromedio                                                                  Decimal                   @db.Decimal(10, 2)
   PrecioVenta                                                                    Decimal                   @db.Decimal(10, 2)
@@ -406,6 +408,8 @@ model InventarioItem {
   ReglaPrecioCliente                                                             ReglaPrecioCliente[]
   MovimientoEnvase                                                               MovimientoEnvase[]
   EnvaseClienteSaldo                                                             EnvaseClienteSaldo[]
+  OrdenesProduccionTerminadas                                                   OrdenProduccion[]         @relation("OrdenProduccion_ProductoTerminado")
+  DetallesOrdenProduccion                                                       DetalleOrdenProduccion[]
 }
 
 model PagoVenta {
@@ -425,6 +429,42 @@ model PagoVenta {
   Usuario                  Usuario                   @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_PagoVenta_Usuario")
   Venta                    Venta                     @relation(fields: [IdVenta], references: [Id], onUpdate: NoAction, map: "FK_PagoVenta_Venta")
   SolicitudPagoIdempotente SolicitudPagoIdempotente?
+}
+
+model OrdenProduccion {
+  Id                          Int                      @id(map: "PK_OrdenProduccion") @default(autoincrement())
+  IdProductoTerminado         Int
+  NombreProductoTerminadoSnapshot String                @db.VarChar(255)
+  CantidadProducir            Float
+  UnidadMedidaSnapshot        String                   @db.VarChar(30)
+  Estado                      String                   @default("PENDIENTE", map: "DF_OrdenProduccion_Estado") @db.VarChar(20)
+  IdUsuario                   Int
+  FechaRegistro               DateTime?                @default(now(), map: "DF_OrdenProduccion_FechaRegistro") @db.DateTime
+  IdUsuarioModificador        Int?
+  FechaModificacion           DateTime?                @db.DateTime
+  Anulado                     Boolean                  @default(false, map: "DF_OrdenProduccion_Anulado")
+  IdUsuarioAnulador           Int?
+  FechaAnulacion              DateTime?                @db.DateTime
+  InventarioItem              InventarioItem           @relation("OrdenProduccion_ProductoTerminado", fields: [IdProductoTerminado], references: [Id], onUpdate: NoAction, map: "FK_OrdenProduccion_ProductoTerminado")
+  Usuario                     Usuario                  @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_OrdenProduccion_Usuario")
+  Detalles                    DetalleOrdenProduccion[]
+
+  @@index([Estado, Anulado, FechaRegistro], map: "IX_OrdenProduccion_Estado_Fecha")
+}
+
+model DetalleOrdenProduccion {
+  Id                    Int              @id(map: "PK_DetalleOrdenProduccion") @default(autoincrement())
+  IdOrdenProduccion     Int
+  IdInventarioItem      Int
+  NombreSnapshot        String           @db.VarChar(255)
+  CantidadPorUnidad     Float
+  CantidadTotal         Float
+  UnidadMedidaSnapshot  String           @db.VarChar(30)
+  OrdenProduccion       OrdenProduccion  @relation(fields: [IdOrdenProduccion], references: [Id], onUpdate: NoAction, map: "FK_DetalleOrdenProduccion_Orden")
+  InventarioItem        InventarioItem   @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_DetalleOrdenProduccion_InventarioItem")
+
+  @@unique([IdOrdenProduccion, IdInventarioItem], map: "UQ_DetalleOrdenProduccion_Orden_Item")
+  @@index([IdInventarioItem], map: "IX_DetalleOrdenProduccion_InventarioItem")
 }
 
 model PlanillaMensual {
@@ -752,6 +792,7 @@ model Usuario {
   Ruta                                                              Ruta[]
   ReporteHistorial                                                  ReporteHistorial[]
   SolicitudPagoIdempotente                                          SolicitudPagoIdempotente[]
+  OrdenesProduccion                                                 OrdenProduccion[]
 
   @@index([Correo, Anulado], map: "IX_Usuario_Correo_Activo")
   @@index([IdRol, Anulado], map: "IX_Usuario_Rol_Activo")

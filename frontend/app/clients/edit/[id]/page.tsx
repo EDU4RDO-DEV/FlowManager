@@ -14,15 +14,13 @@ import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
 import {
   getClientById,
-  listTiposCliente,
   updateClient,
   uploadClientImage,
 } from "@/services/clients.service";
-import type { TipoClienteDto } from "@/types/clients";
 
 const EMPTY_FORM: ClientFormValues = {
   nombreCompleto: "",
-  idTipoCliente: "",
+  habilitadoCredito: false,
   correoElectronico: "",
   telefono1: "",
   telefono2: "",
@@ -38,7 +36,6 @@ export default function EditClientPage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [tiposCliente, setTiposCliente] = useState<TipoClienteDto[]>([]);
   const [form, setForm] = useState<ClientFormValues>(EMPTY_FORM);
 
   async function handleUploadImage(file: File) {
@@ -68,7 +65,7 @@ export default function EditClientPage() {
         const clientData = await getClientById(clientId);
         setForm({
           nombreCompleto: clientData.entidad.nombreCompleto,
-          idTipoCliente: clientData.idTipoCliente === null ? "" : String(clientData.idTipoCliente),
+          habilitadoCredito: clientData.habilitadoCredito,
           correoElectronico: clientData.entidad.correoElectronico ?? "",
           telefono1: clientData.entidad.telefono1 ?? "",
           telefono2: clientData.entidad.telefono2 ?? "",
@@ -86,14 +83,6 @@ export default function EditClientPage() {
 
     void loadData();
   }, [params.id, router]);
-
-  useEffect(() => {
-    listTiposCliente()
-      .then(setTiposCliente)
-      .catch((error) => {
-        toast.error(getApiErrorMessage(error, "No se pudieron cargar los tipos de cliente."));
-      });
-  }, []);
 
   async function handleSubmit() {
     const clientId = Number(params.id);
@@ -116,7 +105,7 @@ export default function EditClientPage() {
     try {
       await updateClient(clientId, {
         idUsuarioModificador: user.id,
-        idTipoCliente: form.idTipoCliente ? Number(form.idTipoCliente) : null,
+        habilitadoCredito: form.habilitadoCredito,
         entidad: {
           nombreCompleto: form.nombreCompleto.trim(),
           correoElectronico: form.correoElectronico.trim() || undefined,
@@ -153,7 +142,6 @@ export default function EditClientPage() {
             <ClientFormCard
               title={`Editar cliente #${params.id}`}
               form={form}
-              tiposCliente={tiposCliente}
               saving={saving}
               uploadingImage={uploadingImage}
               onChange={setForm}

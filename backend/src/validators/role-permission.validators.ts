@@ -22,7 +22,7 @@ export const rbacModuleKeys = [
   'empresa',
 ] as const;
 
-export const rbacActionKeys = ['read', 'create', 'update', 'delete'] as const;
+export const rbacActionKeys = ['read', 'create', 'update', 'delete', 'allow-negative-stock'] as const;
 
 export const roleIdParamsSchema = z.object({
   id: z.coerce.number().int('id debe ser entero').positive('id debe ser mayor a 0'),
@@ -32,7 +32,14 @@ export const rolePermissionEntrySchema = z.object({
   moduleKey: z.enum(rbacModuleKeys),
   action: z.enum(rbacActionKeys),
   permitido: z.boolean(),
-});
+}).refine(
+  (permission) =>
+    permission.action !== 'allow-negative-stock' || permission.moduleKey === 'produccion',
+  {
+    message: 'allow-negative-stock sólo aplica al módulo de producción',
+    path: ['action'],
+  },
+);
 
 export const updateRolePermissionsSchema = z.object({
   idUsuarioModificador: positiveInt.optional(),

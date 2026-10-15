@@ -49,7 +49,12 @@ const ROLE_PERMISSIONS: Record<Exclude<(typeof ROLE_ORDER)[number], 'Administrad
 
 function permissionsForRole(nombre: (typeof ROLE_ORDER)[number]): Partial<Record<ModuleKey, ActionKey[]>> {
   if (nombre === 'Administrador') {
-    return Object.fromEntries(ALL_MODULES.map((moduleKey) => [moduleKey, [...ALL_ACTIONS]]));
+    return Object.fromEntries(
+      ALL_MODULES.map((moduleKey) => [
+        moduleKey,
+        ALL_ACTIONS.filter((actionKey) => actionKey !== 'allow-negative-stock' || moduleKey === 'produccion'),
+      ]),
+    );
   }
 
   return ROLE_PERMISSIONS[nombre];
@@ -144,6 +149,10 @@ async function main() {
         });
 
         if (existingPermiso) {
+          if (moduleKey !== 'produccion') {
+            continue;
+          }
+
           await prisma.rolPermiso.update({
             where: { Id: existingPermiso.Id },
             data: {

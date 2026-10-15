@@ -8,6 +8,7 @@ import {
   CalendarDays,
   CreditCard,
   Droplet,
+  Factory,
   PackageOpen,
   PackageSearch,
   ShieldCheck,
@@ -43,6 +44,13 @@ const modulesCatalog: Array<{
     description: "Registro de compras y control de gastos.",
     path: "/purchases",
     icon: CreditCard,
+  },
+  {
+    key: "produccion",
+    title: "Producción",
+    description: "Órdenes de fabricación, consumo de recetas y movimientos de inventario.",
+    path: "/production",
+    icon: Factory,
   },
   {
     key: "clientes",

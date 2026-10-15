@@ -171,7 +171,11 @@ export default function EditRolePage() {
 
         return {
           ...moduleItem,
-          actions: moduleItem.actions.map((actionItem) => ({ ...actionItem, permitido })),
+          actions: moduleItem.actions.map((actionItem) =>
+            actionItem.action === "allow-negative-stock"
+              ? actionItem
+              : { ...actionItem, permitido },
+          ),
         };
       }),
     );

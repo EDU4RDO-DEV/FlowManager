@@ -34,12 +34,20 @@ export function RolePermissionsCard({
   onToggleActionColumn,
   onSave,
 }: RolePermissionsCardProps) {
-  const headers = modules[0]?.actions ?? [];
+  const headers = [...new Map(
+    modules.flatMap((moduleItem) => moduleItem.actions)
+      .map((action) => [action.action, action] as const),
+  ).values()];
 
   function isColumnFullyEnabled(action: RolePermissionModuleDto["actions"][number]["action"]): boolean {
-    return modules.length > 0 && modules.every((moduleItem) =>
-      moduleItem.actions.find((actionItem) => actionItem.action === action)?.permitido === true,
-    );
+    return modules.length > 0 &&     modules.some((moduleItem) =>
+      moduleItem.actions.some((actionItem) => actionItem.action === action),
+    ) &&
+    modules
+      .filter((moduleItem) => moduleItem.actions.some((actionItem) => actionItem.action === action))
+      .every((moduleItem) =>
+        moduleItem.actions.find((actionItem) => actionItem.action === action)?.permitido === true,
+      );
   }
 
   return (
@@ -49,7 +57,7 @@ export function RolePermissionsCard({
           <div>
             <CardTitle className="text-2xl font-bold tracking-tight">Permisos por modulo</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Activa o desactiva acciones CRUD para este rol en cada modulo.
+              Activa acciones CRUD y permisos especiales por módulo. El saldo negativo aplica sólo a Producción.
             </p>
           </div>
           <Badge variant="outline" className="gap-1">
@@ -91,7 +99,9 @@ export function RolePermissionsCard({
                       <label className="inline-flex items-center gap-2">
                         <input
                           type="checkbox"
-                          checked={moduleItem.actions.every((actionItem) => actionItem.permitido)}
+                          checked={moduleItem.actions
+                            .filter((actionItem) => actionItem.action !== "allow-negative-stock")
+                            .every((actionItem) => actionItem.permitido)}
                           onChange={(event) => onToggleModule(moduleItem.moduleKey, event.target.checked)}
                           className="size-4 rounded border-border"
                         />

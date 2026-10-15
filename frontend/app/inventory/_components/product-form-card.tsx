@@ -20,6 +20,7 @@ import type { ProductDto } from "@/types/products";
 export type ProductFormValues = {
   nombre: string;
   categoria: ProductDto["categoria"];
+  unidadMedida: string;
   idProveedor: string;
   costoPromedio: string;
   precioVenta: string;
@@ -124,6 +125,18 @@ export function ProductFormCard({
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="product-unit">Unidad de medida</Label>
+            <Input
+              id="product-unit"
+              value={form.unidadMedida}
+              onChange={(event) => onChange({ ...form, unidadMedida: event.target.value })}
+              maxLength={30}
+              placeholder="Ej. kg, L, unidad"
+              className="bg-background"
+            />
           </div>
 
           <div className="space-y-1.5">

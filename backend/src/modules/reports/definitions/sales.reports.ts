@@ -15,7 +15,6 @@ import {
   buildVentaWhere,
   getClienteNombre,
   getRutaNombre,
-  getTipoClienteNombre,
   getVendedorId,
   getVendedorNombre,
   prisma,
@@ -54,10 +53,6 @@ function clienteParam(): ReportParamField {
   return { key: 'idCliente', label: 'Cliente', type: 'select', optionsEndpoint: '/api/clients' };
 }
 
-function tipoClienteParam(): ReportParamField {
-  return { key: 'idTipoCliente', label: 'Tipo de cliente', type: 'select', optionsEndpoint: '/api/client-catalog/tipos-cliente' };
-}
-
 function vendedorParam(): ReportParamField {
   return { key: 'idVendedor', label: 'Vendedor', type: 'select', optionsEndpoint: '/api/users' };
 }
@@ -85,7 +80,6 @@ const ventasPorPeriodoSchema = withDateRangeValidation(
     fechaInicio: optionalDateParam,
     fechaFin: optionalDateParam,
     idCliente: optionalPositiveIntParam,
-    idTipoCliente: optionalPositiveIntParam,
     idVendedor: optionalPositiveIntParam,
     idRuta: optionalPositiveIntParam,
     idProducto: optionalPositiveIntParam,
@@ -108,7 +102,6 @@ const ventasPorPeriodo: ReportDefinition<VentasPorPeriodoParams> = {
   parametros: [
     ...FECHA_PARAMS,
     clienteParam(),
-    tipoClienteParam(),
     vendedorParam(),
     rutaParam(),
     productoParam(),
@@ -240,7 +233,6 @@ const ventasPorClienteSchema = withDateRangeValidation(
   z.object({
     fechaInicio: optionalDateParam,
     fechaFin: optionalDateParam,
-    idTipoCliente: optionalPositiveIntParam,
     top: optionalTopNParam,
   }),
 );
@@ -254,7 +246,7 @@ const ventasPorCliente: ReportDefinition<VentasPorClienteParams> = {
   nombre: 'Ventas por cliente',
   descripcion: '¿Qué clientes compran más?',
   moduloPermiso: 'ventas',
-  parametros: [...FECHA_PARAMS, tipoClienteParam(), { key: 'top', label: 'Mostrar top N', type: 'number' }],
+  parametros: [...FECHA_PARAMS, { key: 'top', label: 'Mostrar top N', type: 'number' }],
   schema: ventasPorClienteSchema,
   async run(params) {
     const ventas = await fetchVentas(buildVentaWhere(params));
@@ -469,59 +461,7 @@ const ventasPorRuta: ReportDefinition<VentasPorRutaParams> = {
   },
 };
 
-// 6. Ventas por tipo de cliente -----------------------------------------------------------
-const ventasPorTipoClienteSchema = withDateRangeValidation(
-  z.object({ fechaInicio: optionalDateParam, fechaFin: optionalDateParam }),
-);
-
-type VentasPorTipoClienteParams = z.infer<typeof ventasPorTipoClienteSchema>;
-
-const ventasPorTipoCliente: ReportDefinition<VentasPorTipoClienteParams> = {
-  id: 'ventas-por-tipo-cliente',
-  categoria: CATEGORIA,
-  categoriaLabel: CATEGORIA_LABEL,
-  nombre: 'Ventas por tipo de cliente',
-  descripcion: 'Distribución de ventas según el tipo de cliente.',
-  moduloPermiso: 'ventas',
-  parametros: [...FECHA_PARAMS],
-  schema: ventasPorTipoClienteSchema,
-  async run(params) {
-    const ventas = await fetchVentas(buildVentaWhere(params));
-
-    const byTipo = new Map<string, { nombre: string; total: number; transacciones: number }>();
-    for (const venta of ventas) {
-      const nombre = getTipoClienteNombre(venta);
-      const entry = byTipo.get(nombre) ?? { nombre, total: 0, transacciones: 0 };
-      entry.total += ventaSubtotal(venta);
-      entry.transacciones += 1;
-      byTipo.set(nombre, entry);
-    }
-
-    const totalGeneral = Array.from(byTipo.values()).reduce((sum, t) => sum + t.total, 0);
-    const rows = Array.from(byTipo.values())
-      .sort((a, b) => b.total - a.total)
-      .map((entry) => ({
-        tipoCliente: entry.nombre,
-        transacciones: entry.transacciones,
-        total: round2(entry.total),
-        porcentaje: totalGeneral > 0 ? round2((entry.total / totalGeneral) * 100) : 0,
-      }));
-
-    return {
-      columns: [
-        { key: 'tipoCliente', label: 'Tipo de cliente', type: 'text' },
-        { key: 'transacciones', label: '# Ventas', type: 'number' },
-        { key: 'total', label: 'Total', type: 'currency' },
-        { key: 'porcentaje', label: '% del total', type: 'percent' },
-      ],
-      rows,
-      totals: { total: round2(totalGeneral) },
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
-    };
-  },
-};
-
-// 7. Ventas contado vs. crédito -------------------------------------------------------------
+// 6. Ventas contado vs. crédito -------------------------------------------------------------
 const ventasContadoCreditoSchema = withDateRangeValidation(
   z.object({ fechaInicio: optionalDateParam, fechaFin: optionalDateParam }),
 );
@@ -845,7 +785,6 @@ export const salesReports = [
   productosMasVendidos,
   ventasPorVendedor,
   ventasPorRuta,
-  ventasPorTipoCliente,
   ventasContadoCredito,
   pedidosPorEstado,
   bonificacionesOtorgadas,

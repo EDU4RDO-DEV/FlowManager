@@ -38,6 +38,7 @@ const ACTION_LABELS: Record<CrudAction, string> = {
   create: 'Crear',
   update: 'Actualizar',
   delete: 'Anular',
+  'allow-negative-stock': 'Permitir saldo negativo',
 };
 
 async function validateRoleExists(idRol: number) {
@@ -180,11 +181,13 @@ export async function listRolePermissions(idRol: number) {
     modules: orderedModules.map((moduleItem) => ({
       moduleKey: moduleItem.Clave,
       moduleName: moduleItem.Nombre,
-      actions: orderedActions.map((actionItem) => ({
+      actions: orderedActions
+        .filter((actionItem) => actionItem.Clave !== 'allow-negative-stock' || moduleItem.Clave === 'produccion')
+        .map((actionItem) => ({
         action: actionItem.Clave,
         actionName: actionItem.Nombre,
         permitido: grantedSet.has(`${moduleItem.Id}:${actionItem.Id}`),
-      })),
+        })),
     })),
   };
 }
@@ -200,6 +203,9 @@ export async function updateRolePermissions(
 
   const deduped = new Map<string, PermissionInput>();
   for (const permission of permissions) {
+    if (permission.action === 'allow-negative-stock' && permission.moduleKey !== 'produccion') {
+      throw new Error('allow-negative-stock sólo aplica al módulo de producción');
+    }
     deduped.set(`${permission.moduleKey}:${permission.action}`, permission);
   }
 

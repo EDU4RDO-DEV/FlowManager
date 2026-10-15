@@ -110,6 +110,7 @@ el endpoint de emisión para una prueba técnica: cada emisión puede tener efec
 - RBAC por modulo/accion (`read`, `create`, `update`, `delete`).
 - Middleware `requireModulePermission(module, action)`.
 - Matriz de permisos centralizada por grupos de rol.
+- `produccion:allow-negative-stock` habilita saldos negativos sólo al confirmar fabricación; el seed lo concede al Administrador y no a los demás roles.
 
 ### Validacion y errores
 
@@ -125,6 +126,16 @@ el endpoint de emisión para una prueba técnica: cada emisión puede tener efec
 - `POST /api/auth/register` (libre solo en bootstrap)
 - `PATCH /api/auth/users/:idUsuario/assignment`
 - `GET /api/dashboard?fechaInicio=AAAA-MM-DD&fechaFin=AAAA-MM-DD`
+- `GET /api/production/recipes`
+- `GET /api/production/orders?busqueda=&estado=&page=&limit=` (filtros opcionales)
+- `GET /api/production/orders/:id` (incluye el historial de movimientos `PROD` asociado)
+- `POST /api/production/orders`
+- `POST /api/production/orders/:id/confirm`
+- `PATCH /api/production/orders/:id/cancel`
+
+Producción conserva una instantánea de la receta al crear una orden pendiente. La cantidad de receta representa el consumo de cada componente por una unidad del producto terminado; no hay conversiones automáticas. Los productos existentes comienzan con `UnidadMedida` nula y no se pueden fabricar hasta completar las unidades del producto terminado y de cada materia prima/insumo. Confirmar aplica todas las salidas y la entrada de producto terminado en una transacción serializable y escribe la bitácora con referencia `PROD` más el ID de orden. La consulta de detalle expone los movimientos enlazados por esa referencia. Una orden pendiente con movimientos previos no puede confirmarse ni cancelarse para proteger la trazabilidad. El esquema vigente no modela lotes; no se asignan lotes ficticios.
+
+La migración `20261012110000_production_module` agrega unidades y órdenes, y elimina las restricciones SQL globales de existencia no negativa para permitir el caso autorizado. La API protege las salidas de los demás flujos y verifica el permiso especial al fabricar. Revise la migración en el entorno objetivo antes de aplicarla; no la ejecute contra producción ni una base compartida sin autorización. Aplique las migraciones y ejecute el seed de roles/permisos sólo en un entorno aprobado.
 
 El dashboard requiere autenticacion y permiso `ventas:read`. Resume registros no anulados
 con `TipoRegistro = VENTA` mediante `Venta`, `DetalleVenta` y `EstadoEntrega`; excluye

@@ -19,6 +19,7 @@ import type { ProviderDto } from "@/types/providers";
 const EMPTY_FORM: ProductFormValues = {
   nombre: "",
   categoria: "PRODUCTO_TERMINADO",
+  unidadMedida: "",
   idProveedor: "",
   costoPromedio: "",
   precioVenta: "",
@@ -55,6 +56,7 @@ export default function EditProductPage() {
         setForm({
           nombre: productData.nombre,
           categoria: productData.categoria,
+          unidadMedida: productData.unidadMedida ?? "",
           idProveedor: String(productData.idProveedor),
           costoPromedio: String(productData.costoPromedio),
           precioVenta:
@@ -125,6 +127,7 @@ export default function EditProductPage() {
         idProveedor,
         nombre: form.nombre.trim(),
         categoria: form.categoria,
+        unidadMedida: form.unidadMedida.trim() || null,
         costoPromedio,
         precioVenta: isFinishedProduct ? precioVenta : undefined,
         rutaImagen: form.rutaImagen.trim() || undefined,

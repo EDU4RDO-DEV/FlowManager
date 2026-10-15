@@ -93,7 +93,7 @@ export async function createClientController(req: Request, res: Response) {
 
     const data = await createClient({
       idUsuario: payload.idUsuario,
-      idTipoCliente: payload.idTipoCliente,
+      habilitadoCredito: payload.habilitadoCredito,
       entidad: payload.entidad,
     });
 
@@ -105,7 +105,7 @@ export async function createClientController(req: Request, res: Response) {
 
     const message = error instanceof Error ? error.message : 'Error interno';
 
-    if (message === 'Usuario no existe' || message === 'Tipo de cliente no existe o está inactivo') {
+    if (message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
     }
 
@@ -138,8 +138,7 @@ export async function updateClientController(req: Request, res: Response) {
 
     if (
       message === 'Cliente no existe' ||
-      message === 'Usuario no existe' ||
-      message === 'Tipo de cliente no existe o está inactivo'
+      message === 'Usuario no existe'
     ) {
       return res.status(404).json({ ok: false, message });
     }

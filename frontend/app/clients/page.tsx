@@ -276,6 +276,7 @@ export default function ClientsPage() {
                               <TableHead>Nombre</TableHead>
                               <TableHead>Correo</TableHead>
                               <TableHead>Telefono</TableHead>
+                              <TableHead>Crédito</TableHead>
                               <TableHead>Registro</TableHead>
                               <TableHead className="text-right">Acciones</TableHead>
                             </TableRow>
@@ -287,6 +288,7 @@ export default function ClientsPage() {
                                 <TableCell className="font-medium">{client.entidad.nombreCompleto}</TableCell>
                                 <TableCell>{client.entidad.correoElectronico?.trim() || "-"}</TableCell>
                                 <TableCell>{client.entidad.telefono1?.trim() || "-"}</TableCell>
+                                <TableCell>{client.habilitadoCredito ? "Habilitado" : "No habilitado"}</TableCell>
                                 <TableCell>{formatDate(client.fechaRegistro)}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-2">

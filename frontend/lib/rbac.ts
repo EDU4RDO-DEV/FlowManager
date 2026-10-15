@@ -19,7 +19,7 @@ export type AppModuleKey =
   | 'reportes'
   | 'empresa';
 
-export type CrudAction = 'read' | 'create' | 'update' | 'delete';
+export type CrudAction = 'read' | 'create' | 'update' | 'delete' | 'allow-negative-stock';
 
 const ALL_MODULES: AppModuleKey[] = [
   'resumen',

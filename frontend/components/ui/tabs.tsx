@@ -21,13 +21,24 @@ function useTabsContext() {
 
 function Tabs({
   defaultValue,
+  value,
+  onValueChange,
   children,
 }: {
-  defaultValue: string;
+  defaultValue?: string;
+  value?: string;
+  onValueChange?: (next: string) => void;
   children: React.ReactNode;
 }) {
-  const [value, setValue] = React.useState(defaultValue);
-  return <TabsContext.Provider value={{ value, setValue }}>{children}</TabsContext.Provider>;
+  const [internalValue, setInternalValue] = React.useState(defaultValue ?? "");
+  const currentValue = value ?? internalValue;
+  const setValue = (next: string) => {
+    if (value === undefined) {
+      setInternalValue(next);
+    }
+    onValueChange?.(next);
+  };
+  return <TabsContext.Provider value={{ value: currentValue, setValue }}>{children}</TabsContext.Provider>;
 }
 
 function TabsList({ children, className }: { children: React.ReactNode; className?: string }) {

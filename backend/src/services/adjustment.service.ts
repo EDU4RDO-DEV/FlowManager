@@ -237,6 +237,12 @@ export async function createAdjustment(input: CreateAdjustmentInput) {
           ? existenciaAnterior + item.cantidadAjustada
           : existenciaAnterior - item.cantidadAjustada;
 
+      if (nuevaExistencia < 0) {
+        throw new Error(
+          `Stock insuficiente para el ajuste de salida. Existencia actual ${existenciaAnterior}, requerida ${item.cantidadAjustada}`,
+        );
+      }
+
       const ajuste = await tx.ajusteInventario.create({
         data: {
           IdInventarioItem: item.idInventarioItem,

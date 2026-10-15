@@ -109,6 +109,7 @@ export async function createProductController(req: Request, res: Response) {
     const data = await createProduct({
       ...dataInput,
       nombre: dataInput.nombre.trim(),
+      ...(dataInput.unidadMedida ? { unidadMedida: dataInput.unidadMedida.trim() } : {}),
       rutaImagen: dataInput.rutaImagen?.trim() || undefined,
     });
 
@@ -148,6 +149,9 @@ export async function updateProductController(req: Request, res: Response) {
     const data = await updateProduct(id, {
       ...dataInput,
       ...(dataInput.nombre !== undefined ? { nombre: dataInput.nombre.trim() } : {}),
+      ...(dataInput.unidadMedida !== undefined
+        ? { unidadMedida: dataInput.unidadMedida?.trim() || null }
+        : {}),
       ...(dataInput.rutaImagen !== undefined
         ? { rutaImagen: dataInput.rutaImagen.trim() || undefined }
         : {}),

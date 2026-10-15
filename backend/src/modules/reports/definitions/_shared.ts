@@ -9,7 +9,6 @@ export type VentaFilterParams = {
   fechaInicio?: string;
   fechaFin?: string;
   idCliente?: number;
-  idTipoCliente?: number;
   idVendedor?: number;
   idRuta?: number;
   idProducto?: number;
@@ -33,7 +32,6 @@ export function buildVentaWhere(params: VentaFilterParams): Prisma.VentaWhereInp
     ...(params.estadoPago ? { EstadoPago: params.estadoPago } : {}),
     ...(params.estadoEntrega ? { EstadoEntrega: params.estadoEntrega } : {}),
     ...(params.tipoRegistro ? { TipoRegistro: params.tipoRegistro } : {}),
-    ...(params.idTipoCliente ? { Cliente: { IdTipoCliente: params.idTipoCliente } } : {}),
     ...(params.idRuta || params.idVendedor
       ? {
           RutaSesion: {
@@ -54,7 +52,6 @@ export const VENTA_REPORT_INCLUDE = {
     select: {
       Id: true,
       Entidad: { select: { NombreCompleto: true, Nit: true } },
-      TipoCliente: { select: { Id: true, Nombre: true } },
     },
   },
   RutaSesion: {
@@ -102,10 +99,6 @@ export function getRutaNombre(venta: VentaReportRow): string {
 
 export function getClienteNombre(venta: VentaReportRow): string {
   return venta.Cliente?.Entidad?.NombreCompleto ?? 'Cliente sin nombre';
-}
-
-export function getTipoClienteNombre(venta: VentaReportRow): string {
-  return venta.Cliente?.TipoCliente?.Nombre ?? 'Sin tipo';
 }
 
 export function ventaSubtotal(venta: VentaReportRow, soloNoBonificado = true): number {

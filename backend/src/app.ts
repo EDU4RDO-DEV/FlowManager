@@ -23,6 +23,7 @@ import productRouter from './routes/product.routes';
 import productStructureRouter from './routes/product-structure.routes';
 import purchaseRouter from './routes/purchase.routes';
 import providerRouter from './routes/provider.routes';
+import productionRouter from './routes/production.routes';
 import qualityRouter from './routes/quality.routes';
 import reportsRouter from './routes/reports.routes';
 import roleRouter from './routes/role.routes';
@@ -59,6 +60,7 @@ export function createApp() {
   app.use('/api/product-structure', requireAuth, productStructureRouter);
   app.use('/api/compras', requireAuth, purchaseRouter);
   app.use('/api/providers', requireAuth, providerRouter);
+  app.use('/api/production', requireAuth, productionRouter);
   app.use('/api/calidad', requireAuth, qualityRouter);
   app.use('/api/reports', requireAuth, reportsRouter);
   app.use('/api/roles', requireAuth, roleRouter);

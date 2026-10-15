@@ -7,7 +7,7 @@ export interface ApiResponse<T> {
   data?: T;
 }
 
-export type PermissionAction = "read" | "create" | "update" | "delete";
+export type PermissionAction = "read" | "create" | "update" | "delete" | "allow-negative-stock";
 
 export type PermissionModule =
   | "resumen"

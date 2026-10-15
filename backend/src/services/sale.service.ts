@@ -159,6 +159,7 @@ async function getClienteActivo(idCliente: number) {
     select: {
       Id: true,
       IdTipoCliente: true,
+      HabilitadoCredito: true,
       Entidad: {
         select: {
           NombreCompleto: true,
@@ -223,6 +224,28 @@ async function getClienteCondicionCreditoVigente(
   }
 
   return condicion;
+}
+
+async function validateClienteCreditoHabilitado(
+  tx: PrismaClient | Prisma.TransactionClient,
+  idCliente: number,
+) {
+  const cliente = await tx.cliente.findFirst({
+    where: {
+      Id: idCliente,
+      Anulado: false,
+      Entidad: { Anulado: false },
+    },
+    select: { HabilitadoCredito: true },
+  });
+
+  if (!cliente) {
+    throw new Error('Cliente no existe');
+  }
+
+  if (!cliente.HabilitadoCredito) {
+    throw new Error('Cliente no tiene habilitado el crédito');
+  }
 }
 
 async function syncCuentaPorCobrarFromSale(
@@ -418,12 +441,6 @@ async function getSaleByIdInternal(
               Nit: true,
             },
           },
-          TipoCliente: {
-            select: {
-              Id: true,
-              Nombre: true,
-            },
-          },
         },
       },
       Usuario: {
@@ -566,12 +583,6 @@ function toSaleDto(sale: NonNullable<Awaited<ReturnType<typeof getSaleByIdIntern
       id: sale.Cliente.Id,
       nombre: sale.Cliente.Entidad.NombreCompleto,
       nit: sale.Cliente.Entidad.Nit,
-      tipoCliente: sale.Cliente.TipoCliente
-        ? {
-            id: sale.Cliente.TipoCliente.Id,
-            nombre: sale.Cliente.TipoCliente.Nombre,
-          }
-        : null,
     },
     usuario: {
       id: sale.Usuario.Id,
@@ -685,12 +696,6 @@ export async function listSales(input: ListSalesInput) {
                 Nit: true,
               },
             },
-            TipoCliente: {
-              select: {
-                Id: true,
-                Nombre: true,
-              },
-            },
           },
         },
         Usuario: {
@@ -775,7 +780,6 @@ export async function resolveSalePrice(idCliente: number, idInventarioItem: numb
   return {
     idCliente,
     idInventarioItem,
-    idTipoCliente: cliente.IdTipoCliente,
     precioUnitario,
   };
 }
@@ -880,8 +884,11 @@ export async function createSale(input: CreateSaleInput) {
 
   const created = await prisma.$transaction(
     async (tx) => {
-      const numeroVenta = await getNextNumeroVenta(tx);
       const fechaOperacion = new Date();
+      if (input.condicionPago === 'CREDITO') {
+        await validateClienteCreditoHabilitado(tx, input.idCliente);
+      }
+      const numeroVenta = await getNextNumeroVenta(tx);
       const condicionCreditoAplicada =
         input.condicionPago === 'CREDITO'
           ? await getClienteCondicionCreditoVigente(tx, input.idCliente, fechaOperacion)

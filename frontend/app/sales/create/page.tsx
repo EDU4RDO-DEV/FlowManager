@@ -211,7 +211,7 @@ export default function CreateSalePage() {
       const resolved = await resolveSalePrice(idCliente, found.id);
       precioUnitario = resolved.precioUnitario;
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "No se pudo resolver precio por tipo de cliente, se usará precio base"));
+      toast.error(getApiErrorMessage(error, "No se pudo resolver el precio del cliente; se usará el precio base"));
     }
 
     setDetalle((prev) => [
@@ -421,6 +421,10 @@ export default function CreateSalePage() {
       return "En contado el pago debe coincidir con el total";
     }
 
+    if (condicionPago === "CREDITO" && !selectedClient?.habilitadoCredito) {
+      return "El cliente no tiene habilitado el crédito";
+    }
+
     if (pagoMetodo === "TRANSFERENCIA" || pagoMetodo === "CHEQUE" || pagoMetodo === "POS") {
       if (!pagoReferencia.trim()) {
         return "La referencia es obligatoria para el método de pago seleccionado";
@@ -563,6 +567,7 @@ export default function CreateSalePage() {
                               value={`${client.entidad.nombreCompleto} ${client.entidad.nit ?? ""}`}
                               onSelect={() => {
                                 setIdCliente(client.id);
+                                if (!client.habilitadoCredito) setCondicionPago("CONTADO");
                                 setClientPopoverOpen(false);
                               }}
                             >
@@ -589,7 +594,9 @@ export default function CreateSalePage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="CONTADO">CONTADO</SelectItem>
-                    <SelectItem value="CREDITO">CREDITO</SelectItem>
+                    <SelectItem value="CREDITO" disabled={!selectedClient?.habilitadoCredito}>
+                      CREDITO
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -3,7 +3,7 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
-import { rbacModuleKeys } from '../validators/role-permission.validators';
+import { rbacActionKeys, rbacModuleKeys } from '../validators/role-permission.validators';
 
 const JWT_ISSUER = process.env.JWT_ISSUER ?? 'flowmanager.api';
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE ?? 'flowmanager.web';
@@ -35,7 +35,7 @@ function parsePositiveInt(value: unknown): number {
   return Number.NaN;
 }
 
-type CrudAction = 'read' | 'create' | 'update' | 'delete';
+type CrudAction = (typeof rbacActionKeys)[number];
 // Única fuente de verdad de módulos válidos: rbacModuleKeys (validators/role-permission.validators.ts).
 type BackendModuleKey = (typeof rbacModuleKeys)[number];
 
@@ -301,4 +301,16 @@ export function requireModulePermission(moduleKey: BackendModuleKey, action: Cru
       return res.status(500).json({ ok: false, message });
     }
   };
+}
+
+export async function roleHasModulePermission(
+  roleId: number | null | undefined,
+  moduleKey: BackendModuleKey,
+  action: CrudAction,
+): Promise<boolean> {
+  if (!roleId || !Number.isInteger(roleId) || roleId <= 0) {
+    return false;
+  }
+
+  return (await evaluatePersistedPermission(roleId, moduleKey, action)) === 'allow';
 }

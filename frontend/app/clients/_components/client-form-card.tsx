@@ -4,11 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { TipoClienteDto } from "@/types/clients";
 
 export type ClientFormValues = {
   nombreCompleto: string;
-  idTipoCliente: string;
+  habilitadoCredito: boolean;
   correoElectronico: string;
   telefono1: string;
   telefono2: string;
@@ -20,7 +19,6 @@ export type ClientFormValues = {
 type ClientFormCardProps = {
   title: string;
   form: ClientFormValues;
-  tiposCliente: TipoClienteDto[];
   saving: boolean;
   uploadingImage: boolean;
   onChange: (next: ClientFormValues) => void;
@@ -53,7 +51,6 @@ function resolveImagePreviewUrl(rutaImagen: string): string {
 export function ClientFormCard({
   title,
   form,
-  tiposCliente,
   saving,
   uploadingImage,
   onChange,
@@ -81,28 +78,25 @@ export function ClientFormCard({
                   className="h-10 bg-background"
                 />
               </div>
-              <div className="space-y-1.5 md:col-span-2">
-                <Label htmlFor="client-type">Tipo de cliente</Label>
-                <select
-                  id="client-type"
-                  value={form.idTipoCliente}
-                  onChange={(event) => onChange({ ...form, idTipoCliente: event.target.value })}
-                  disabled={saving}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="">Sin clasificación</option>
-                  {form.idTipoCliente &&
-                    !tiposCliente.some((tipo) => String(tipo.id) === form.idTipoCliente) && (
-                      <option value={form.idTipoCliente}>
-                        Clasificación actual inactiva (#{form.idTipoCliente})
-                      </option>
-                    )}
-                  {tiposCliente.map((tipo) => (
-                    <option key={tipo.id} value={tipo.id}>
-                      {tipo.nombre}
-                    </option>
-                  ))}
-                </select>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-muted/40 p-4">
+            <div className="flex items-start gap-3">
+              <input
+                id="client-credit-enabled"
+                type="checkbox"
+                checked={form.habilitadoCredito}
+                disabled={saving}
+                onChange={(event) => onChange({ ...form, habilitadoCredito: event.target.checked })}
+                className="mt-1 size-4 accent-sky-600"
+              />
+              <div className="space-y-1">
+                <Label htmlFor="client-credit-enabled">Crédito habilitado</Label>
+                <p className="text-sm text-muted-foreground">
+                  Permite solicitar ventas al crédito si también cumple las condiciones vigentes.
+                  Desactivado, el cliente puede seguir comprando al contado.
+                </p>
               </div>
             </div>
           </div>

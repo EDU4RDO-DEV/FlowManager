@@ -36,7 +36,7 @@ export interface RestoreRolePayload {
 }
 
 export interface RolePermissionActionDto {
-  action: "read" | "create" | "update" | "delete";
+  action: "read" | "create" | "update" | "delete" | "allow-negative-stock";
   actionName: string;
   permitido: boolean;
 }
@@ -54,7 +54,11 @@ export interface RolePermissionModuleDto {
     | "inventario"
     | "planilla"
     | "sesiones"
-    | "produccion";
+    | "produccion"
+    | "envases"
+    | "calidad"
+    | "reportes"
+    | "empresa";
   moduleName: string;
   actions: RolePermissionActionDto[];
 }

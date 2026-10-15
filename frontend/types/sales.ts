@@ -4,10 +4,6 @@ export interface SaleCustomerDto {
   id: number;
   nombre: string;
   nit: string | null;
-  tipoCliente: {
-    id: number;
-    nombre: string;
-  } | null;
 }
 
 export interface SaleUserDto {
@@ -286,7 +282,6 @@ export type UploadSaleImageResponse = ApiResponse<UploadSaleImageResult>;
 export interface ResolveSalePriceResult {
   idCliente: number;
   idInventarioItem: number;
-  idTipoCliente: number | null;
   precioUnitario: number;
 }
 

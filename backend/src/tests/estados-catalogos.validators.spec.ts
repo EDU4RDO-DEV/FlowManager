@@ -37,19 +37,18 @@ describe('Fase 12 - homologación estados/catálogos (MetodoPago y Sexo)', () =>
     ).toThrowError();
   });
 
-  it('createClientSchema acepta un tipo de cliente opcional o nulo y valida su identificador', () => {
+  it('createClientSchema acepta la autorización de crédito y usa deshabilitado como valor seguro', () => {
     const client = { idUsuario: 1, entidad: { nombreCompleto: 'Cliente X' } };
 
-    expect(() => createClientSchema.parse(client)).not.toThrow();
-    expect(() => createClientSchema.parse({ ...client, idTipoCliente: null })).not.toThrow();
-    expect(() => createClientSchema.parse({ ...client, idTipoCliente: 3 })).not.toThrow();
-    expect(() => createClientSchema.parse({ ...client, idTipoCliente: 0 })).toThrowError();
+    expect(createClientSchema.parse(client).habilitadoCredito).toBe(false);
+    expect(createClientSchema.parse({ ...client, habilitadoCredito: true }).habilitadoCredito).toBe(true);
+    expect(() => createClientSchema.parse({ ...client, habilitadoCredito: 'true' })).toThrowError();
   });
 
-  it('updateClientSchema permite asignar o quitar la clasificación comercial', () => {
-    expect(() => updateClientSchema.parse({ idTipoCliente: 4 })).not.toThrow();
-    expect(() => updateClientSchema.parse({ idTipoCliente: null })).not.toThrow();
-    expect(() => updateClientSchema.parse({ idTipoCliente: -1 })).toThrowError();
+  it('updateClientSchema permite actualizar solo un valor booleano de autorización', () => {
+    expect(() => updateClientSchema.parse({ habilitadoCredito: true })).not.toThrow();
+    expect(() => updateClientSchema.parse({ habilitadoCredito: false })).not.toThrow();
+    expect(() => updateClientSchema.parse({ habilitadoCredito: 'false' })).toThrowError();
   });
 
   it('createEmployeeSchema restringe entidad.sexo a M o F', () => {

@@ -48,7 +48,7 @@ export async function postToN8nWebhook(body: unknown): Promise<N8nWebhookResult>
       message: `N8N_WEBHOOK_TIMEOUT_MS debe ser un entero entre 1 y ${MAX_TIMEOUT_MS}`,
     };
   }
-
+  
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
