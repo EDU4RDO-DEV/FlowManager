@@ -70,8 +70,12 @@ export async function updateCommissionConfig(
 export async function setCommissionCategorySchedule(
   configId: number,
   payload: CommissionCategorySchedulePayload,
-): Promise<void> {
-  await api.put(`/api/planilla/comisiones/${configId}/reglas-categoria`, payload);
+): Promise<string> {
+  const { data } = await api.put<ApiResponse<unknown>>(
+    `/api/planilla/comisiones/${configId}/reglas-categoria`,
+    payload,
+  );
+  return data.message;
 }
 
 export async function deleteCommissionConfig(

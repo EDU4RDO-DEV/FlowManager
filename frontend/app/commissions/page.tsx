@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, ChevronsUpDown, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,6 +21,14 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -55,6 +63,7 @@ import { listProducts } from "@/services/products.service";
 import type {
   CommissionCategoryDto,
   CommissionConfigDto,
+  CommissionCategorySchedulePayload,
   CommissionRuleDto,
   CommissionRuleType,
 } from "@/types/commissions";
@@ -79,17 +88,170 @@ const EMPTY_RULE_FORM: RuleFormState = {
   montoPorUnidad: "",
 };
 
-function formatCommissionScale(rules: Array<{ montoMinimoVenta: number; porcentaje: number }>) {
-  return rules.map((rule) => `${rule.montoMinimoVenta}:${rule.porcentaje}`).join(", ");
+type CategoryRateRuleDraft = {
+  id: string;
+  montoMinimoVenta: string;
+  porcentaje: string;
+};
+
+type CategoryRateValue = {
+  montoMinimoVenta: number;
+  porcentaje: number;
+};
+
+type SavedCategorySchedule = {
+  fechaInicioVigencia: string;
+  reglas: CategoryRateValue[];
+};
+
+type CategoryRateFieldErrors = {
+  montoMinimoVenta?: string;
+  porcentaje?: string;
+};
+
+type CategoryScheduleValidation = {
+  fechaInicioVigencia?: string;
+  general?: string;
+  categorias: Record<number, { mensaje?: string; reglas: Record<string, CategoryRateFieldErrors> }>;
+};
+
+const MAX_CATEGORY_THRESHOLD = 9_999_999_999.99;
+
+const REFERENCE_CATEGORY_RATES: Record<string, CategoryRateValue[]> = {
+  GARRAFONES: [{ montoMinimoVenta: 0, porcentaje: 3 }],
+  OTROS: [
+    { montoMinimoVenta: 0, porcentaje: 3.09 },
+    { montoMinimoVenta: 30000, porcentaje: 3.1 },
+    ...Array.from({ length: 12 }, (_, index) => ({
+      montoMinimoVenta: 35000 + index * 5000,
+      porcentaje: Number((3.11 + index * 0.01).toFixed(2)),
+    })),
+  ],
+};
+
+let categoryRateDraftSequence = 0;
+
+function createCategoryRateDraft(
+  categoryId: number,
+  index: number,
+  rule: CategoryRateValue,
+  source: string,
+): CategoryRateRuleDraft {
+  return {
+    id: `${source}-${categoryId}-${index}-${categoryRateDraftSequence++}`,
+    montoMinimoVenta: String(rule.montoMinimoVenta),
+    porcentaje: rule.porcentaje.toFixed(2),
+  };
 }
 
-function defaultCommissionScale(key: string) {
-  if (key === "GARRAFONES") return "0:3";
-  return [
-    "0:3.09",
-    "30000:3.10",
-    ...Array.from({ length: 12 }, (_, index) => `${35000 + index * 5000}:${(3.11 + index * 0.01).toFixed(2)}`),
-  ].join(", ");
+function sortCategoryRateDrafts(rules: CategoryRateRuleDraft[]) {
+  return [...rules].sort((left, right) => {
+    const leftParsed = Number(left.montoMinimoVenta);
+    const rightParsed = Number(right.montoMinimoVenta);
+    const leftValue = left.montoMinimoVenta.trim() && Number.isFinite(leftParsed)
+      ? leftParsed
+      : Number.POSITIVE_INFINITY;
+    const rightValue = right.montoMinimoVenta.trim() && Number.isFinite(rightParsed)
+      ? rightParsed
+      : Number.POSITIVE_INFINITY;
+    return leftValue - rightValue;
+  });
+}
+
+function validateCategorySchedule(
+  categories: CommissionCategoryDto[],
+  drafts: Record<number, CategoryRateRuleDraft[]>,
+  effectiveDate: string,
+): CategoryScheduleValidation {
+  const result: CategoryScheduleValidation = { categorias: {} };
+  if (!effectiveDate.trim()) {
+    result.fechaInicioVigencia = "La fecha de inicio de vigencia es obligatoria.";
+  }
+  if (categories.length === 0) {
+    result.general = "No hay categorías activas para configurar.";
+  }
+
+  for (const category of categories) {
+    const rules = drafts[category.id] ?? [];
+    const categoryErrors: CategoryScheduleValidation["categorias"][number] = { reglas: {} };
+    result.categorias[category.id] = categoryErrors;
+
+    if (category.clave === "GARRAFONES") {
+      const rate = rules[0]?.porcentaje.trim() ?? "";
+      const value = Number(rate);
+      if (!rate || !Number.isFinite(value) || value <= 0 || value > 100) {
+        categoryErrors.reglas[rules[0]?.id ?? "garrafones"] = {
+          porcentaje: "Ingresa un porcentaje mayor que 0 y máximo de 100.",
+        };
+      }
+      continue;
+    }
+
+    if (rules.length === 0) {
+      categoryErrors.mensaje = "Agrega al menos una regla, comenzando en Q0.";
+      continue;
+    }
+
+    const thresholds = new Map<number, string[]>();
+    const validThresholds: number[] = [];
+    for (const rule of rules) {
+      const thresholdText = rule.montoMinimoVenta.trim();
+      const rateText = rule.porcentaje.trim();
+      const threshold = Number(thresholdText);
+      const rate = Number(rateText);
+      const errors: CategoryRateFieldErrors = {};
+
+      if (
+        !thresholdText ||
+        !Number.isFinite(threshold) ||
+        threshold < 0 ||
+        threshold > MAX_CATEGORY_THRESHOLD
+      ) {
+        errors.montoMinimoVenta = `Ingresa un monto entre Q0 y Q${MAX_CATEGORY_THRESHOLD.toLocaleString("es-GT")}.`;
+      } else {
+        validThresholds.push(threshold);
+        thresholds.set(threshold, [...(thresholds.get(threshold) ?? []), rule.id]);
+      }
+
+      if (!rateText || !Number.isFinite(rate) || rate <= 0 || rate > 100) {
+        errors.porcentaje = "Ingresa un porcentaje mayor que 0 y máximo de 100.";
+      }
+      if (Object.keys(errors).length > 0) {
+        categoryErrors.reglas[rule.id] = errors;
+      }
+    }
+
+    for (const [threshold, ruleIds] of thresholds) {
+      if (ruleIds.length > 1) {
+        for (const ruleId of ruleIds) {
+          categoryErrors.reglas[ruleId] = {
+            ...categoryErrors.reglas[ruleId],
+            montoMinimoVenta: `El umbral Q${threshold.toLocaleString("es-GT")} está duplicado.`,
+          };
+        }
+      }
+    }
+
+    if (!validThresholds.includes(0)) {
+      categoryErrors.mensaje = "Debe existir una regla inicial aplicable desde Q0.";
+    }
+
+  }
+
+  return result;
+}
+
+function formatQuetzales(value: number) {
+  return `Q${new Intl.NumberFormat("es-GT", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)}`;
+}
+
+function formatCategoryRateValues(rules: CategoryRateValue[]) {
+  return rules
+    .map((rule) => `Q${rule.montoMinimoVenta.toLocaleString("es-GT")}: ${rule.porcentaje.toFixed(2)}%`)
+    .join(" · ");
 }
 
 export default function CommissionsPage() {
@@ -112,7 +274,28 @@ export default function CommissionsPage() {
     date.setDate(date.getDate() + 1);
     return date.toISOString().slice(0, 10);
   });
-  const [categoryRateTexts, setCategoryRateTexts] = useState<Record<number, string>>({});
+  const [categoryRateDrafts, setCategoryRateDrafts] = useState<Record<number, CategoryRateRuleDraft[]>>({});
+  const [savedCategorySchedules, setSavedCategorySchedules] = useState<
+    Record<number, SavedCategorySchedule | null>
+  >({});
+  const [scheduleVersionInfo, setScheduleVersionInfo] = useState<{
+    latestDate: string | null;
+    activeDates: string[];
+  }>({ latestDate: null, activeDates: [] });
+  const [scheduleApiError, setScheduleApiError] = useState<string | null>(null);
+  const [isScheduleConfirmOpen, setIsScheduleConfirmOpen] = useState(false);
+  const [pendingSchedule, setPendingSchedule] = useState<{
+    configId: number;
+    payload: CommissionCategorySchedulePayload;
+    summary: string[];
+  } | null>(null);
+  const [isSavingSchedule, setIsSavingSchedule] = useState(false);
+  const [deleteDraftCandidate, setDeleteDraftCandidate] = useState<{
+    categoryId: number;
+    categoryName: string;
+    rule: CategoryRateRuleDraft;
+  } | null>(null);
+  const [previewSalesAmount, setPreviewSalesAmount] = useState("25000");
   const [ruleForm, setRuleForm] = useState<RuleFormState>(EMPTY_RULE_FORM);
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
@@ -120,6 +303,7 @@ export default function CommissionsPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [isSavingRule, setIsSavingRule] = useState(false);
+  const [isLoadingSchedule, setIsLoadingSchedule] = useState(true);
   const [deleteConfigCandidate, setDeleteConfigCandidate] = useState<CommissionConfigDto | null>(null);
   const [deleteRuleCandidate, setDeleteRuleCandidate] = useState<CommissionRuleDto | null>(null);
 
@@ -127,9 +311,61 @@ export default function CommissionsPage() {
     () => configs.find((item) => item.id === selectedConfigId) ?? null,
     [configs, selectedConfigId],
   );
+  const otherCommissionCategories = useMemo(
+    () => categories.filter((category) => category.clave !== "GARRAFONES"),
+    [categories],
+  );
+  const previewCategory = useMemo(
+    () => otherCommissionCategories.find((category) => category.clave === "OTROS") ?? otherCommissionCategories[0] ?? null,
+    [otherCommissionCategories],
+  );
+  const scheduleValidation = useMemo(
+    () => validateCategorySchedule(categories, categoryRateDrafts, categoryEffectiveDate),
+    [categories, categoryRateDrafts, categoryEffectiveDate],
+  );
+  const hasScheduleValidationErrors = Boolean(scheduleValidation.fechaInicioVigencia || scheduleValidation.general) ||
+    Object.values(scheduleValidation.categorias).some((category) =>
+      Boolean(category.mensaje) ||
+      Object.values(category.reglas).some((rule) =>
+        Boolean(rule.montoMinimoVenta || rule.porcentaje),
+      ),
+    );
+  const previewResult = useMemo(() => {
+    const amountText = previewSalesAmount.trim();
+    const salesAmount = Number(amountText);
+    if (!amountText || !Number.isFinite(salesAmount) || salesAmount < 0) {
+      return { error: "Ingresa un monto de ventas igual o mayor que Q0." } as const;
+    }
+    if (!previewCategory) {
+      return { error: "No hay una categoría de otros productos disponible para previsualizar." } as const;
+    }
+    const applicableRules = (categoryRateDrafts[previewCategory.id] ?? [])
+      .map((rule) => ({
+        montoMinimoVenta: Number(rule.montoMinimoVenta),
+        porcentaje: Number(rule.porcentaje),
+      }))
+      .filter((rule) =>
+        Number.isFinite(rule.montoMinimoVenta) &&
+        Number.isFinite(rule.porcentaje) &&
+        rule.montoMinimoVenta >= 0 &&
+        rule.montoMinimoVenta <= MAX_CATEGORY_THRESHOLD &&
+        rule.porcentaje > 0 &&
+        rule.porcentaje <= 100
+      )
+      .sort((left, right) => right.montoMinimoVenta - left.montoMinimoVenta);
+    const selectedRule = applicableRules.find((rule) => rule.montoMinimoVenta <= salesAmount);
+    if (!selectedRule) {
+      return { error: "No hay un umbral aplicable para este monto." } as const;
+    }
+    return {
+      salesAmount,
+      threshold: selectedRule.montoMinimoVenta,
+      percentage: selectedRule.porcentaje,
+      commission: Number(((salesAmount * selectedRule.porcentaje) / 100).toFixed(2)),
+    } as const;
+  }, [categoryRateDrafts, previewCategory, previewSalesAmount]);
 
-  async function loadAll() {
-    setIsLoading(true);
+  const loadAll = useCallback(async () => {
     try {
       const [active, trash, productsData, categoryData] = await Promise.all([
         listCommissionConfigs(),
@@ -148,9 +384,9 @@ export default function CommissionsPage() {
       setIsLoading(false);
       setHasLoadedOnce(true);
     }
-  }
+  }, []);
 
-  async function loadRules(configId: number) {
+  const loadRules = useCallback(async (configId: number) => {
     try {
       const [configDetail, anulatedRules] = await Promise.all([
         getCommissionConfigById(configId),
@@ -158,47 +394,85 @@ export default function CommissionsPage() {
       ]);
       setActiveRules(configDetail.reglas);
       setTrashRules(anulatedRules);
+      const allRules = configDetail.reglasPorCategoria;
       const latestDateByCategory = new Map<number, string>();
-      for (const rule of configDetail.reglasPorCategoria) {
+      for (const rule of allRules) {
         const date = rule.fechaInicioVigencia.slice(0, 10);
         const current = latestDateByCategory.get(rule.idCategoriaComision);
         if (!current || date > current) latestDateByCategory.set(rule.idCategoriaComision, date);
       }
-      setCategoryRateTexts(Object.fromEntries(categories.map((category) => {
+
+      const nextDrafts: Record<number, CategoryRateRuleDraft[]> = {};
+      const nextSavedSchedules: Record<number, SavedCategorySchedule | null> = {};
+      for (const category of categories) {
         const latestDate = latestDateByCategory.get(category.id);
-        const activeSchedule = configDetail.reglasPorCategoria.filter((rule) =>
-          rule.idCategoriaComision === category.id &&
-          (!latestDate || rule.fechaInicioVigencia.slice(0, 10) === latestDate),
-        );
-        return [
-          category.id,
-          activeSchedule.length > 0
-            ? formatCommissionScale(activeSchedule.map((rule) => ({
+        const savedRules = latestDate
+          ? allRules
+              .filter((rule) =>
+                rule.idCategoriaComision === category.id &&
+                rule.fechaInicioVigencia.slice(0, 10) === latestDate,
+              )
+              .map((rule) => ({
                 montoMinimoVenta: rule.montoMinimoVenta,
                 porcentaje: rule.porcentaje,
-              })))
-            : defaultCommissionScale(category.clave),
-        ];
-      })));
+              }))
+              .sort((left, right) => left.montoMinimoVenta - right.montoMinimoVenta)
+          : [];
+        nextSavedSchedules[category.id] = latestDate
+          ? { fechaInicioVigencia: latestDate, reglas: savedRules }
+          : null;
+        const initialRules = savedRules.length > 0
+          ? savedRules
+          : REFERENCE_CATEGORY_RATES[category.clave] ?? [];
+        nextDrafts[category.id] = initialRules.map((rule, index) =>
+          createCategoryRateDraft(
+            category.id,
+            index,
+            rule,
+            savedRules.length > 0 ? "saved" : "reference",
+          ),
+        );
+      }
+
+      const latestDates = [...latestDateByCategory.values()].sort();
+      const today = new Date().toISOString().slice(0, 10);
+      const activeDates = [...new Set(
+        allRules
+          .filter((rule) => {
+            const start = rule.fechaInicioVigencia.slice(0, 10);
+            const end = rule.fechaFinVigencia?.slice(0, 10) ?? null;
+            return start <= today && (end === null || end >= today);
+          })
+          .map((rule) => rule.fechaInicioVigencia.slice(0, 10)),
+      )].sort();
+
+      setCategoryRateDrafts(nextDrafts);
+      setSavedCategorySchedules(nextSavedSchedules);
+      setScheduleVersionInfo({
+        latestDate: latestDates.at(-1) ?? null,
+        activeDates,
+      });
+      setScheduleApiError(null);
     } catch (error) {
       setActiveRules([]);
       setTrashRules([]);
+      setCategoryRateDrafts({});
+      setSavedCategorySchedules({});
+      setScheduleVersionInfo({ latestDate: null, activeDates: [] });
       toast.error(getApiErrorMessage(error, "No se pudieron cargar las reglas"));
+    } finally {
+      setIsLoadingSchedule(false);
     }
-  }
+  }, [categories]);
 
   useEffect(() => {
     void loadAll();
-  }, []);
+  }, [loadAll]);
 
   useEffect(() => {
-    if (!selectedConfigId) {
-      setActiveRules([]);
-      setTrashRules([]);
-      return;
-    }
+    if (!selectedConfigId) return;
     void loadRules(selectedConfigId);
-  }, [selectedConfigId, categories]);
+  }, [selectedConfigId, loadRules]);
 
   const metrics = useMemo(() => {
     return {
@@ -208,6 +482,12 @@ export default function CommissionsPage() {
       reglasActivas: activeRules.length,
     };
   }, [configs, trashConfigs, activeRules.length]);
+
+  function selectConfig(configId: number) {
+    if (configId === selectedConfigId) return;
+    setIsLoadingSchedule(true);
+    setSelectedConfigId(configId);
+  }
 
   async function handleCreateConfig() {
     if (!canCreate) {
@@ -234,6 +514,7 @@ export default function CommissionsPage() {
         esGeneral: newConfigIsGeneral,
       });
       setConfigs((prev) => [created, ...prev]);
+      setIsLoadingSchedule(true);
       setSelectedConfigId(created.id);
       setNewConfigName("");
       setNewConfigIsGeneral(false);
@@ -245,49 +526,165 @@ export default function CommissionsPage() {
     }
   }
 
-  async function handleSaveCategorySchedule() {
+  function updateCategoryRateRule(
+    categoryId: number,
+    ruleId: string,
+    field: "montoMinimoVenta" | "porcentaje",
+    value: string,
+  ) {
+    setCategoryRateDrafts((current) => ({
+      ...current,
+      [categoryId]: (current[categoryId] ?? []).map((rule) =>
+        rule.id === ruleId ? { ...rule, [field]: value } : rule,
+      ),
+    }));
+    setScheduleApiError(null);
+  }
+
+  function sortCategoryRules(categoryId: number) {
+    setCategoryRateDrafts((current) => ({
+      ...current,
+      [categoryId]: sortCategoryRateDrafts(current[categoryId] ?? []),
+    }));
+  }
+
+  function addCategoryRateRule(categoryId: number) {
+    const id = `draft-${categoryId}-${categoryRateDraftSequence++}`;
+    setCategoryRateDrafts((current) => ({
+      ...current,
+      [categoryId]: [
+        ...(current[categoryId] ?? []),
+        {
+          id,
+          montoMinimoVenta: "",
+          porcentaje: "",
+        },
+      ],
+    }));
+    setScheduleApiError(null);
+  }
+
+  function updateGarrafonesRate(categoryId: number, value: string) {
+    const id = `draft-${categoryId}-${categoryRateDraftSequence++}`;
+    setCategoryRateDrafts((current) => {
+      const rules = current[categoryId] ?? [];
+      if (rules.length === 0) {
+        return {
+          ...current,
+          [categoryId]: [{
+            id,
+            montoMinimoVenta: "0",
+            porcentaje: value,
+          }],
+        };
+      }
+      return {
+        ...current,
+        [categoryId]: rules.map((rule, index) =>
+          index === 0 ? { ...rule, montoMinimoVenta: "0", porcentaje: value } : rule,
+        ),
+      };
+    });
+    setScheduleApiError(null);
+  }
+
+  function handleRequestCategoryScheduleSave() {
     if (!selectedConfigId || !user?.id) {
-      toast.error("Selecciona una configuración y verifica el usuario.");
+      setScheduleApiError("Selecciona una configuración y verifica el usuario.");
       return;
     }
     if (!canUpdate) {
-      toast.error("No tienes permisos para actualizar las escalas.");
+      setScheduleApiError("No tienes permisos para actualizar las escalas.");
       return;
     }
-    const parsedCategories = categories.map((category) => {
-      const rules = (categoryRateTexts[category.id] ?? "")
-        .split(",")
-        .map((entry) => {
-          const [thresholdText, percentageText] = entry.split(":").map((value) => value.trim());
-          return {
-            montoMinimoVenta: Number(thresholdText),
-            porcentaje: Number(percentageText),
-          };
-        });
-      return { idCategoriaComision: category.id, reglas: rules };
-    });
-
-    if (parsedCategories.some((category) =>
-      category.reglas.some((rule) =>
-        !Number.isFinite(rule.montoMinimoVenta) ||
-        !Number.isFinite(rule.porcentaje),
-      ),
-    )) {
-      toast.error("Usa el formato umbral:porcentaje, separados por coma; por ejemplo 0:3.09, 30000:3.10.");
+    const sortedDrafts = Object.fromEntries(categories.map((category) => [
+      category.id,
+      sortCategoryRateDrafts(categoryRateDrafts[category.id] ?? []),
+    ]));
+    setCategoryRateDrafts(sortedDrafts);
+    const validation = validateCategorySchedule(categories, sortedDrafts, categoryEffectiveDate);
+    const hasErrors =
+      Boolean(validation.fechaInicioVigencia || validation.general) ||
+      Object.values(validation.categorias).some((category) =>
+        Boolean(category.mensaje) ||
+        Object.values(category.reglas).some((rule) => Boolean(rule.montoMinimoVenta || rule.porcentaje)),
+      );
+    if (hasErrors) {
+      const firstMessage =
+        validation.fechaInicioVigencia ??
+        validation.general ??
+        Object.values(validation.categorias).flatMap((category) => [
+          category.mensaje,
+          ...Object.values(category.reglas).flatMap((rule) => [rule.montoMinimoVenta, rule.porcentaje]),
+        ]).find(Boolean);
+      setScheduleApiError(null);
+      toast.error(firstMessage ?? "Corrige los errores antes de guardar la escala.");
       return;
     }
 
-    try {
-      await setCommissionCategorySchedule(selectedConfigId, {
+    const payload: CommissionCategorySchedulePayload = {
         idUsuario: user.id,
         fechaInicioVigencia: categoryEffectiveDate,
-        categorias: parsedCategories,
-      });
-      await loadRules(selectedConfigId);
-      toast.success("Escalas de comisión versionadas desde la fecha indicada.");
+        categorias: categories.map((category) => ({
+          idCategoriaComision: category.id,
+          reglas: category.clave === "GARRAFONES"
+            ? [{
+                montoMinimoVenta: 0,
+                porcentaje: Number(sortedDrafts[category.id]?.[0]?.porcentaje ?? ""),
+              }]
+            : (sortedDrafts[category.id] ?? []).map((rule) => ({
+                montoMinimoVenta: Number(rule.montoMinimoVenta),
+                porcentaje: Number(rule.porcentaje),
+              })),
+        })),
+      };
+    const summary = categories.map((category) => {
+      const previous = savedCategorySchedules[category.id];
+      const nextRules = payload.categorias.find((item) => item.idCategoriaComision === category.id)?.reglas ?? [];
+      return `${category.nombre}: ${
+        previous
+          ? `${formatCategoryRateValues(previous.reglas)} → ${formatCategoryRateValues(nextRules)}`
+          : `sin versión guardada → ${formatCategoryRateValues(nextRules)}`
+      }`;
+    });
+    setScheduleApiError(null);
+    setPendingSchedule({ configId: selectedConfigId, payload, summary });
+    setIsScheduleConfirmOpen(true);
+  }
+
+  async function handleConfirmCategoryScheduleSave() {
+    if (!pendingSchedule) return;
+    setIsSavingSchedule(true);
+    try {
+      const resultMessage = await setCommissionCategorySchedule(
+        pendingSchedule.configId,
+        pendingSchedule.payload,
+      );
+      setIsScheduleConfirmOpen(false);
+      setPendingSchedule(null);
+      setIsLoadingSchedule(true);
+      await loadRules(pendingSchedule.configId);
+      toast.success(resultMessage || "Nueva versión de escalas guardada correctamente.");
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "No se pudieron guardar las escalas."));
+      const message = getApiErrorMessage(error, "No se pudieron guardar las escalas.");
+      setScheduleApiError(message);
+      setIsScheduleConfirmOpen(false);
+      setPendingSchedule(null);
+      toast.error(message);
+    } finally {
+      setIsSavingSchedule(false);
     }
+  }
+
+  function handleConfirmDeleteCategoryRateRule() {
+    if (!deleteDraftCandidate) return;
+    setCategoryRateDrafts((current) => ({
+      ...current,
+      [deleteDraftCandidate.categoryId]: (current[deleteDraftCandidate.categoryId] ?? [])
+        .filter((rule) => rule.id !== deleteDraftCandidate.rule.id),
+    }));
+    setDeleteDraftCandidate(null);
+    setScheduleApiError(null);
   }
 
   function startEditingRule(rule: CommissionRuleDto) {
@@ -447,7 +844,14 @@ export default function CommissionsPage() {
           )}
 
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => void loadAll()} disabled={isLoading}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsLoading(true);
+                void loadAll();
+              }}
+              disabled={isLoading}
+            >
               {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
               Recargar
             </Button>
@@ -496,11 +900,11 @@ export default function CommissionsPage() {
                         key={item.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => setSelectedConfigId(item.id)}
+                        onClick={() => selectConfig(item.id)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            setSelectedConfigId(item.id);
+                            selectConfig(item.id);
                           }
                         }}
                         className={`cursor-pointer rounded-lg border p-3 transition-colors ${selectedConfigId === item.id ? "border-sky-500 bg-sky-50/60" : "bg-background hover:bg-muted/40"}`}
@@ -564,44 +968,312 @@ export default function CommissionsPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="rounded-xl border border-sky-200 bg-sky-50/40 p-4 dark:border-sky-900 dark:bg-sky-950/20">
-                      <div className="mb-3">
-                        <p className="font-medium">Comisión por categoría de ventas</p>
-                        <p className="text-xs text-muted-foreground">
-                          La tasa del umbral alcanzado se aplica a toda la base de venta de la categoría.
-                          Las categorías de producto se asignan manualmente en Inventario.
-                        </p>
-                      </div>
-                      <div className="space-y-3">
-                        <div className="max-w-xs space-y-1.5">
-                          <Label htmlFor="category-effective-date">Vigente desde</Label>
-                          <Input
-                            id="category-effective-date"
-                            type="date"
-                            value={categoryEffectiveDate}
-                            onChange={(event) => setCategoryEffectiveDate(event.target.value)}
-                          />
+                    <div className="space-y-5">
+                      <section className="space-y-4 rounded-xl border border-sky-200 bg-sky-50/40 p-4 dark:border-sky-900 dark:bg-sky-950/20 sm:p-5">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <h3 className="font-semibold">A. Información de la versión</h3>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              Preparando una nueva versión para {selectedConfig.nombre}.
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-sky-300 px-3 py-1 text-xs font-medium text-sky-800 dark:border-sky-800 dark:text-sky-200">
+                            Nueva versión
+                          </span>
                         </div>
-                        {categories.map((category) => (
-                          <div key={category.id} className="space-y-1.5">
-                            <Label htmlFor={`category-scale-${category.id}`}>{category.nombre}</Label>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className="max-w-sm space-y-1.5">
+                            <Label htmlFor="category-effective-date">Fecha de inicio de vigencia</Label>
                             <Input
-                              id={`category-scale-${category.id}`}
-                              value={categoryRateTexts[category.id] ?? ""}
-                              onChange={(event) => setCategoryRateTexts((current) => ({
-                                ...current,
-                                [category.id]: event.target.value,
-                              }))}
-                              placeholder="0:3.09, 30000:3.10"
+                              id="category-effective-date"
+                              type="date"
+                              required
+                              value={categoryEffectiveDate}
+                              aria-invalid={Boolean(scheduleValidation.fechaInicioVigencia)}
+                              onChange={(event) => {
+                                setCategoryEffectiveDate(event.target.value);
+                                setScheduleApiError(null);
+                              }}
+                            />
+                            {scheduleValidation.fechaInicioVigencia ? (
+                              <p className="text-sm text-destructive" role="alert">
+                                {scheduleValidation.fechaInicioVigencia}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div className="rounded-lg border bg-background/80 p-3 text-sm">
+                            <p className="font-medium">Escala guardada</p>
+                            <p className="mt-1 text-muted-foreground">
+                              Última versión: {scheduleVersionInfo.latestDate ?? "Aún no hay una versión guardada"}.
+                            </p>
+                            <p className="mt-1 text-muted-foreground">
+                              Vigente hoy: {scheduleVersionInfo.activeDates.length > 0
+                                ? scheduleVersionInfo.activeDates.join(", ")
+                                : "No hay una escala registrada para hoy"}.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg border border-amber-300/70 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+                          Guardar una nueva vigencia no recalcula las planillas ya generadas o cerradas; sus valores históricos conservan los snapshots calculados.
+                        </div>
+                        {scheduleApiError ? (
+                          <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive" role="alert">
+                            {scheduleApiError}
+                          </p>
+                        ) : null}
+                        {scheduleValidation.general ? (
+                          <p className="text-sm text-destructive" role="alert">{scheduleValidation.general}</p>
+                        ) : null}
+                      </section>
+
+                      <section className="space-y-4 rounded-xl border p-4 sm:p-5">
+                        <div>
+                          <h3 className="font-semibold">B. Comisión de garrafones</h3>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            Tasa fija aplicada al total vendido de la categoría.
+                          </p>
+                        </div>
+                        {categories.filter((category) => category.clave === "GARRAFONES").map((category) => {
+                          const rules = categoryRateDrafts[category.id] ?? [];
+                          const rateRuleId = rules[0]?.id ?? "garrafones";
+                          const rateError = scheduleValidation.categorias[category.id]?.reglas[rateRuleId]?.porcentaje;
+                          const savedRuleCount = savedCategorySchedules[category.id]?.reglas.length ?? 0;
+                          return (
+                            <div key={category.id} className="grid gap-3 sm:grid-cols-[minmax(0,20rem)_1fr] sm:items-end">
+                              <div className="space-y-1.5">
+                                <Label htmlFor={`garrafones-rate-${category.id}`}>{category.nombre} · Comisión (%)</Label>
+                                <div className="relative">
+                                  <Input
+                                    id={`garrafones-rate-${category.id}`}
+                                    type="number"
+                                    inputMode="decimal"
+                                    min="0.01"
+                                    max="100"
+                                    step="0.01"
+                                    value={rules[0]?.porcentaje ?? ""}
+                                    aria-invalid={Boolean(rateError)}
+                                    onChange={(event) => updateGarrafonesRate(category.id, event.target.value)}
+                                  />
+                                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">%</span>
+                                </div>
+                                {rateError ? <p className="text-sm text-destructive" role="alert">{rateError}</p> : null}
+                              </div>
+                              {!savedCategorySchedules[category.id] ? (
+                                <p className="text-xs text-muted-foreground">Valor de referencia inicial; todavía no está guardado.</p>
+                              ) : savedRuleCount > 1 ? (
+                                <p className="text-xs text-amber-700 dark:text-amber-300">
+                                  La última versión guardada tiene {savedRuleCount} umbrales; esta nueva versión usará una tasa fija.
+                                </p>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                        {!categories.some((category) => category.clave === "GARRAFONES") ? (
+                          <p className="text-sm text-destructive" role="alert">No se encontró la categoría activa de garrafones.</p>
+                        ) : null}
+                      </section>
+
+                      <section className="space-y-4 rounded-xl border p-4 sm:p-5">
+                        <div>
+                          <h3 className="font-semibold">C. Comisión de otros productos</h3>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            La tasa del umbral alcanzado se aplica a toda la base de ventas de la categoría, no solo al excedente.
+                          </p>
+                        </div>
+
+                        {otherCommissionCategories.map((category) => {
+                          const rules = categoryRateDrafts[category.id] ?? [];
+                          const categoryErrors = scheduleValidation.categorias[category.id];
+                          return (
+                            <div key={category.id} className="space-y-3 rounded-lg border bg-muted/20 p-3 sm:p-4">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                  <p className="font-medium">{category.nombre}</p>
+                                  {!savedCategorySchedules[category.id] ? (
+                                    <p className="text-xs text-muted-foreground">Valores de referencia iniciales; todavía no están guardados.</p>
+                                  ) : null}
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => addCategoryRateRule(category.id)}
+                                >
+                                  <Plus className="size-4" />
+                                  Agregar umbral
+                                </Button>
+                              </div>
+
+                              <div className="overflow-hidden rounded-lg border bg-background">
+                                <Table className="w-full table-fixed">
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead className="w-[42%] whitespace-normal px-2 text-xs sm:px-4 sm:text-sm">Venta desde (Q)</TableHead>
+                                      <TableHead className="w-[36%] whitespace-normal px-2 text-xs sm:px-4 sm:text-sm">Comisión (%)</TableHead>
+                                      <TableHead className="w-[22%] px-2 text-right text-xs sm:px-4 sm:text-sm">Acciones</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {rules.map((rule, index) => {
+                                      const errors = categoryErrors?.reglas[rule.id];
+                                      return (
+                                        <TableRow
+                                          key={rule.id}
+                                          className={index === 0 ? "bg-sky-50/70 dark:bg-sky-950/20" : undefined}
+                                        >
+                                          <TableCell className="px-2 py-2 sm:px-4">
+                                            <Label htmlFor={`threshold-${category.id}-${rule.id}`} className="mb-1 block text-xs font-normal text-muted-foreground sm:hidden">
+                                              Venta desde (Q){index === 0 ? " · Regla inicial" : ""}
+                                            </Label>
+                                            {index === 0 ? (
+                                              <span className="mb-1 hidden text-xs font-medium text-sky-800 dark:text-sky-200 sm:block">
+                                                Regla inicial
+                                              </span>
+                                            ) : null}
+                                            <Input
+                                              id={`threshold-${category.id}-${rule.id}`}
+                                              type="number"
+                                              inputMode="decimal"
+                                              min="0"
+                                              step="0.01"
+                                              value={rule.montoMinimoVenta}
+                                              aria-invalid={Boolean(errors?.montoMinimoVenta)}
+                                              onChange={(event) => updateCategoryRateRule(category.id, rule.id, "montoMinimoVenta", event.target.value)}
+                                              onBlur={() => sortCategoryRules(category.id)}
+                                              className="h-9 min-w-0 px-2"
+                                            />
+                                            {errors?.montoMinimoVenta ? (
+                                              <p className="mt-1 text-xs text-destructive" role="alert">{errors.montoMinimoVenta}</p>
+                                            ) : null}
+                                          </TableCell>
+                                          <TableCell className="px-2 py-2 sm:px-4">
+                                            <Label htmlFor={`percentage-${category.id}-${rule.id}`} className="mb-1 block text-xs font-normal text-muted-foreground sm:hidden">
+                                              Comisión (%)
+                                            </Label>
+                                            <Input
+                                              id={`percentage-${category.id}-${rule.id}`}
+                                              type="number"
+                                              inputMode="decimal"
+                                              min="0.01"
+                                              max="100"
+                                              step="0.01"
+                                              value={rule.porcentaje}
+                                              aria-invalid={Boolean(errors?.porcentaje)}
+                                              onChange={(event) => updateCategoryRateRule(category.id, rule.id, "porcentaje", event.target.value)}
+                                              className="h-9 min-w-0 px-2"
+                                            />
+                                            {errors?.porcentaje ? (
+                                              <p className="mt-1 text-xs text-destructive" role="alert">{errors.porcentaje}</p>
+                                            ) : null}
+                                          </TableCell>
+                                          <TableCell className="px-1 py-2 text-right sm:px-3">
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="xs"
+                                              aria-label={`Eliminar umbral de ${category.nombre}`}
+                                              onClick={() => setDeleteDraftCandidate({
+                                                categoryId: category.id,
+                                                categoryName: category.nombre,
+                                                rule,
+                                              })}
+                                            >
+                                              <Trash2 className="size-4" />
+                                            </Button>
+                                          </TableCell>
+                                        </TableRow>
+                                      );
+                                    })}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                              {categoryErrors?.mensaje ? (
+                                <p className="text-sm text-destructive" role="alert">{categoryErrors.mensaje}</p>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                        {otherCommissionCategories.length === 0 ? (
+                          <p className="text-sm text-destructive" role="alert">
+                            No se encontró una categoría activa de otros productos.
+                          </p>
+                        ) : null}
+                      </section>
+
+                      <section className="space-y-4 rounded-xl border border-violet-200 bg-violet-50/40 p-4 dark:border-violet-900 dark:bg-violet-950/20 sm:p-5">
+                        <div>
+                          <h3 className="font-semibold">Vista previa de comisión</h3>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            Prueba la escala en edición. La vista previa no guarda datos ni genera movimientos de nómina.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {[25000, 30000, 37500, 90000].map((amount) => (
+                            <Button
+                              key={amount}
+                              type="button"
+                              variant="outline"
+                              size="xs"
+                              onClick={() => setPreviewSalesAmount(String(amount))}
+                            >
+                              {formatQuetzales(amount)}
+                            </Button>
+                          ))}
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-[minmax(0,18rem)_1fr]">
+                          <div className="space-y-1.5">
+                            <Label htmlFor="commission-preview-amount">Monto de ventas de prueba (Q)</Label>
+                            <Input
+                              id="commission-preview-amount"
+                              type="number"
+                              inputMode="decimal"
+                              min="0"
+                              step="0.01"
+                              value={previewSalesAmount}
+                              onChange={(event) => setPreviewSalesAmount(event.target.value)}
                             />
                           </div>
-                        ))}
-                        {canUpdate ? (
-                          <Button onClick={() => void handleSaveCategorySchedule()}>
+                          <div className="rounded-lg border bg-background p-3">
+                            {"error" in previewResult ? (
+                              <p className="text-sm text-muted-foreground">{previewResult.error}</p>
+                            ) : (
+                              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                                <dt className="text-muted-foreground">Ventas introducidas</dt>
+                                <dd className="text-right font-medium">{formatQuetzales(previewResult.salesAmount)}</dd>
+                                <dt className="text-muted-foreground">Umbral alcanzado</dt>
+                                <dd className="text-right font-medium">{formatQuetzales(previewResult.threshold)}</dd>
+                                <dt className="text-muted-foreground">Porcentaje aplicado</dt>
+                                <dd className="text-right font-medium">{previewResult.percentage.toFixed(2)}%</dd>
+                                <dt className="font-semibold">Comisión estimada</dt>
+                                <dd className="text-right font-semibold">{formatQuetzales(previewResult.commission)}</dd>
+                              </dl>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Cálculo de referencia: ventas de la categoría × porcentaje alcanzado, redondeado a centavos.
+                        </p>
+                      </section>
+
+                      {canUpdate ? (
+                        <div className="flex flex-wrap items-center justify-end gap-3">
+                          {hasScheduleValidationErrors ? (
+                            <p className="text-sm text-destructive" role="status">
+                              Corrige los errores de la escala antes de guardar.
+                            </p>
+                          ) : null}
+                          <Button
+                            type="button"
+                            onClick={handleRequestCategoryScheduleSave}
+                            disabled={isLoading || isLoadingSchedule || isSavingSchedule || hasScheduleValidationErrors}
+                          >
                             Guardar nueva versión de escalas
                           </Button>
-                        ) : null}
-                      </div>
+                        </div>
+                      ) : null}
                     </div>
 
                     {canCreate || canUpdate ? (
@@ -802,6 +1474,74 @@ export default function CommissionsPage() {
             </Card>
           </div>
         </div>
+
+        <Dialog
+          open={isScheduleConfirmOpen}
+          onOpenChange={(open) => {
+            setIsScheduleConfirmOpen(open);
+            if (!open) setPendingSchedule(null);
+          }}
+        >
+          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Confirmar nueva versión de escalas</DialogTitle>
+              <DialogDescription>
+                Se guardará la configuración de {pendingSchedule?.payload.fechaInicioVigencia ?? categoryEffectiveDate}.
+                Las planillas históricas no se recalcularán.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 rounded-lg border bg-muted/30 p-3 text-sm">
+              <p className="font-medium">Resumen respecto a la última versión guardada</p>
+              <ul className="space-y-2">
+                {(pendingSchedule?.summary ?? []).map((item) => (
+                  <li key={item} className="break-words">{item}</li>
+                ))}
+              </ul>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsScheduleConfirmOpen(false)}
+                disabled={isSavingSchedule}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleConfirmCategoryScheduleSave()}
+                disabled={isSavingSchedule}
+              >
+                {isSavingSchedule ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                Confirmar y guardar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={Boolean(deleteDraftCandidate)}
+          onOpenChange={(open) => !open && setDeleteDraftCandidate(null)}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Eliminar umbral de la nueva versión</DialogTitle>
+              <DialogDescription>
+                {deleteDraftCandidate
+                  ? `¿Eliminar el umbral Q${deleteDraftCandidate.rule.montoMinimoVenta || "—"} de ${deleteDraftCandidate.categoryName}? Este cambio solo afecta el borrador.`
+                  : "Este cambio solo afecta el borrador."}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" onClick={() => setDeleteDraftCandidate(null)}>
+                Cancelar
+              </Button>
+              <Button type="button" variant="destructive" onClick={handleConfirmDeleteCategoryRateRule}>
+                Eliminar umbral
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <ConfirmActionDialog
           open={!!deleteConfigCandidate}
