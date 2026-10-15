@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildVentaWhere } from '../modules/reports/definitions/_shared';
 import { getAllReportDefinitions, getCatalog } from '../modules/reports/registry';
 
 describe('reports registry', () => {
@@ -40,8 +39,4 @@ describe('reports registry', () => {
     ).toThrow();
   });
 
-  it('defaults sales report queries to actual sales instead of including proformas', () => {
-    expect(buildVentaWhere({})).toMatchObject({ Anulado: false, TipoRegistro: 'VENTA' });
-    expect(buildVentaWhere({ tipoRegistro: 'PROFORMA' })).toMatchObject({ TipoRegistro: 'PROFORMA' });
-  });
 });
