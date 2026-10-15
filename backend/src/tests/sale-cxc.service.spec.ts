@@ -261,7 +261,7 @@ describe('Fase 4 - Ventas y Cuentas por Cobrar (pagos)', () => {
     );
     expect(prismaMock.$transaction).toHaveBeenCalledWith(
       expect.any(Function),
-      { isolationLevel: 'Serializable' },
+      { isolationLevel: 'Serializable', timeout: 15_000 },
     );
 
     // PAGO_RECIBIDO se dispara una sola vez, después del commit, con el payload real.
