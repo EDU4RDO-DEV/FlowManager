@@ -414,6 +414,14 @@ export function DashboardShell({ title, description, printContentOnly = false, c
                   isActive: (currentPath: string) => isPathActive(currentPath, "/payroll"),
                 },
                 {
+                  id: "rrhh-mis-recibos",
+                  name: "Mis recibos",
+                  path: "/my-payroll",
+                  icon: ReceiptText,
+                  available: true,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/my-payroll"),
+                },
+                {
                   id: "rrhh-comisiones",
                   name: "Configuración de Comisiones",
                   path: "/commissions",
