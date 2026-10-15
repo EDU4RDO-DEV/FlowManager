@@ -4,7 +4,13 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
 import { anulateFelInvoice, emitFelInvoice } from './fel.service';
-import { registerInventoryMovement } from './inventory-movement.service';
+import { anulateEnvaseMovementInTransaction } from './envase.service';
+import {
+  getEnvaseBucketQuantity,
+  registerEnvaseBucketChange,
+  registerInventoryMovement,
+  transferEnvaseBucket,
+} from './inventory-movement.service';
 import { NotificationEvents, send } from './notification.service';
 import { processExpiredProformaReservations } from './proforma-reservation.service';
 import { getRouteAvailableQuantities } from './route-inventory.service';
@@ -31,6 +37,12 @@ type CreateSaleDetailInput = {
   cantidad: number;
   precioUnitario?: number;
   esBonificacion?: boolean;
+  estadoEnvase?: 'VACIO' | 'LLENO';
+  envases?: Array<{
+    idInventarioItemEnvase: number;
+    modo: 'CLIENTE_PROPIO' | 'PRESTAMO_EMPRESA';
+    cantidad: number;
+  }>;
 };
 
 type SalePaymentInput = {
@@ -348,11 +360,15 @@ async function resolveApplicablePrice(
     },
     select: {
       PrecioVenta: true,
+      EsVendible: true,
     },
   });
 
   if (!item) {
     throw new Error(`InventarioItem ${idInventarioItem} no existe o está anulado`);
+  }
+  if (!item.EsVendible) {
+    throw new Error(`El artículo ${idInventarioItem} no está habilitado para la venta`);
   }
 
   if (!idTipoCliente) {
@@ -474,6 +490,11 @@ async function getSaleByIdInternal(
       },
       DetalleVenta: {
         include: {
+          Envases: {
+            include: {
+              InventarioItemEnvase: { select: { Id: true, Nombre: true } },
+            },
+          },
           InventarioItem: {
             select: {
               Id: true,
@@ -536,6 +557,13 @@ function toSaleDto(sale: NonNullable<Awaited<ReturnType<typeof getSaleByIdIntern
     precioUnitario: toNumber(detail.PrecioUnitario),
     esBonificacion: detail.EsBonificacion,
     subtotal: Number((detail.Cantidad * toNumber(detail.PrecioUnitario)).toFixed(2)),
+    envases: detail.Envases.map((allocation) => ({
+      id: allocation.Id,
+      idInventarioItemEnvase: allocation.IdInventarioItemEnvase,
+      nombre: allocation.InventarioItemEnvase.Nombre,
+      modo: allocation.Modo,
+      cantidad: allocation.Cantidad,
+    })),
     inventarioItem: {
       id: detail.InventarioItem.Id,
       nombre: detail.InventarioItem.Nombre,
@@ -781,6 +809,11 @@ export async function listSales(input: ListSalesInput) {
         DetalleVenta: {
           where: { Anulado: false },
           include: {
+            Envases: {
+              include: {
+                InventarioItemEnvase: { select: { Id: true, Nombre: true } },
+              },
+            },
             InventarioItem: {
               select: {
                 Id: true,
@@ -948,7 +981,37 @@ export function notifyFacturaEmitida(sale: ReturnType<typeof toSaleDto>): void {
     });
 }
 
-export async function createSale(input: CreateSaleInput) {
+export async function createSale(input: CreateSaleInput, claveSolicitud: string = crypto.randomUUID()) {
+  const huellaSolicitud = crypto
+    .createHash('sha256')
+    .update(
+      JSON.stringify({
+        ...input,
+        detalle: input.detalle.map((detail) => ({
+          ...detail,
+          envases: [...(detail.envases ?? [])].sort(
+            (left, right) =>
+              left.idInventarioItemEnvase - right.idInventarioItemEnvase ||
+              left.modo.localeCompare(right.modo),
+          ),
+        })),
+      }),
+    )
+    .digest('hex');
+  const existingRequest = await prisma.venta.findUnique({
+    where: { ClaveSolicitud: claveSolicitud },
+    select: { Id: true, IdUsuario: true, HuellaSolicitud: true },
+  });
+  if (existingRequest) {
+    if (
+      existingRequest.IdUsuario !== input.idUsuario ||
+      existingRequest.HuellaSolicitud !== huellaSolicitud
+    ) {
+      throw new Error('La clave de idempotencia ya fue utilizada con datos diferentes');
+    }
+    return getSaleById(existingRequest.Id);
+  }
+
   await validateUsuarioExists(input.idUsuario);
   const cliente = await getClienteActivo(input.idCliente);
 
@@ -968,9 +1031,26 @@ export async function createSale(input: CreateSaleInput) {
     throw new Error('La fecha de expiración de la proforma debe ser futura');
   }
 
-  const created = await prisma.$transaction(
+  let created: ReturnType<typeof toSaleDto>;
+  try {
+    created = await prisma.$transaction(
     async (tx) => {
       const fechaOperacion = new Date();
+      const priorRequest = await tx.venta.findUnique({
+        where: { ClaveSolicitud: claveSolicitud },
+        select: { Id: true, IdUsuario: true, HuellaSolicitud: true },
+      });
+      if (priorRequest) {
+        if (
+          priorRequest.IdUsuario !== input.idUsuario ||
+          priorRequest.HuellaSolicitud !== huellaSolicitud
+        ) {
+          throw new Error('La clave de idempotencia ya fue utilizada con datos diferentes');
+        }
+        const replay = await getSaleByIdInternal(tx, priorRequest.Id, true);
+        if (!replay) throw new Error('No se pudo recuperar la venta asociada a la clave de idempotencia');
+        return toSaleDto(replay);
+      }
       if (isRouteProforma && proformaExpiration! <= fechaOperacion) {
         throw new Error('La fecha de expiración de la proforma debe ser futura');
       }
@@ -1006,6 +1086,10 @@ export async function createSale(input: CreateSaleInput) {
           nombre: string;
           existencia: number;
           precioVenta: number;
+          esVendible: boolean;
+          esEnvaseRetornable: boolean;
+          idEnvasePresentacion: number | null;
+          unidadesEnvasePorUnidad: number | null;
         }
       >();
 
@@ -1021,6 +1105,10 @@ export async function createSale(input: CreateSaleInput) {
               Nombre: true,
               Existencia: true,
               PrecioVenta: true,
+              EsVendible: true,
+              EsEnvaseRetornable: true,
+              IdEnvasePresentacion: true,
+              UnidadesEnvasePorUnidad: true,
             },
           });
 
@@ -1033,7 +1121,53 @@ export async function createSale(input: CreateSaleInput) {
             nombre: item.Nombre,
             existencia: item.Existencia,
             precioVenta: toNumber(item.PrecioVenta),
+            esVendible: item.EsVendible,
+            esEnvaseRetornable: item.EsEnvaseRetornable,
+            idEnvasePresentacion: item.IdEnvasePresentacion,
+            unidadesEnvasePorUnidad: item.UnidadesEnvasePorUnidad,
           });
+        }
+      }
+
+      for (const detail of mergedDetails) {
+        const item = itemCache.get(detail.idInventarioItem);
+        if (!item) throw new Error(`InventarioItem ${detail.idInventarioItem} no existe o está anulado`);
+        if (!item.esVendible) {
+          throw new Error(`El artículo ${item.nombre} no está habilitado para la venta`);
+        }
+        if (item.esEnvaseRetornable) {
+          if (!detail.estadoEnvase) {
+            throw new Error(`Indica si el envase vendido (${item.nombre}) estaba vacío o lleno`);
+          }
+          if (!Number.isInteger(detail.cantidad)) {
+            throw new Error(`La cantidad de envases vendidos para ${item.nombre} debe ser entera`);
+          }
+        } else if (detail.estadoEnvase) {
+          throw new Error(`El artículo ${item.nombre} no es un envase retornable`);
+        }
+        if (item.idEnvasePresentacion !== null) {
+          const factor = item.unidadesEnvasePorUnidad;
+          if (!factor || !Number.isInteger(detail.cantidad * factor)) {
+            throw new Error(`La cantidad de ${item.nombre} no corresponde a unidades completas de envase`);
+          }
+          const envases = detail.envases ?? [];
+          const cantidadAsignada = envases.reduce((sum, envase) => sum + envase.cantidad, 0);
+          if (cantidadAsignada !== detail.cantidad * factor) {
+            throw new Error(
+              `Indica si los ${detail.cantidad * factor} envases de ${item.nombre} son propios o prestados`,
+            );
+          }
+          if (envases.some((envase) => envase.idInventarioItemEnvase !== item.idEnvasePresentacion)) {
+            throw new Error(`Los envases asignados a ${item.nombre} no corresponden a su presentación`);
+          }
+          if (
+            isRouteProforma &&
+            envases.some((envase) => envase.modo === 'PRESTAMO_EMPRESA')
+          ) {
+            throw new Error('No se pueden prestar envases hasta confirmar la proforma como venta');
+          }
+        } else if (detail.envases?.length) {
+          throw new Error(`${item.nombre} no tiene una presentación de envase configurada`);
         }
       }
 
@@ -1089,6 +1223,8 @@ export async function createSale(input: CreateSaleInput) {
         cantidad: number;
         precioUnitario: number;
         esBonificacion: boolean;
+        estadoEnvase?: 'VACIO' | 'LLENO';
+        envases: NonNullable<CreateSaleDetailInput['envases']>;
       }> = [];
 
       for (const detail of mergedDetails) {
@@ -1108,6 +1244,8 @@ export async function createSale(input: CreateSaleInput) {
           cantidad: detail.cantidad,
           precioUnitario: Number(resolvedPrice.toFixed(2)),
           esBonificacion: Boolean(detail.esBonificacion),
+          estadoEnvase: detail.estadoEnvase,
+          envases: detail.envases ?? [],
         });
       }
 
@@ -1138,6 +1276,8 @@ export async function createSale(input: CreateSaleInput) {
           IdRutaSesion: input.idRutaSesion,
           IdTalonario: input.idTalonario,
           NumeroVenta: numeroVenta,
+          ClaveSolicitud: claveSolicitud,
+          HuellaSolicitud: huellaSolicitud,
           NumeroProForma: numeroProForma,
           TipoRegistro: input.tipoRegistro,
           EstadoEntrega: input.estadoEntrega,
@@ -1166,11 +1306,156 @@ export async function createSale(input: CreateSaleInput) {
             Nombre: detail.nombre,
             Cantidad: detail.cantidad,
             PrecioUnitario: detail.precioUnitario,
+            EstadoEnvase: detail.estadoEnvase ?? null,
             EsBonificacion: detail.esBonificacion,
             Anulado: false,
           },
           select: { Id: true },
         });
+
+        for (const allocation of detail.envases) {
+          const envaseItem = await tx.inventarioItem.findFirst({
+            where: {
+              Id: allocation.idInventarioItemEnvase,
+              Anulado: false,
+              EsEnvaseRetornable: true,
+            },
+            select: { Id: true, Nombre: true, Existencia: true },
+          });
+          if (!envaseItem) {
+            throw new Error(`El artículo de envase ${allocation.idInventarioItemEnvase} no es retornable o está inactivo`);
+          }
+
+          const assignment = await tx.detalleVentaEnvase.create({
+            data: {
+              IdDetalleVenta: createdDetail.Id,
+              IdInventarioItemEnvase: envaseItem.Id,
+              Modo: allocation.modo,
+              Cantidad: allocation.cantidad,
+            },
+            select: { Id: true },
+          });
+
+          if (allocation.modo === 'PRESTAMO_EMPRESA') {
+            const sourceBucket = {
+              ubicacion: input.idRutaSesion ? 'RUTA' as const : 'PLANTA' as const,
+              estado: 'LLENO' as const,
+              ...(input.idRutaSesion ? { idRutaSesion: input.idRutaSesion } : {}),
+            };
+            const fullAvailable = await getEnvaseBucketQuantity(tx, envaseItem.Id, sourceBucket);
+            const quantityToFill = Math.max(0, allocation.cantidad - fullAvailable);
+            if (quantityToFill > 0) {
+              const emptyBucket = {
+                ...sourceBucket,
+                estado: 'VACIO' as const,
+              };
+              const emptyAvailable = await getEnvaseBucketQuantity(tx, envaseItem.Id, emptyBucket);
+              if (emptyAvailable < quantityToFill) {
+                throw new Error(
+                  `No hay suficientes envases vacíos en ${sourceBucket.ubicacion} para ${envaseItem.Nombre}`,
+                );
+              }
+              await transferEnvaseBucket(tx, {
+                idInventarioItem: envaseItem.Id,
+                idUsuario: input.idUsuario,
+                origen: emptyBucket,
+                destino: sourceBucket,
+                cantidad: quantityToFill,
+                nombre: `Llenado para préstamo de venta #${createdSale.NumeroVenta} - ${envaseItem.Nombre}`,
+                tipoDocumento: 'ENVLL',
+                documento: createdSale.Id.toString(),
+                idDetalleVenta: createdDetail.Id,
+              });
+            }
+
+            const fullAvailableAfterFill = await getEnvaseBucketQuantity(tx, envaseItem.Id, sourceBucket);
+            if (fullAvailableAfterFill < allocation.cantidad) {
+              throw new Error(
+                `No hay suficientes envases llenos en ${sourceBucket.ubicacion} para ${envaseItem.Nombre}`,
+              );
+            }
+
+            let saldo = await tx.envaseClienteSaldo.findFirst({
+              where: {
+                IdCliente: input.idCliente,
+                IdInventarioItem: envaseItem.Id,
+              },
+              select: { Id: true, CantidadPrestada: true },
+            });
+            const saldoAnterior = saldo?.CantidadPrestada ?? 0;
+            const saldoNuevo = Number((saldoAnterior + allocation.cantidad).toFixed(2));
+            if (saldo) {
+              saldo = await tx.envaseClienteSaldo.update({
+                where: { Id: saldo.Id },
+                data: { CantidadPrestada: saldoNuevo, FechaActualizacion: new Date() },
+              });
+            } else {
+              saldo = await tx.envaseClienteSaldo.create({
+                data: {
+                  IdCliente: input.idCliente,
+                  IdInventarioItem: envaseItem.Id,
+                  CantidadPrestada: saldoNuevo,
+                },
+              });
+            }
+
+            const movement = await tx.movimientoEnvase.create({
+              data: {
+                IdInventarioItem: envaseItem.Id,
+                IdCliente: input.idCliente,
+                IdVenta: createdSale.Id,
+                IdDetalleVentaEnvase: assignment.Id,
+                IdRutaSesion: input.idRutaSesion,
+                IdUsuario: input.idUsuario,
+                TipoMovimiento: 'PRESTAMO',
+                EstadoEnvase: 'LLENO',
+                UbicacionEnvase: sourceBucket.ubicacion,
+                Cantidad: allocation.cantidad,
+                SaldoAnterior: saldoAnterior,
+                SaldoNuevo: saldoNuevo,
+                Anulado: false,
+              },
+              select: { Id: true },
+            });
+
+            await registerEnvaseBucketChange(tx, {
+              idInventarioItem: envaseItem.Id,
+              idUsuario: input.idUsuario,
+              bucket: sourceBucket,
+              cantidad: allocation.cantidad,
+              entrada: false,
+              nombre: `Préstamo vinculado a venta #${createdSale.NumeroVenta} - ${envaseItem.Nombre}`,
+              tipoDocumento: 'ENVPR',
+              documento: createdSale.Id.toString(),
+              idRutaSesion: input.idRutaSesion,
+              idMovimientoEnvase: movement.Id,
+              idDetalleVenta: createdDetail.Id,
+            });
+
+            if (!input.idRutaSesion) {
+              const existenciaAnterior = envaseItem.Existencia;
+              const nuevaExistencia = Number((existenciaAnterior - allocation.cantidad).toFixed(2));
+              if (nuevaExistencia < 0) {
+                throw new Error(`Stock insuficiente de ${envaseItem.Nombre}`);
+              }
+              await tx.inventarioItem.update({
+                where: { Id: envaseItem.Id },
+                data: { Existencia: nuevaExistencia },
+              });
+              await registerInventoryMovement(tx, {
+                idInventarioItem: envaseItem.Id,
+                idUsuario: input.idUsuario,
+                tipoDocumento: 'ENVPR',
+                documento: createdSale.Id.toString(),
+                nombre: `Préstamo en venta #${createdSale.NumeroVenta} - ${envaseItem.Nombre}`,
+                tipoMovimiento: false,
+                existenciaAnterior,
+                cantidad: allocation.cantidad,
+                nuevaExistencia,
+              });
+            }
+          }
+        }
 
         if (isRouteProforma) {
           reservedDetailRows.push({
@@ -1208,6 +1493,26 @@ export async function createSale(input: CreateSaleInput) {
           });
 
           item.existencia = nuevaExistencia;
+        }
+
+        if (item.esEnvaseRetornable) {
+          const sourceBucket = {
+            ubicacion: input.idRutaSesion ? 'RUTA' as const : 'PLANTA' as const,
+            estado: detail.estadoEnvase!,
+            ...(input.idRutaSesion ? { idRutaSesion: input.idRutaSesion } : {}),
+          };
+          await registerEnvaseBucketChange(tx, {
+            idInventarioItem: item.id,
+            idUsuario: input.idUsuario,
+            bucket: sourceBucket,
+            cantidad: detail.cantidad,
+            entrada: false,
+            nombre: `Venta directa de envase #${createdSale.NumeroVenta} - ${detail.nombre}`,
+            tipoDocumento: 'VEN',
+            documento: createdSale.Id.toString(),
+            idRutaSesion: input.idRutaSesion,
+            idDetalleVenta: createdDetail.Id,
+          });
         }
       }
 
@@ -1316,7 +1621,23 @@ export async function createSale(input: CreateSaleInput) {
     {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     },
-  );
+    );
+  } catch (error) {
+    const racedRequest = await prisma.venta.findUnique({
+      where: { ClaveSolicitud: claveSolicitud },
+      select: { Id: true, IdUsuario: true, HuellaSolicitud: true },
+    });
+    if (racedRequest) {
+      if (
+        racedRequest.IdUsuario !== input.idUsuario ||
+        racedRequest.HuellaSolicitud !== huellaSolicitud
+      ) {
+        throw new Error('La clave de idempotencia ya fue utilizada con datos diferentes');
+      }
+      return getSaleById(racedRequest.Id);
+    }
+    throw error;
+  }
 
   // Efecto secundario: la venta ya quedó confirmada en la transacción anterior.
   // Un fallo de n8n/Telegram nunca debe afectar la operación de negocio ya exitosa.
@@ -1565,6 +1886,7 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
           IdInventarioItem: true,
           Cantidad: true,
           Nombre: true,
+          EstadoEnvase: true,
         },
       },
       PagoVenta: {
@@ -1646,6 +1968,7 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
             IdInventarioItem: true,
             Cantidad: true,
             Nombre: true,
+            EstadoEnvase: true,
           },
         },
         ReservaProforma: {
@@ -1693,6 +2016,48 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
       }
     }
 
+    const saleEnvaseMovements = await tx.movimientoEnvase.findMany({
+      where: {
+        IdVenta: saleToAnulate.Id,
+        TipoMovimiento: 'PRESTAMO',
+        Anulado: false,
+      },
+      select: {
+        Id: true,
+        IdCliente: true,
+        IdInventarioItem: true,
+      },
+      orderBy: { Id: 'asc' },
+    });
+
+    for (const movement of saleEnvaseMovements) {
+      if (movement.IdCliente === null) {
+        throw new Error('No se puede anular una venta con préstamos de envase sin cliente asociado');
+      }
+
+      const laterCustodyChange = await tx.movimientoEnvase.findFirst({
+        where: {
+          IdCliente: movement.IdCliente,
+          IdInventarioItem: movement.IdInventarioItem,
+          Id: { gt: movement.Id },
+          TipoMovimiento: { in: ['DEVOLUCION', 'DEVOLUCION_DANADA', 'PERDIDA'] },
+          Anulado: false,
+        },
+        select: { Id: true },
+      });
+      if (laterCustodyChange) {
+        throw new Error(
+          'No se puede anular una venta después de devolver, dañar o declarar perdido un envase prestado por ella',
+        );
+      }
+
+      await anulateEnvaseMovementInTransaction(
+        tx,
+        movement.Id,
+        idUsuarioAnulador ?? saleToAnulate.IdUsuario,
+      );
+    }
+
     if (isReservedRouteProforma && saleToAnulate.ReservaProforma) {
       await tx.reservaProforma.updateMany({
         where: {
@@ -1709,7 +2074,7 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
     }
 
     for (const detail of saleToAnulate.DetalleVenta) {
-      if (saleWasDeductedFromRoute || isReservedRouteProforma) {
+      if (isReservedRouteProforma) {
         continue;
       }
 
@@ -1721,11 +2086,38 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
         select: {
           Id: true,
           Existencia: true,
+          EsEnvaseRetornable: true,
         },
       });
 
       if (!item) {
         throw new Error(`InventarioItem ${detail.IdInventarioItem} no existe o está anulado`);
+      }
+
+      if (item.EsEnvaseRetornable) {
+        if (detail.EstadoEnvase !== 'VACIO' && detail.EstadoEnvase !== 'LLENO') {
+          throw new Error(
+            `No se puede anular la venta del envase ${detail.Nombre} sin un estado físico verificable`,
+          );
+        }
+        await registerEnvaseBucketChange(tx, {
+          idInventarioItem: detail.IdInventarioItem,
+          idUsuario: idUsuarioAnulador ?? saleToAnulate.IdUsuario,
+          bucket: saleWasDeductedFromRoute
+            ? { ubicacion: 'RUTA', estado: detail.EstadoEnvase, idRutaSesion: saleToAnulate.IdRutaSesion! }
+            : { ubicacion: 'PLANTA', estado: detail.EstadoEnvase },
+          cantidad: detail.Cantidad,
+          entrada: true,
+          nombre: `Entrada física por anulación venta #${saleToAnulate.NumeroVenta} - ${detail.Nombre}`,
+          tipoDocumento: 'VENAN',
+          documento: saleToAnulate.Id.toString(),
+          idRutaSesion: saleWasDeductedFromRoute ? saleToAnulate.IdRutaSesion! : undefined,
+          idDetalleVenta: detail.Id,
+        });
+      }
+
+      if (saleWasDeductedFromRoute) {
+        continue;
       }
 
       const existenciaAnterior = item.Existencia;

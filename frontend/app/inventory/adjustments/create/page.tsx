@@ -70,7 +70,7 @@ export default function CreateAdjustmentPage() {
   const [observacion, setObservacion] = useState("");
   const [lines, setLines] = useState<AdjustmentLine[]>([
     {
-      id: Date.now(),
+      id: -1,
       idInventarioItem: "",
       tipoAjuste: "ENTRADA",
       cantidad: "",

@@ -5,7 +5,7 @@ const { prismaMock, sendMock } = vi.hoisted(() => ({
     usuario: { findFirst: vi.fn() },
     cliente: { findFirst: vi.fn() },
     clienteCondicionCredito: { findFirst: vi.fn() },
-    venta: { findFirst: vi.fn(), create: vi.fn() },
+    venta: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
     detalleVenta: { create: vi.fn() },
     inventarioItem: { findFirst: vi.fn(), update: vi.fn() },
     reglaBonificacion: { findMany: vi.fn() },
@@ -98,6 +98,7 @@ function createdSaleRow() {
       PrecioUnitario: 10,
       EsBonificacion: false,
       Anulado: false,
+      Envases: [],
       InventarioItem: { Id: 9, Nombre: 'Producto', Categoria: 'PRODUCTO_TERMINADO', Existencia: 9 },
     }],
     PagoVenta: [{
@@ -164,6 +165,10 @@ describe('Sale credit authorization', () => {
       Nombre: 'Producto',
       Existencia: 10,
       PrecioVenta: 10,
+      EsVendible: true,
+      EsEnvaseRetornable: false,
+      IdEnvasePresentacion: null,
+      UnidadesEnvasePorUnidad: null,
     });
     prismaMock.venta.create.mockResolvedValueOnce({ Id: 7, NumeroVenta: 1 });
 
@@ -172,5 +177,19 @@ describe('Sale credit authorization', () => {
     expect(result.condicionPago).toBe('CONTADO');
     expect(prismaMock.cliente.findFirst).toHaveBeenCalledTimes(1);
     expect(prismaMock.venta.create).toHaveBeenCalledOnce();
+  });
+
+  it('rejects an idempotency key reused with a different sale payload', async () => {
+    prismaMock.venta.findUnique.mockResolvedValueOnce({
+      Id: 8,
+      IdUsuario: 1,
+      HuellaSolicitud: 'different-request-fingerprint',
+    });
+
+    await expect(
+      createSale(saleInput('CONTADO'), 'c49a2af0-218c-4f23-9b4b-2cc38979ab83'),
+    ).rejects.toThrow('La clave de idempotencia ya fue utilizada con datos diferentes');
+
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 });

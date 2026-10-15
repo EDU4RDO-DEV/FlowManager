@@ -25,22 +25,34 @@ model AjusteInventario {
 }
 
 model BitacoraInventario {
-  Id                 Int            @id(map: "PK__Bitacora__3214EC07A97D3D9D") @default(autoincrement())
+  Id                 Int               @id(map: "PK__Bitacora__3214EC07A97D3D9D") @default(autoincrement())
   IdInventarioItem   Int
   IdUsuario          Int
-  TipoDocumento      String?        @db.VarChar(10)
-  Documento          String?        @db.VarChar(10)
-  Nombre             String         @db.VarChar(255)
+  ClaveMovimiento    String?           @db.UniqueIdentifier
+  UbicacionEnvase    String?           @db.VarChar(30)
+  EstadoEnvase       String?           @db.VarChar(30)
+  IdRutaSesion       Int?
+  IdMovimientoEnvase Int?
+  IdDetalleVenta     Int?
+  TipoDocumento      String?           @db.VarChar(10)
+  Documento          String?           @db.VarChar(10)
+  Nombre             String            @db.VarChar(255)
   TipoMovimiento     Boolean
   ExistenciaAnterior Float
   Cantidad           Float
   NuevaExistencia    Float
-  FechaRegistro      DateTime?      @default(now(), map: "DF__BitacoraI__Fecha__09A971A2") @db.DateTime
-  Anulado            Boolean        @default(false, map: "DF__BitacoraI__Anula__0A9D95DB")
+  FechaRegistro      DateTime?         @default(now(), map: "DF__BitacoraI__Fecha__09A971A2") @db.DateTime
+  Anulado            Boolean           @default(false, map: "DF__BitacoraI__Anula__0A9D95DB")
   IdUsuarioAnulador  Int?
-  FechaAnulacion     DateTime?      @db.DateTime
-  InventarioItem     InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_BitacoraInventario_InventarioItem")
-  Usuario            Usuario        @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_BitacoraInventario_Usuario")
+  FechaAnulacion     DateTime?         @db.DateTime
+  InventarioItem     InventarioItem    @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_BitacoraInventario_InventarioItem")
+  Usuario            Usuario           @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_BitacoraInventario_Usuario")
+  RutaSesion         RutaSesion?       @relation(fields: [IdRutaSesion], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_BitacoraInventario_RutaSesion")
+  MovimientoEnvase   MovimientoEnvase? @relation(fields: [IdMovimientoEnvase], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_BitacoraInventario_MovimientoEnvase")
+  DetalleVenta       DetalleVenta?     @relation(fields: [IdDetalleVenta], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_BitacoraInventario_DetalleVenta")
+
+  @@index([IdInventarioItem, UbicacionEnvase, EstadoEnvase, IdRutaSesion, Anulado], map: "IX_BitacoraInventario_EnvaseEstadoUbicacion")
+  @@index([ClaveMovimiento], map: "IX_BitacoraInventario_ClaveMovimiento")
 }
 
 model Cliente {
@@ -208,15 +220,33 @@ model DetalleVenta {
   Nombre                  String                       @db.VarChar(255)
   Cantidad                Float
   PrecioUnitario          Decimal                      @db.Decimal(10, 2)
+  EstadoEnvase            String?                      @db.VarChar(30)
   EsBonificacion          Boolean                      @default(false, map: "DF__DetalleVe__EsBon__19DFD96B")
   FechaRegistro           DateTime?                    @default(now(), map: "DF__DetalleVe__Fecha__1AD3FDA4") @db.DateTime
   Anulado                 Boolean                      @default(false, map: "DF__DetalleVe__Anula__1BC821DD")
   IdUsuarioAnulador       Int?
   FechaAnulacion          DateTime?                    @db.DateTime
   ReservaProformaDetalle  ReservaProformaDetalle?
+  Envases                 DetalleVentaEnvase[]
+  BitacoraInventario      BitacoraInventario[]
   DevolucionesComerciales DevolucionComercialDetalle[]
   InventarioItem          InventarioItem               @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_DetalleVenta_InventarioItem")
   Venta                   Venta                        @relation(fields: [IdVenta], references: [Id], onUpdate: NoAction, map: "FK_DetalleVenta_Venta")
+}
+
+model DetalleVentaEnvase {
+  Id                     Int                @id(map: "PK_DetalleVentaEnvase") @default(autoincrement())
+  IdDetalleVenta         Int
+  IdInventarioItemEnvase Int
+  Modo                   String             @db.VarChar(30)
+  Cantidad               Int
+  FechaRegistro          DateTime?          @default(now(), map: "DF_DetalleVentaEnvase_FechaRegistro") @db.DateTime
+  DetalleVenta           DetalleVenta       @relation(fields: [IdDetalleVenta], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_DetalleVentaEnvase_DetalleVenta")
+  InventarioItemEnvase   InventarioItem     @relation(fields: [IdInventarioItemEnvase], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_DetalleVentaEnvase_InventarioItem")
+  MovimientosEnvase      MovimientoEnvase[]
+
+  @@unique([IdDetalleVenta, IdInventarioItemEnvase, Modo], map: "UQ_DetalleVentaEnvase_Detalle_Item_Modo")
+  @@index([IdInventarioItemEnvase], map: "IX_DetalleVentaEnvase_InventarioItem")
 }
 
 model ReservaProforma {
@@ -269,6 +299,7 @@ model DespachoRutaDetalle {
   NombreSnapshot       String         @db.VarChar(255)
   UnidadMedidaSnapshot String?        @db.VarChar(30)
   Cantidad             Float
+  EstadoEnvase         String?        @db.VarChar(30)
   DespachoRuta         DespachoRuta   @relation(fields: [IdDespachoRuta], references: [Id], onUpdate: NoAction, map: "FK_DespachoRutaDetalle_DespachoRuta")
   InventarioItem       InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_DespachoRutaDetalle_InventarioItem")
 
@@ -288,15 +319,18 @@ model DevolucionRuta {
 }
 
 model DevolucionRutaDetalle {
-  Id               Int            @id(map: "PK_DevolucionRutaDetalle") @default(autoincrement())
-  IdDevolucionRuta Int
-  IdInventarioItem Int
-  CantidadRecibida Float
-  CantidadDanada   Float          @default(0, map: "DF_DevolucionRutaDetalle_CantidadDanada")
-  Observaciones    String?        @db.VarChar(255)
-  UbicacionDanada  String?        @db.VarChar(255)
-  DevolucionRuta   DevolucionRuta @relation(fields: [IdDevolucionRuta], references: [Id], onUpdate: NoAction, map: "FK_DevolucionRutaDetalle_DevolucionRuta")
-  InventarioItem   InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_DevolucionRutaDetalle_InventarioItem")
+  Id                  Int            @id(map: "PK_DevolucionRutaDetalle") @default(autoincrement())
+  IdDevolucionRuta    Int
+  IdInventarioItem    Int
+  CantidadRecibida    Float
+  CantidadDanada      Float          @default(0, map: "DF_DevolucionRutaDetalle_CantidadDanada")
+  CantidadEnvaseVacio Float          @default(0, map: "DF_DevolucionRutaDetalle_CantidadEnvaseVacio")
+  CantidadEnvaseLleno Float          @default(0, map: "DF_DevolucionRutaDetalle_CantidadEnvaseLleno")
+  EstadoEnvaseDanado  String?        @db.VarChar(30)
+  Observaciones       String?        @db.VarChar(255)
+  UbicacionDanada     String?        @db.VarChar(255)
+  DevolucionRuta      DevolucionRuta @relation(fields: [IdDevolucionRuta], references: [Id], onUpdate: NoAction, map: "FK_DevolucionRutaDetalle_DevolucionRuta")
+  InventarioItem      InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_DevolucionRutaDetalle_InventarioItem")
 
   @@unique([IdDevolucionRuta, IdInventarioItem], map: "UQ_DevolucionRutaDetalle_Devolucion_Item")
   @@index([IdInventarioItem], map: "IX_DevolucionRutaDetalle_InventarioItem")
@@ -522,6 +556,11 @@ model InventarioItem {
   IdProveedor                                                                    Int
   Nombre                                                                         String                    @db.VarChar(255)
   Categoria                                                                      String                    @db.VarChar(50)
+  EsVendible                                                                     Boolean                   @default(false, map: "DF_InventarioItem_EsVendible")
+  EsEnvaseRetornable                                                             Boolean                   @default(false, map: "DF_InventarioItem_EsEnvaseRetornable")
+  CapacidadEnvaseGalones                                                         Decimal?                  @db.Decimal(8, 3)
+  IdEnvasePresentacion                                                           Int?
+  UnidadesEnvasePorUnidad                                                        Int?
   UnidadMedida                                                                   String?                   @db.VarChar(30)
   Existencia                                                                     Float
   CostoPromedio                                                                  Decimal                   @db.Decimal(10, 2)
@@ -548,6 +587,9 @@ model InventarioItem {
   ReglaComision                                                                  ReglaComision[]
   ReglaPrecioCliente                                                             ReglaPrecioCliente[]
   MovimientoEnvase                                                               MovimientoEnvase[]
+  AsignacionesEnvaseVenta                                                        DetalleVentaEnvase[]
+  InventarioItem_EnvasePresentacionToInventarioItem                              InventarioItem?           @relation("InventarioItem_EnvasePresentacion", fields: [IdEnvasePresentacion], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_InventarioItem_EnvasePresentacion")
+  InventarioItem_ProductoPresentacionEnvaseToInventarioItem                      InventarioItem[]          @relation("InventarioItem_EnvasePresentacion")
   EnvaseClienteSaldo                                                             EnvaseClienteSaldo[]
   OrdenesProduccionTerminadas                                                    OrdenProduccion[]         @relation("OrdenProduccion_ProductoTerminado")
   DetallesOrdenProduccion                                                        DetalleOrdenProduccion[]
@@ -957,33 +999,35 @@ model Ruta {
 }
 
 model RutaSesion {
-  Id                                            Int             @id(map: "PK__RutaSesi__3214EC0785FB5BC3") @default(autoincrement())
+  Id                                            Int                  @id(map: "PK__RutaSesi__3214EC0785FB5BC3") @default(autoincrement())
   IdRuta                                        Int
   IdVehiculo                                    Int
   IdUsuarioChofer                               Int
   IdUsuarioVendedor                             Int
-  FechaSesion                                   DateTime        @db.Date
+  FechaSesion                                   DateTime             @db.Date
   KmInicial                                     Float?
   KmFinal                                       Float?
-  Estado                                        String          @db.VarChar(20)
-  FechaCierre                                   DateTime?       @db.DateTime
+  Estado                                        String               @db.VarChar(20)
+  FechaCierre                                   DateTime?            @db.DateTime
   IdUsuarioCierre                               Int?
-  FechaRegistro                                 DateTime?       @default(now(), map: "DF__RutaSesio__Fecha__2A164134") @db.DateTime
+  FechaRegistro                                 DateTime?            @default(now(), map: "DF__RutaSesio__Fecha__2A164134") @db.DateTime
   IdUsuarioModificador                          Int?
-  FechaModificacion                             DateTime?       @db.DateTime
-  Anulado                                       Boolean         @default(false, map: "DF__RutaSesio__Anula__2B0A656D")
+  FechaModificacion                             DateTime?            @db.DateTime
+  Anulado                                       Boolean              @default(false, map: "DF__RutaSesio__Anula__2B0A656D")
   IdUsuarioAnulador                             Int?
-  FechaAnulacion                                DateTime?       @db.DateTime
+  FechaAnulacion                                DateTime?            @db.DateTime
   GastoVehiculo                                 GastoVehiculo[]
-  Usuario_RutaSesion_IdUsuarioChoferToUsuario   Usuario         @relation("RutaSesion_IdUsuarioChoferToUsuario", fields: [IdUsuarioChofer], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Chofer")
-  Ruta                                          Ruta            @relation(fields: [IdRuta], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Ruta")
-  Vehiculo                                      Vehiculo        @relation(fields: [IdVehiculo], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Vehiculo")
-  Usuario_RutaSesion_IdUsuarioVendedorToUsuario Usuario         @relation("RutaSesion_IdUsuarioVendedorToUsuario", fields: [IdUsuarioVendedor], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Vendedor")
+  Usuario_RutaSesion_IdUsuarioChoferToUsuario   Usuario              @relation("RutaSesion_IdUsuarioChoferToUsuario", fields: [IdUsuarioChofer], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Chofer")
+  Ruta                                          Ruta                 @relation(fields: [IdRuta], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Ruta")
+  Vehiculo                                      Vehiculo             @relation(fields: [IdVehiculo], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Vehiculo")
+  Usuario_RutaSesion_IdUsuarioVendedorToUsuario Usuario              @relation("RutaSesion_IdUsuarioVendedorToUsuario", fields: [IdUsuarioVendedor], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Vendedor")
   Venta                                         Venta[]
   DespachoRuta                                  DespachoRuta?
   DevolucionRuta                                DevolucionRuta?
   AjustesRuta                                   AjusteRuta[]
-  Usuario_RutaSesion_IdUsuarioCierreToUsuario   Usuario?        @relation("RutaSesion_IdUsuarioCierreToUsuario", fields: [IdUsuarioCierre], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_RutaSesion_UsuarioCierre")
+  MovimientosEnvaseInventario                   BitacoraInventario[]
+  MovimientosEnvaseCliente                      MovimientoEnvase[]
+  Usuario_RutaSesion_IdUsuarioCierreToUsuario   Usuario?             @relation("RutaSesion_IdUsuarioCierreToUsuario", fields: [IdUsuarioCierre], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_RutaSesion_UsuarioCierre")
 
   @@index([Estado, Anulado, FechaSesion], map: "IX_RutaSesion_Estado_Activo_Fecha")
 }
@@ -1181,6 +1225,8 @@ model Venta {
   IdRutaSesion              Int?
   IdTalonario               Int?
   NumeroVenta               Int                        @unique(map: "UQ_Venta_NumeroVenta")
+  ClaveSolicitud            String                     @default(dbgenerated("newid()"), map: "DF_Venta_ClaveSolicitud") @unique(map: "UQ_Venta_ClaveSolicitud") @db.UniqueIdentifier
+  HuellaSolicitud           String?                    @db.Char(64)
   NumeroProForma            Int?
   TipoRegistro              String                     @db.VarChar(20)
   EstadoEntrega             String                     @db.VarChar(20)
@@ -1250,30 +1296,41 @@ model ControlCalidadAgua {
 // ya se resuelve con InventarioItem (Categoria = 'ENVASE') + DetalleVenta/BitacoraInventario;
 // aquí solo se audita el ciclo de vida del préstamo al cliente.
 model MovimientoEnvase {
-  Id                   Int            @id(map: "PK_MovimientoEnvase") @default(autoincrement())
+  Id                   Int                  @id(map: "PK_MovimientoEnvase") @default(autoincrement())
   IdInventarioItem     Int
-  IdCliente            Int
+  IdCliente            Int?
   IdVenta              Int?
+  IdDetalleVentaEnvase Int?
+  IdRutaSesion         Int?
+  ClaveSolicitud       String               @default(dbgenerated("newid()"), map: "DF_MovimientoEnvase_ClaveSolicitud") @unique(map: "UQ_MovimientoEnvase_ClaveSolicitud") @db.UniqueIdentifier
+  HuellaSolicitud      String?              @db.Char(64)
   IdUsuario            Int
-  TipoMovimiento       String         @db.VarChar(20)
+  TipoMovimiento       String               @db.VarChar(20)
+  EstadoEnvase         String?              @db.VarChar(30)
+  UbicacionEnvase      String?              @db.VarChar(30)
   Cantidad             Float
   SaldoAnterior        Float
   SaldoNuevo           Float
-  RutaFirma            String?        @db.VarChar(255)
-  Observaciones        String?        @db.VarChar(255)
-  FechaMovimiento      DateTime?      @default(now(), map: "DF_MovimientoEnvase_FechaMovimiento") @db.DateTime
+  RutaFirma            String?              @db.VarChar(255)
+  Observaciones        String?              @db.VarChar(255)
+  FechaMovimiento      DateTime?            @default(now(), map: "DF_MovimientoEnvase_FechaMovimiento") @db.DateTime
   IdUsuarioModificador Int?
-  FechaModificacion    DateTime?      @db.DateTime
-  Anulado              Boolean        @default(false, map: "DF_MovimientoEnvase_Anulado")
+  FechaModificacion    DateTime?            @db.DateTime
+  Anulado              Boolean              @default(false, map: "DF_MovimientoEnvase_Anulado")
   IdUsuarioAnulador    Int?
-  FechaAnulacion       DateTime?      @db.DateTime
-  InventarioItem       InventarioItem @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_MovimientoEnvase_InventarioItem")
-  Cliente              Cliente        @relation(fields: [IdCliente], references: [Id], onUpdate: NoAction, map: "FK_MovimientoEnvase_Cliente")
-  Venta                Venta?         @relation(fields: [IdVenta], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_MovimientoEnvase_Venta")
-  Usuario              Usuario        @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_MovimientoEnvase_Usuario")
+  FechaAnulacion       DateTime?            @db.DateTime
+  InventarioItem       InventarioItem       @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_MovimientoEnvase_InventarioItem")
+  Cliente              Cliente?             @relation(fields: [IdCliente], references: [Id], onUpdate: NoAction, map: "FK_MovimientoEnvase_Cliente")
+  Venta                Venta?               @relation(fields: [IdVenta], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_MovimientoEnvase_Venta")
+  DetalleVentaEnvase   DetalleVentaEnvase?  @relation(fields: [IdDetalleVentaEnvase], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_MovimientoEnvase_DetalleVentaEnvase")
+  RutaSesion           RutaSesion?          @relation(fields: [IdRutaSesion], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_MovimientoEnvase_RutaSesion")
+  Usuario              Usuario              @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_MovimientoEnvase_Usuario")
+  BitacoraInventario   BitacoraInventario[]
 
   @@index([IdCliente, IdInventarioItem, Anulado], map: "IX_MovimientoEnvase_ClienteEnvase_Activo")
   @@index([IdVenta], map: "IX_MovimientoEnvase_Venta")
+  @@index([IdDetalleVentaEnvase], map: "IX_MovimientoEnvase_DetalleVentaEnvase")
+  @@index([IdRutaSesion, Anulado], map: "IX_MovimientoEnvase_Ruta_Activo")
 }
 
 // Saldo vigente de envases prestados por cliente (derivado del ledger, para consultas rápidas).

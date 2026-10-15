@@ -42,6 +42,7 @@ function routeInventory(overrides: Record<string, unknown> = {}) {
     DevolucionRuta: null,
     AjustesRuta: [],
     Venta: [],
+    MovimientosEnvaseCliente: [],
     ...overrides,
   };
 }
@@ -223,6 +224,30 @@ describe('route inventory lifecycle', () => {
       pendienteConciliacion: 8,
       disponible: 7,
     });
+  });
+
+  it('subtracts route container retirements from the remaining truck balance', async () => {
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce(routeInventory({
+      DespachoRuta: {
+        Id: 90,
+        Detalles: [{
+          IdInventarioItem: 7,
+          NombreSnapshot: 'Garrafón',
+          UnidadMedidaSnapshot: 'unidad',
+          Cantidad: 10,
+          EstadoEnvase: 'VACIO',
+        }],
+      },
+      MovimientosEnvaseCliente: [{
+        IdInventarioItem: 7,
+        TipoMovimiento: 'BAJA',
+        Cantidad: 2,
+      }],
+    }));
+
+    const result = await getRouteInventory(40);
+
+    expect(result.productos[0]).toMatchObject({ envaseBaja: 2, disponible: 8 });
   });
 
   it('rejects a return larger than the truck balance', async () => {

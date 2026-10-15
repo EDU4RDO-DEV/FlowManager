@@ -22,7 +22,11 @@ import { rolePermissionEntrySchema } from '../validators/role-permission.validat
 const accessSecret = 'production-test-access-secret';
 const sessionId = 84101;
 
-function mockProductionTransaction(componentStock: number, serializeTransactions = false) {
+function mockProductionTransaction(
+  componentStock: number,
+  serializeTransactions = false,
+  envaseConfigured = false,
+) {
   const order = {
     Id: 41,
     IdProductoTerminado: 20,
@@ -52,6 +56,11 @@ function mockProductionTransaction(componentStock: number, serializeTransactions
   const stock = new Map([
     [10, componentStock],
     [20, 5],
+    [30, 25],
+  ]);
+  const physicalBuckets = new Map([
+    ['30|PLANTA|VACIO', 4],
+    ['30|PLANTA|LLENO', 0],
   ]);
   const movements: Array<Record<string, unknown>> = [];
   let transactionQueue: Promise<unknown> = Promise.resolve();
@@ -65,20 +74,33 @@ function mockProductionTransaction(componentStock: number, serializeTransactions
       }),
     },
     inventarioItem: {
-      findFirst: vi.fn(async () => ({
-        Id: 20,
-        Nombre: 'Producto terminado',
-        Existencia: stock.get(20) ?? 0,
-        UnidadMedida: 'unidad',
-      })),
+      findFirst: vi.fn(async (input: { where: { Id: number } }) => input.where.Id === 30
+        ? { Id: 30, Nombre: 'Garrafón', EsEnvaseRetornable: true }
+        : {
+            Id: 20,
+            Nombre: 'Producto terminado',
+            Existencia: stock.get(20) ?? 0,
+            UnidadMedida: 'unidad',
+            IdEnvasePresentacion: envaseConfigured ? 30 : null,
+            UnidadesEnvasePorUnidad: envaseConfigured ? 1 : null,
+          }),
       update: vi.fn(async (input: { where: { Id: number }; data: { Existencia: number } }) => {
         stock.set(input.where.Id, input.data.Existencia);
       }),
     },
     bitacoraInventario: {
       count: vi.fn(async () => 0),
+      findFirst: vi.fn(async (input: { where: { IdInventarioItem: number; UbicacionEnvase?: string; EstadoEnvase?: string } }) => {
+        if (!input.where.UbicacionEnvase || !input.where.EstadoEnvase) return null;
+        const key = `${input.where.IdInventarioItem}|${input.where.UbicacionEnvase}|${input.where.EstadoEnvase}`;
+        return { NuevaExistencia: physicalBuckets.get(key) ?? 0 };
+      }),
       create: vi.fn(async (input: { data: Record<string, unknown> }) => {
         movements.push(input.data);
+        if (input.data.UbicacionEnvase && input.data.EstadoEnvase) {
+          const key = `${input.data.IdInventarioItem}|${input.data.UbicacionEnvase}|${input.data.EstadoEnvase}`;
+          physicalBuckets.set(key, Number(input.data.NuevaExistencia));
+        }
       }),
     },
   };
@@ -95,7 +117,7 @@ function mockProductionTransaction(componentStock: number, serializeTransactions
     return current;
   }) as never);
 
-  return { order, stock, movements, tx };
+  return { order, stock, movements, physicalBuckets, tx };
 }
 
 function buildToken() {
@@ -274,6 +296,17 @@ describe('Production module', () => {
     expect(stock.get(20)).toBe(7);
     expect(movements).toHaveLength(2);
     expect(movements.map((movement) => movement.TipoMovimiento)).toEqual([false, true]);
+  });
+
+  it('keeps water production independent from the physical container ledger', async () => {
+    const { stock, movements, physicalBuckets } = mockProductionTransaction(5, false, true);
+
+    await confirmProductionOrder(41, 101, false);
+
+    expect(stock.get(20)).toBe(7);
+    expect(physicalBuckets.get('30|PLANTA|VACIO')).toBe(4);
+    expect(physicalBuckets.get('30|PLANTA|LLENO')).toBe(0);
+    expect(movements.filter((movement) => movement.UbicacionEnvase)).toHaveLength(0);
   });
 
   it('returns inventory movements in the production order detail', async () => {

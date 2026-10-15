@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Car, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { LogisticsEmptyState } from "@/app/logistics/_components/logistics-empty-state";
@@ -70,27 +70,40 @@ export default function LogisticsVehiclesPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<VehiculoDto | null>(null);
-
-  async function loadData() {
-    setIsLoading(true);
-    try {
-      const [active, trash] = await Promise.all([
-        listVehiculos({ anulado: false }),
-        listVehiculos({ anulado: true }),
-      ]);
-      setActiveItems(active);
-      setTrashItems(trash);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "No se pudo cargar la gestión de vehículos"));
-    } finally {
-      setIsLoading(false);
-      setHasLoadedOnce(true);
-    }
-  }
+  const [reloadVersion, setReloadVersion] = useState(0);
 
   useEffect(() => {
-    void loadData();
-  }, []);
+    let isCurrent = true;
+    void Promise.all([
+      listVehiculos({ anulado: false }),
+      listVehiculos({ anulado: true }),
+    ])
+      .then(([active, trash]) => {
+        if (!isCurrent) return;
+        setActiveItems(active);
+        setTrashItems(trash);
+      })
+      .catch((error: unknown) => {
+        if (isCurrent) {
+          toast.error(getApiErrorMessage(error, "No se pudo cargar la gestión de vehículos"));
+        }
+      })
+      .finally(() => {
+        if (isCurrent) {
+          setIsLoading(false);
+          setHasLoadedOnce(true);
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [reloadVersion]);
+
+  function reloadData() {
+    setIsLoading(true);
+    setReloadVersion((version) => version + 1);
+  }
 
   const filteredActive = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -310,7 +323,7 @@ export default function LogisticsVehiclesPage() {
                     Cancelar edición
                   </Button>
                 ) : null}
-                <Button variant="outline" onClick={loadData} disabled={isLoading}>
+                <Button variant="outline" onClick={reloadData} disabled={isLoading}>
                   {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                   Recargar
                 </Button>

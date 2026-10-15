@@ -23,6 +23,11 @@ type CreateProductInput = {
   unidadMedida?: string;
   costoPromedio: number;
   precioVenta?: number;
+  esVendible?: boolean;
+  esEnvaseRetornable?: boolean;
+  capacidadEnvaseGalones?: number;
+  idEnvasePresentacion?: number | null;
+  unidadesEnvasePorUnidad?: number;
   rutaImagen?: string;
   idCategoriaComision?: number | null;
 };
@@ -36,29 +41,34 @@ type UpdateProductInput = {
   unidadMedida?: string | null;
   costoPromedio?: number;
   precioVenta?: number;
+  esVendible?: boolean;
+  esEnvaseRetornable?: boolean;
+  capacidadEnvaseGalones?: number | null;
+  idEnvasePresentacion?: number | null;
+  unidadesEnvasePorUnidad?: number | null;
   rutaImagen?: string;
   idCategoriaComision?: number | null;
 };
 
-function resolvePrecioVentaForCategoria(
-  categoria: string,
+function resolvePrecioVenta(
+  esVendible: boolean,
   costoPromedio: number,
   precioVenta?: number,
 ): number {
-  if (categoria !== 'PRODUCTO_TERMINADO') {
+  if (!esVendible) {
     return 0;
   }
 
   if (precioVenta === undefined) {
-    throw new Error('precioVenta es obligatorio para PRODUCTO_TERMINADO');
+    throw new Error('precioVenta es obligatorio para un artículo vendible');
   }
 
   if (precioVenta <= 0) {
-    throw new Error('precioVenta debe ser mayor a 0 para PRODUCTO_TERMINADO');
+    throw new Error('precioVenta debe ser mayor a 0 para un artículo vendible');
   }
 
   if (precioVenta < costoPromedio) {
-    throw new Error('precioVenta debe ser mayor o igual a costoPromedio para PRODUCTO_TERMINADO');
+    throw new Error('precioVenta debe ser mayor o igual a costoPromedio para un artículo vendible');
   }
 
   return precioVenta;
@@ -70,6 +80,11 @@ function toProductDto(product: {
   IdProveedor: number;
   Nombre: string;
   Categoria: string;
+  EsVendible: boolean;
+  EsEnvaseRetornable: boolean;
+  CapacidadEnvaseGalones: unknown;
+  IdEnvasePresentacion: number | null;
+  UnidadesEnvasePorUnidad: number | null;
   IdCategoriaComision: number | null;
   UnidadMedida: string | null;
   Existencia: number;
@@ -97,6 +112,13 @@ function toProductDto(product: {
     idProveedor: product.IdProveedor,
     nombre: product.Nombre,
     categoria: product.Categoria,
+    esVendible: product.EsVendible,
+    esEnvaseRetornable: product.EsEnvaseRetornable,
+    capacidadEnvaseGalones: product.CapacidadEnvaseGalones == null
+      ? null
+      : Number(product.CapacidadEnvaseGalones),
+    idEnvasePresentacion: product.IdEnvasePresentacion,
+    unidadesEnvasePorUnidad: product.UnidadesEnvasePorUnidad,
     idCategoriaComision: product.IdCategoriaComision,
     unidadMedida: product.UnidadMedida,
     existencia: product.Existencia,
@@ -268,8 +290,23 @@ export async function createProduct(input: CreateProductInput) {
     }
   }
 
-  const precioVenta = resolvePrecioVentaForCategoria(
-    input.categoria,
+  const esVendible = input.esVendible ?? input.categoria === 'PRODUCTO_TERMINADO';
+  const esEnvaseRetornable = input.esEnvaseRetornable ?? input.categoria === 'ENVASE';
+  if ((input.idEnvasePresentacion == null) !== (input.unidadesEnvasePorUnidad === undefined)) {
+    throw new Error('idEnvasePresentacion y unidadesEnvasePorUnidad deben configurarse juntos');
+  }
+  if (input.idEnvasePresentacion != null && !esVendible) {
+    throw new Error('La presentación de envase solo aplica a artículos vendibles');
+  }
+  if (input.idEnvasePresentacion != null) {
+    const envase = await prisma.inventarioItem.findFirst({
+      where: { Id: input.idEnvasePresentacion, Anulado: false, EsEnvaseRetornable: true },
+      select: { Id: true },
+    });
+    if (!envase) throw new Error('El artículo indicado como envase de presentación no es retornable');
+  }
+  const precioVenta = resolvePrecioVenta(
+    esVendible,
     input.costoPromedio,
     input.precioVenta,
   );
@@ -281,6 +318,11 @@ export async function createProduct(input: CreateProductInput) {
         IdProveedor: input.idProveedor,
         Nombre: input.nombre,
         Categoria: input.categoria,
+        EsVendible: esVendible,
+        EsEnvaseRetornable: esEnvaseRetornable,
+        CapacidadEnvaseGalones: input.capacidadEnvaseGalones ?? null,
+        IdEnvasePresentacion: input.idEnvasePresentacion ?? null,
+        UnidadesEnvasePorUnidad: input.unidadesEnvasePorUnidad ?? null,
         IdCategoriaComision: input.idCategoriaComision ?? null,
         UnidadMedida: input.unidadMedida ?? null,
         Existencia: 0,
@@ -329,8 +371,12 @@ export async function updateProduct(id: number, input: UpdateProductInput) {
       Id: true,
       Nombre: true,
       Categoria: true,
+      EsVendible: true,
+      EsEnvaseRetornable: true,
       CostoPromedio: true,
       PrecioVenta: true,
+      IdEnvasePresentacion: true,
+      UnidadesEnvasePorUnidad: true,
     },
   });
 
@@ -361,14 +407,57 @@ export async function updateProduct(id: number, input: UpdateProductInput) {
 
   const nextNombre = input.nombre ?? existing.Nombre;
   const nextCategoria = input.categoria ?? existing.Categoria;
+  const nextEsVendible =
+    input.esVendible ?? (input.categoria !== undefined
+      ? input.categoria === 'PRODUCTO_TERMINADO'
+      : existing.EsVendible);
+  const nextEsEnvaseRetornable =
+    input.esEnvaseRetornable ?? (input.categoria !== undefined
+      ? input.categoria === 'ENVASE'
+      : existing.EsEnvaseRetornable);
+  if (
+    input.esEnvaseRetornable === false ||
+    (input.categoria !== undefined && input.categoria !== 'ENVASE' && input.esEnvaseRetornable === undefined)
+  ) {
+    const references = await prisma.inventarioItem.count({
+      where: { IdEnvasePresentacion: id, Anulado: false },
+    });
+    if (references > 0) {
+      throw new Error('No se puede deshabilitar un envase referenciado por una presentación vendible');
+    }
+  }
   await validateUniqueNameInCategory(nextNombre, nextCategoria, id);
 
   const costoPromedio = input.costoPromedio ?? Number(existing.CostoPromedio);
-  const precioVenta = resolvePrecioVentaForCategoria(
-    nextCategoria,
+  const precioVenta = resolvePrecioVenta(
+    nextEsVendible,
     costoPromedio,
     input.precioVenta ?? Number(existing.PrecioVenta),
   );
+  const idEnvasePresentacion = input.idEnvasePresentacion === undefined
+    ? existing.IdEnvasePresentacion
+    : input.idEnvasePresentacion;
+  const unidadesEnvasePorUnidad = input.unidadesEnvasePorUnidad === undefined
+    ? existing.UnidadesEnvasePorUnidad
+    : input.unidadesEnvasePorUnidad;
+  if ((idEnvasePresentacion == null) !== (unidadesEnvasePorUnidad == null)) {
+    throw new Error('idEnvasePresentacion y unidadesEnvasePorUnidad deben configurarse juntos');
+  }
+  if (idEnvasePresentacion != null && !nextEsVendible) {
+    throw new Error('La presentación de envase solo aplica a artículos vendibles');
+  }
+  if (idEnvasePresentacion != null) {
+    const envase = await prisma.inventarioItem.findFirst({
+      where: {
+        Id: idEnvasePresentacion,
+        Anulado: false,
+        EsEnvaseRetornable: true,
+        NOT: { Id: id },
+      },
+      select: { Id: true },
+    });
+    if (!envase) throw new Error('El artículo indicado como envase de presentación no es retornable');
+  }
 
   const updated = await prisma.inventarioItem.update({
     where: { Id: id },
@@ -380,6 +469,17 @@ export async function updateProduct(id: number, input: UpdateProductInput) {
       ...(input.idProveedor !== undefined ? { IdProveedor: input.idProveedor } : {}),
       ...(input.nombre !== undefined ? { Nombre: input.nombre } : {}),
       ...(input.categoria !== undefined ? { Categoria: input.categoria } : {}),
+      EsVendible: nextEsVendible,
+      EsEnvaseRetornable: nextEsEnvaseRetornable,
+      ...(input.capacidadEnvaseGalones !== undefined
+        ? { CapacidadEnvaseGalones: input.capacidadEnvaseGalones }
+        : {}),
+      ...(input.idEnvasePresentacion !== undefined
+        ? { IdEnvasePresentacion: input.idEnvasePresentacion }
+        : {}),
+      ...(input.idEnvasePresentacion !== undefined || input.unidadesEnvasePorUnidad !== undefined
+        ? { UnidadesEnvasePorUnidad: unidadesEnvasePorUnidad }
+        : {}),
       ...(input.idCategoriaComision !== undefined
         ? { IdCategoriaComision: input.idCategoriaComision }
         : {}),

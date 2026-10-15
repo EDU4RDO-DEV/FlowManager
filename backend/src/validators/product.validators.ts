@@ -46,28 +46,43 @@ export const createProductSchema = z
     unidadMedida: z.string().trim().min(1).max(30).optional(),
     costoPromedio: finitePositiveNumber,
     precioVenta: finitePositiveNumber.optional(),
+    esVendible: z.boolean().optional(),
+    esEnvaseRetornable: z.boolean().optional(),
+    capacidadEnvaseGalones: finitePositiveNumber.optional(),
+    idEnvasePresentacion: positiveInt.nullable().optional(),
+    unidadesEnvasePorUnidad: z.number().int().positive().optional(),
     rutaImagen: z.string().trim().max(255, 'rutaImagen demasiado larga').optional(),
     idCategoriaComision: positiveInt.nullable().optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.categoria !== 'PRODUCTO_TERMINADO') {
-      return;
+    const esVendible = data.esVendible ?? data.categoria === 'PRODUCTO_TERMINADO';
+    if (esVendible) {
+      if (data.precioVenta === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'precioVenta es obligatorio para PRODUCTO_TERMINADO',
+          path: ['precioVenta'],
+        });
+      } else if (data.precioVenta < data.costoPromedio) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'precioVenta debe ser mayor o igual a costoPromedio para PRODUCTO_TERMINADO',
+          path: ['precioVenta'],
+        });
+      }
     }
-
-    if (data.precioVenta === undefined) {
+    if ((data.idEnvasePresentacion == null) !== (data.unidadesEnvasePorUnidad === undefined)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'precioVenta es obligatorio para PRODUCTO_TERMINADO',
-        path: ['precioVenta'],
+        message: 'idEnvasePresentacion y unidadesEnvasePorUnidad deben configurarse juntos',
+        path: ['idEnvasePresentacion'],
       });
-      return;
     }
-
-    if (data.precioVenta < data.costoPromedio) {
+    if (data.idEnvasePresentacion != null && !esVendible) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'precioVenta debe ser mayor o igual a costoPromedio para PRODUCTO_TERMINADO',
-        path: ['precioVenta'],
+        message: 'La presentación de envase solo aplica a artículos vendibles',
+        path: ['idEnvasePresentacion'],
       });
     }
   });
@@ -82,6 +97,11 @@ export const updateProductSchema = z
     unidadMedida: z.union([z.string().trim().min(1).max(30), z.null()]).optional(),
     costoPromedio: finitePositiveNumber.optional(),
     precioVenta: finitePositiveNumber.optional(),
+    esVendible: z.boolean().optional(),
+    esEnvaseRetornable: z.boolean().optional(),
+    capacidadEnvaseGalones: finitePositiveNumber.nullable().optional(),
+    idEnvasePresentacion: positiveInt.nullable().optional(),
+    unidadesEnvasePorUnidad: z.number().int().positive().nullable().optional(),
     rutaImagen: z.string().trim().max(255, 'rutaImagen demasiado larga').optional(),
     idCategoriaComision: positiveInt.nullable().optional(),
   })

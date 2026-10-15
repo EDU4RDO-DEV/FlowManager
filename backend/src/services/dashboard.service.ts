@@ -16,6 +16,7 @@ type TrendRow = {
 };
 
 type TopProductRow = {
+  productId: number;
   productName: string;
   quantitySold: number | bigint | null;
   salesAmount: number | bigint | Prisma.Decimal | null;
@@ -29,7 +30,7 @@ type TopCustomerRow = {
 };
 
 type OrderStatusRow = {
-  status: string;
+  status: string | null;
   orderCount: number | bigint;
 };
 
@@ -167,18 +168,20 @@ async function getSalesTrend(
 async function getTopProducts(start: Date, endExclusive: Date): Promise<TopProductRow[]> {
   return prisma.$queryRaw<TopProductRow[]>(Prisma.sql`
     SELECT TOP (10)
-      dv.Nombre AS productName,
+      i.Id AS productId,
+      i.Nombre AS productName,
       SUM(CAST(dv.Cantidad AS decimal(18, 4))) AS quantitySold,
       SUM(CAST(dv.Cantidad AS decimal(18, 4)) * dv.PrecioUnitario) AS salesAmount
     FROM DetalleVenta dv
     INNER JOIN Venta v ON v.Id = dv.IdVenta
+    INNER JOIN InventarioItem i ON i.Id = dv.IdInventarioItem
     WHERE v.Anulado = 0
       AND v.TipoRegistro = 'VENTA'
       AND dv.Anulado = 0
       AND dv.EsBonificacion = 0
       AND v.FechaRegistro >= ${start}
       AND v.FechaRegistro < ${endExclusive}
-    GROUP BY dv.Nombre
+    GROUP BY i.Id, i.Nombre
     ORDER BY SUM(CAST(dv.Cantidad AS decimal(18, 4))) DESC, dv.Nombre ASC
   `);
 }
@@ -249,7 +252,16 @@ export async function getDashboardData(query: DashboardQuery) {
     date,
     salesAmount: trendByDate.get(date) ?? 0,
   }));
-  const orderCountsByStatus = new Map(statusRows.map((row) => [row.status, asNumber(row.orderCount)]));
+  const orderCountsByStatus = new Map(
+    statusRows
+      .filter((row): row is OrderStatusRow & { status: string } => row.status !== null)
+      .map((row) => [row.status, asNumber(row.orderCount)]),
+  );
+  const unknownStatusCount = statusRows.reduce(
+    (total, row) =>
+      total + (ORDER_STATUSES.some((status) => status.key === row.status) ? 0 : asNumber(row.orderCount)),
+    0,
+  );
   const averageTicket = current.orderCount > 0 ? current.salesAmount / current.orderCount : 0;
   const previousAverageTicket =
     previous.orderCount > 0 ? previous.salesAmount / previous.orderCount : 0;
@@ -266,10 +278,7 @@ export async function getDashboardData(query: DashboardQuery) {
       orderCount: current.orderCount,
       orderCountChangePercent: percentageChange(current.orderCount, previous.orderCount),
       pendingOrderCount: current.pendingOrderCount,
-      pendingOrderCountChangePercent: percentageChange(
-        current.pendingOrderCount,
-        previous.pendingOrderCount,
-      ),
+      pendingOrderCountChangePercent: null,
       unitsSold: current.unitsSold,
       unitsSoldChangePercent: percentageChange(current.unitsSold, previous.unitsSold),
       averageTicket,
@@ -277,6 +286,7 @@ export async function getDashboardData(query: DashboardQuery) {
     },
     trend,
     topProducts: topProducts.map((product) => ({
+      id: Number(product.productId),
       name: product.productName,
       quantity: asNumber(product.quantitySold),
       salesAmount: asNumber(product.salesAmount),
@@ -292,5 +302,15 @@ export async function getDashboardData(query: DashboardQuery) {
       label: status.label,
       count: orderCountsByStatus.get(status.key) ?? 0,
     })),
+    ...(unknownStatusCount > 0
+      ? { orderStatuses: [
+          ...ORDER_STATUSES.map((status) => ({
+            key: status.key,
+            label: status.label,
+            count: orderCountsByStatus.get(status.key) ?? 0,
+          })),
+          { key: 'OTRO', label: 'Otro / sin estado', count: unknownStatusCount },
+        ] }
+      : {}),
   };
 }

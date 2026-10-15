@@ -30,17 +30,22 @@ quedar registrada como archivo versionado para poder auditarla y reproducirla.
 Flujo estandar para un cambio de esquema:
 
 ```bash
-pnpm exec prisma migrate dev --name descripcion_del_cambio
+pnpm run prisma:migrate:dev -- --name descripcion_del_cambio
 ```
 
 Para reglas que Prisma no expresa en `schema.prisma` (CHECK constraints, indices unicos
 filtrados con `WHERE`), el flujo es:
 
 ```bash
-pnpm exec prisma migrate dev --create-only --name descripcion_del_cambio
+pnpm run prisma:migrate:dev -- --create-only --name descripcion_del_cambio
 # editar a mano prisma/migrations/<timestamp>_descripcion_del_cambio/migration.sql
-pnpm exec prisma migrate dev
+pnpm run prisma:migrate:dev
 ```
+
+Los comandos `prisma:migrate:dev`, `prisma:migrate:deploy` y `prisma:migrate:status`
+verifican que `DATABASE_URL` y la conexion efectiva apunten a `FlowManager`. No uses
+`DATABASE_URL_TEST` para migraciones ni invoques Prisma Migrate directamente; ejecuta las
+migraciones mediante los scripts protegidos del `package.json`.
 
 En Windows, si el backend esta corriendo (`ts-node-dev`), este bloquea
 `query_engine-windows.dll.node` y la migracion falla con `EPERM` al regenerar el cliente.
@@ -197,6 +202,20 @@ campos disponibles (nombre, presentación/unidad y categoría). Las bonificacion
 unidades que salieron del camión, y las anulaciones de ventas de ruta se excluyen del saldo solo
 antes de recibir o cerrar la ruta.
 
+El agua vendible y el garrafón retornable se controlan como artículos distintos; un garrafón
+puede además marcarse vendible para una venta excepcional. `DetalleVentaEnvase` distingue el
+recipiente propio del cliente del préstamo de la empresa: solo el préstamo genera un movimiento
+de custodia y afecta `EnvaseClienteSaldo`. `BitacoraInventario` lleva los saldos físicos por
+ubicación y estado. Al anular una venta, los préstamos abiertos se revierten dentro de la misma
+transacción; si el envase ya fue devuelto, dañado o declarado perdido, la anulación se rechaza.
+Una venta directa de garrafón restituye su bucket físico original, sin crear custodia.
+
+El inventario físico inicial no se infiere de la existencia del catálogo. Tras identificar el
+artículo retornable, el responsable registra el conteo verificado por ubicación y estado en
+`POST /api/envases/existencias/conteo` (`envases:update`); si el conteo difiere del saldo previo,
+la regularización auditada requiere `POST /api/envases/existencias/regularizar`
+(`envases:delete`). No se debe registrar un saldo inicial hasta completar el conteo físico real.
+
 Las devoluciones comerciales de ventas de ruta se registran en `DevolucionComercial` y
 `DevolucionComercialDetalle`, vinculadas a la venta y sus líneas originales; el cliente y la
 sesión se derivan de la venta para no duplicar relaciones. El usuario autenticado con permiso
@@ -265,15 +284,6 @@ pnpm test
 
 ### Despacho y liquidacion contra SQL Server
 
-La suite `src/tests/route-flow.sqlserver.integration.spec.ts` usa una base SQL Server real y
-comprueba que la conexion efectiva sea `FlowManager_Test`; aborta si apunta a otra base. Prepara
-esa base con `prisma migrate deploy` y el seed de roles antes de ejecutarla:
-
-```bash
-pnpm run test:integration:routes
-```
-
-El runner deriva `FlowManager_Test` de `DATABASE_URL` sin imprimir la cadena de conexion. No
-ejecuta migraciones ni modifica la base `FlowManager`. La suite prueba sesiones y permisos por
-endpoint, despachos concurrentes, ventas y anulaciones, devoluciones comerciales parciales e
-idempotentes, reventa desde el vehiculo, conciliacion de productos vendibles y danados, y cierres.
+La suite SQL Server esta temporalmente deshabilitada: requiere una base aislada y no debe
+ejecutarse contra `FlowManager`. El runner `test:integration:routes` termina antes de abrir
+una conexion o aplicar migraciones. Las pruebas unitarias siguen disponibles con `pnpm test`.

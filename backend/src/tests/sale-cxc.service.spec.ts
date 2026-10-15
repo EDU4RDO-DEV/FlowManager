@@ -428,6 +428,7 @@ describe('Fase 4 - Ventas y Cuentas por Cobrar (pagos)', () => {
         PrecioUnitario: 50,
         EsBonificacion: false,
         Anulado: true,
+        Envases: [],
         InventarioItem: {
           Id: 8,
           Nombre: 'Producto de prueba',

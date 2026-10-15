@@ -66,6 +66,17 @@ function parseMetaItems(parametrosResumen: string[]): Array<{ label: string; val
   });
 }
 
+function formatGeneratedAt(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat('es-GT', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'America/Guatemala',
+  }).format(date);
+}
+
 const PAPER_MARGIN = { top: '16mm', bottom: '22mm', left: '12mm', right: '12mm' };
 
 // Construye el buffer del PDF sin tocar Express; `streamReportPdf` lo envuelve para
@@ -85,7 +96,10 @@ export async function buildReportPdfBuffer(input: RenderPdfInput): Promise<Buffe
       nombre: input.reportNombre,
       categoriaLabel: input.categoriaLabel,
     },
-    metaItems: parseMetaItems(input.parametrosResumen),
+    metaItems: [
+      ...parseMetaItems(input.parametrosResumen),
+      { label: 'Generado', value: formatGeneratedAt(input.result.meta.generadoEn) },
+    ],
     indicators: input.result.indicators ?? [],
     columns: input.result.columns,
     columnCount,

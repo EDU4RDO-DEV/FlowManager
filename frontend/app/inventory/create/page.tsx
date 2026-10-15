@@ -24,6 +24,11 @@ const EMPTY_FORM: ProductFormValues = {
   idProveedor: "",
   costoPromedio: "",
   precioVenta: "",
+  esVendible: true,
+  esEnvaseRetornable: false,
+  capacidadEnvaseGalones: "",
+  idEnvasePresentacion: "",
+  unidadesEnvasePorUnidad: "",
   rutaImagen: "",
   idCategoriaComision: "",
 };
@@ -73,7 +78,6 @@ export default function CreateProductPage() {
     }
 
     const costoPromedio = Number(form.costoPromedio);
-    const isFinishedProduct = form.categoria === "PRODUCTO_TERMINADO";
     const precioVenta = Number(form.precioVenta);
 
     if (!Number.isFinite(costoPromedio) || costoPromedio <= 0) {
@@ -81,7 +85,7 @@ export default function CreateProductPage() {
       return;
     }
 
-    if (isFinishedProduct) {
+    if (form.esVendible) {
       if (!Number.isFinite(precioVenta) || precioVenta <= 0) {
         toast.error("El precio de venta debe ser mayor a 0 para producto terminado.");
         return;
@@ -100,9 +104,20 @@ export default function CreateProductPage() {
         idProveedor,
         nombre: form.nombre.trim(),
         categoria: form.categoria,
+        esVendible: form.esVendible,
+        esEnvaseRetornable: form.esEnvaseRetornable,
         unidadMedida: form.unidadMedida.trim() || undefined,
         costoPromedio,
-        precioVenta: isFinishedProduct ? precioVenta : undefined,
+        precioVenta: form.esVendible ? precioVenta : undefined,
+        capacidadEnvaseGalones: form.capacidadEnvaseGalones
+          ? Number(form.capacidadEnvaseGalones)
+          : undefined,
+        idEnvasePresentacion: form.idEnvasePresentacion
+          ? Number(form.idEnvasePresentacion)
+          : null,
+        unidadesEnvasePorUnidad: form.unidadesEnvasePorUnidad
+          ? Number(form.unidadesEnvasePorUnidad)
+          : undefined,
         rutaImagen: form.rutaImagen.trim() || undefined,
         idCategoriaComision: form.idCategoriaComision ? Number(form.idCategoriaComision) : null,
       });

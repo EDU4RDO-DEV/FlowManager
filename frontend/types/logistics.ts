@@ -73,6 +73,7 @@ export interface RouteInventoryLineDto {
   nombre: string;
   unidadMedida: string | null;
   despachado: number;
+  estadoEnvaseDespachado?: "VACIO" | "LLENO" | null;
   vendido: number;
   devolucionComercial: number;
   noVendibleComercial: number;
@@ -80,6 +81,8 @@ export interface RouteInventoryLineDto {
   danado: number;
   ajustado: number;
   reservado: number;
+  envasePrestado?: number;
+  envaseDevuelto?: number;
   pendienteConciliacion: number;
   disponible: number;
 }

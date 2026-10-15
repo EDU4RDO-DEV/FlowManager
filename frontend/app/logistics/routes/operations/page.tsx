@@ -35,10 +35,17 @@ import { listProducts } from "@/services/products.service";
 import type { RouteInventoryDto, RutaSesionDto } from "@/types/logistics";
 import type { ProductDto } from "@/types/products";
 
-type DispatchDraft = { idInventarioItem: number; cantidad: string };
+type DispatchDraft = {
+  idInventarioItem: number;
+  cantidad: string;
+  estadoEnvase: "VACIO" | "LLENO" | "";
+};
 type ReturnDraft = {
   cantidadRecibida: string;
   cantidadDanada: string;
+  cantidadEnvaseVacio: string;
+  cantidadEnvaseLleno: string;
+  estadoEnvaseDanado: "VACIO" | "LLENO" | "";
   observaciones: string;
   ubicacionDanada: string;
 };
@@ -169,7 +176,10 @@ export default function RouteOperationsPage() {
   function addDispatchProduct() {
     const id = Number(dispatchProductId);
     if (!id || dispatchDraft.some((line) => line.idInventarioItem === id)) return;
-    setDispatchDraft((previous) => [...previous, { idInventarioItem: id, cantidad: "" }]);
+    setDispatchDraft((previous) => [
+      ...previous,
+      { idInventarioItem: id, cantidad: "", estadoEnvase: "" },
+    ]);
     setDispatchProductId("");
   }
 
@@ -178,8 +188,14 @@ export default function RouteOperationsPage() {
     const detail = dispatchDraft.map((line) => ({
       idInventarioItem: line.idInventarioItem,
       cantidad: Number(line.cantidad),
+      ...(line.estadoEnvase ? { estadoEnvase: line.estadoEnvase } : {}),
     }));
-    if (detail.some((line) => !Number.isFinite(line.cantidad) || line.cantidad <= 0)) {
+    if (
+      detail.some((line) => !Number.isFinite(line.cantidad) || line.cantidad <= 0) ||
+      dispatchDraft.some((line) =>
+        productById.get(line.idInventarioItem)?.esEnvaseRetornable && !line.estadoEnvase,
+      )
+    ) {
       toast.error("Ingresa una cantidad mayor que cero para cada producto");
       return;
     }
@@ -200,16 +216,29 @@ export default function RouteOperationsPage() {
 
   async function submitReturn() {
     if (!selectedSession) return;
-    const invalidQuantities = Object.values(returnDraft).some((line) => {
-      const received = Number(line.cantidadRecibida);
-      const damaged = Number(line.cantidadDanada);
+    const invalidQuantities = Object.entries(returnDraft).some(([id, line]) => {
+      const received = Number(line.cantidadRecibida || 0);
+      const damaged = Number(line.cantidadDanada || 0);
+      const empty = Number(line.cantidadEnvaseVacio || 0);
+      const full = Number(line.cantidadEnvaseLleno || 0);
+      const product = productById.get(Number(id));
       return (
         !Number.isFinite(received) ||
         !Number.isFinite(damaged) ||
+        !Number.isFinite(empty) ||
+        !Number.isFinite(full) ||
         received < 0 ||
         damaged < 0 ||
         damaged > received ||
-        (damaged > 0 && !line.ubicacionDanada.trim())
+        (damaged > 0 && !line.ubicacionDanada.trim()) ||
+        (received > 0 && product?.esEnvaseRetornable &&
+          (!Number.isInteger(received) ||
+            !Number.isInteger(damaged) ||
+            !Number.isInteger(empty) ||
+            !Number.isInteger(full) ||
+            empty + full + damaged !== received ||
+            (damaged > 0 && !line.estadoEnvaseDanado))) ||
+        (product?.esEnvaseRetornable === false && (empty > 0 || full > 0 || line.estadoEnvaseDanado))
       );
     });
     if (invalidQuantities) {
@@ -221,6 +250,9 @@ export default function RouteOperationsPage() {
         idInventarioItem: Number(id),
         cantidadRecibida: Number(line.cantidadRecibida),
         cantidadDanada: Number(line.cantidadDanada),
+        cantidadEnvaseVacio: Number(line.cantidadEnvaseVacio || 0),
+        cantidadEnvaseLleno: Number(line.cantidadEnvaseLleno || 0),
+        ...(line.estadoEnvaseDanado ? { estadoEnvaseDanado: line.estadoEnvaseDanado } : {}),
         observaciones: line.observaciones.trim() || undefined,
         ubicacionDanada: line.ubicacionDanada.trim() || undefined,
       }))
@@ -427,7 +459,7 @@ export default function RouteOperationsPage() {
                     </div>
                     {dispatchDraft.length ? (
                       <Table>
-                        <TableHeader><TableRow><TableHead>Producto</TableHead><TableHead>Existencia planta</TableHead><TableHead>Cantidad</TableHead><TableHead /></TableRow></TableHeader>
+                        <TableHeader><TableRow><TableHead>Producto</TableHead><TableHead>Existencia planta</TableHead><TableHead>Cantidad</TableHead><TableHead>Estado envase</TableHead><TableHead /></TableRow></TableHeader>
                         <TableBody>
                           {dispatchDraft.map((line) => {
                             const product = productById.get(line.idInventarioItem);
@@ -446,6 +478,24 @@ export default function RouteOperationsPage() {
                                     ))}
                                     className="max-w-32"
                                   />
+                                </TableCell>
+                                <TableCell>
+                                  {product?.esEnvaseRetornable ? (
+                                    <Select
+                                      value={line.estadoEnvase}
+                                      onValueChange={(value) => setDispatchDraft((previous) => previous.map((item) =>
+                                        item.idInventarioItem === line.idInventarioItem
+                                          ? { ...item, estadoEnvase: value as "VACIO" | "LLENO" }
+                                          : item,
+                                      ))}
+                                    >
+                                      <SelectTrigger className="min-w-28"><SelectValue placeholder="Estado" /></SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="VACIO">Vacío</SelectItem>
+                                        <SelectItem value="LLENO">Lleno</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  ) : "—"}
                                 </TableCell>
                                 <TableCell>
                                   <Button variant="ghost" size="sm" onClick={() => setDispatchDraft((previous) => previous.filter((item) => item.idInventarioItem !== line.idInventarioItem))}>Quitar</Button>
@@ -506,13 +556,16 @@ export default function RouteOperationsPage() {
                       <p className="text-sm text-muted-foreground">Registra lo recibido físicamente, incluidos los productos devueltos por clientes que permanecen en el vehículo. Solo lo vendible se traslada a planta al cerrar.</p>
                     </div>
                     <Table>
-                      <TableHeader><TableRow><TableHead>Producto / saldo físico</TableHead><TableHead>Recibido</TableHead><TableHead>Dañado</TableHead><TableHead>Ubicación no vendible</TableHead><TableHead>Observaciones</TableHead></TableRow></TableHeader>
+                      <TableHeader><TableRow><TableHead>Producto / saldo físico</TableHead><TableHead>Recibido</TableHead><TableHead>Vacíos</TableHead><TableHead>Llenos</TableHead><TableHead>Dañado</TableHead><TableHead>Estado antes de daño</TableHead><TableHead>Ubicación no vendible</TableHead><TableHead>Observaciones</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {visibleInventory.productos.filter((line) => line.pendienteConciliacion - line.reservado > 0.009).map((line) => (
                           <TableRow key={line.idInventarioItem}>
                             <TableCell>{line.nombre}<span className="block text-xs text-muted-foreground">Saldo físico: {Number(Math.max(0, line.pendienteConciliacion - line.reservado).toFixed(2))}</span></TableCell>
                             <TableCell><Input type="number" min="0" step="0.01" value={returnDraft[line.idInventarioItem]?.cantidadRecibida ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadRecibida: event.target.value } }))} className="max-w-28" /></TableCell>
-                            <TableCell><Input type="number" min="0" step="0.01" value={returnDraft[line.idInventarioItem]?.cantidadDanada ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadDanada: event.target.value } }))} className="max-w-28" /></TableCell>
+                            <TableCell>{productById.get(line.idInventarioItem)?.esEnvaseRetornable ? <Input type="number" min="0" step="1" value={returnDraft[line.idInventarioItem]?.cantidadEnvaseVacio ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadEnvaseVacio: event.target.value } }))} className="max-w-24" /> : "—"}</TableCell>
+                            <TableCell>{productById.get(line.idInventarioItem)?.esEnvaseRetornable ? <Input type="number" min="0" step="1" value={returnDraft[line.idInventarioItem]?.cantidadEnvaseLleno ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadEnvaseLleno: event.target.value } }))} className="max-w-24" /> : "—"}</TableCell>
+                            <TableCell><Input type="number" min="0" step={productById.get(line.idInventarioItem)?.esEnvaseRetornable ? "1" : "0.01"} value={returnDraft[line.idInventarioItem]?.cantidadDanada ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadDanada: event.target.value } }))} className="max-w-28" /></TableCell>
+                            <TableCell>{productById.get(line.idInventarioItem)?.esEnvaseRetornable ? <Select value={returnDraft[line.idInventarioItem]?.estadoEnvaseDanado ?? ""} onValueChange={(value) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], estadoEnvaseDanado: value as "VACIO" | "LLENO" } }))}><SelectTrigger className="min-w-28"><SelectValue placeholder="Estado" /></SelectTrigger><SelectContent><SelectItem value="VACIO">Vacío</SelectItem><SelectItem value="LLENO">Lleno</SelectItem></SelectContent></Select> : "—"}</TableCell>
                             <TableCell><Input value={returnDraft[line.idInventarioItem]?.ubicacionDanada ?? ""} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], ubicacionDanada: event.target.value } }))} maxLength={255} placeholder="Obligatorio si hay unidades dañadas" /></TableCell>
                             <TableCell><Input value={returnDraft[line.idInventarioItem]?.observaciones ?? ""} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], observaciones: event.target.value } }))} maxLength={255} /></TableCell>
                           </TableRow>

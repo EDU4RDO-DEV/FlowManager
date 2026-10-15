@@ -7,6 +7,8 @@ const { prismaMock } = vi.hoisted(() => ({
     despachoRuta: { findUnique: vi.fn() },
     devolucionRuta: { findUnique: vi.fn() },
     devolucionComercial: { findFirst: vi.fn() },
+    movimientoEnvase: { findMany: vi.fn(), findFirst: vi.fn() },
+    inventarioItem: { findFirst: vi.fn(), update: vi.fn() },
     venta: { findFirst: vi.fn(), update: vi.fn() },
     detalleVenta: { updateMany: vi.fn() },
     pagoVenta: { updateMany: vi.fn() },
@@ -17,6 +19,11 @@ const { prismaMock } = vi.hoisted(() => ({
 
 const { sendMock } = vi.hoisted(() => ({
   sendMock: vi.fn(),
+}));
+
+const { anulateEnvaseMovementInTransactionMock, registerEnvaseBucketChangeMock } = vi.hoisted(() => ({
+  anulateEnvaseMovementInTransactionMock: vi.fn(),
+  registerEnvaseBucketChangeMock: vi.fn(),
 }));
 
 vi.mock('../config/prisma', () => ({
@@ -35,6 +42,11 @@ vi.mock('../services/fel.service', () => ({
 
 vi.mock('../services/inventory-movement.service', () => ({
   registerInventoryMovement: vi.fn(),
+  registerEnvaseBucketChange: registerEnvaseBucketChangeMock,
+}));
+
+vi.mock('../services/envase.service', () => ({
+  anulateEnvaseMovementInTransaction: anulateEnvaseMovementInTransactionMock,
 }));
 
 import { anulateSale, updateSale } from '../services/sale.service';
@@ -63,6 +75,14 @@ describe('Fase 23 - VENTA_ANULADA (anulateSale)', () => {
     prismaMock.$transaction.mockImplementation(async (callback: (tx: typeof prismaMock) => unknown) =>
       callback(prismaMock),
     );
+    prismaMock.movimientoEnvase.findMany.mockResolvedValue([]);
+    prismaMock.movimientoEnvase.findFirst.mockResolvedValue(null);
+    prismaMock.inventarioItem.findFirst.mockResolvedValue({
+      Id: 5,
+      Existencia: 10,
+      EsEnvaseRetornable: false,
+    });
+    anulateEnvaseMovementInTransactionMock.mockResolvedValue(undefined);
   });
 
   it('blocks cancellation after a commercial return has been authorized', async () => {
@@ -138,6 +158,120 @@ describe('Fase 23 - VENTA_ANULADA (anulateSale)', () => {
 
     await expect(anulateSale(7, 9)).resolves.toBeUndefined();
     expect(prismaMock.despachoRuta.findUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it('reverses open container loans within the sale cancellation transaction', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
+    prismaMock.venta.findFirst
+      .mockResolvedValueOnce(buildAnulateSaleRow())
+      .mockResolvedValueOnce(buildAnulateSaleRow());
+    prismaMock.movimientoEnvase.findMany.mockResolvedValueOnce([
+      { Id: 33, IdCliente: 4, IdInventarioItem: 8 },
+    ]);
+    prismaMock.detalleVenta.updateMany.mockResolvedValueOnce({});
+    prismaMock.pagoVenta.updateMany.mockResolvedValueOnce({});
+    prismaMock.venta.update.mockResolvedValueOnce({});
+    prismaMock.cuentaPorCobrar.updateMany.mockResolvedValueOnce({});
+
+    await anulateSale(7, 9);
+
+    expect(anulateEnvaseMovementInTransactionMock).toHaveBeenCalledWith(prismaMock, 33, 9);
+  });
+
+  it('rejects cancellation when an envase loan was subsequently returned or declared lost', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
+    prismaMock.venta.findFirst
+      .mockResolvedValueOnce(buildAnulateSaleRow())
+      .mockResolvedValueOnce(buildAnulateSaleRow());
+    prismaMock.movimientoEnvase.findMany.mockResolvedValueOnce([
+      { Id: 33, IdCliente: 4, IdInventarioItem: 8 },
+    ]);
+    prismaMock.movimientoEnvase.findFirst.mockResolvedValueOnce({ Id: 34 });
+
+    await expect(anulateSale(7, 9)).rejects.toThrow(
+      'No se puede anular una venta después de devolver, dañar o declarar perdido un envase prestado por ella',
+    );
+    expect(anulateEnvaseMovementInTransactionMock).not.toHaveBeenCalled();
+  });
+
+  it('restores a directly sold returnable container to its physical bucket on cancellation', async () => {
+    const sale = buildAnulateSaleRow({
+      DetalleVenta: [{
+        Id: 8,
+        IdInventarioItem: 5,
+        Cantidad: 2,
+        Nombre: 'Garrafón',
+        EstadoEnvase: 'VACIO',
+      }],
+    });
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
+    prismaMock.venta.findFirst.mockResolvedValueOnce(sale).mockResolvedValueOnce(sale);
+    prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({
+      Id: 5,
+      Existencia: 10,
+      EsEnvaseRetornable: true,
+    });
+    prismaMock.inventarioItem.update.mockResolvedValueOnce({});
+    prismaMock.detalleVenta.updateMany.mockResolvedValueOnce({});
+    prismaMock.pagoVenta.updateMany.mockResolvedValueOnce({});
+    prismaMock.venta.update.mockResolvedValueOnce({});
+    prismaMock.cuentaPorCobrar.updateMany.mockResolvedValueOnce({});
+
+    await anulateSale(7, 9);
+
+    expect(registerEnvaseBucketChangeMock).toHaveBeenCalledWith(
+      prismaMock,
+      expect.objectContaining({
+        idInventarioItem: 5,
+        bucket: { ubicacion: 'PLANTA', estado: 'VACIO' },
+        cantidad: 2,
+        entrada: true,
+        idDetalleVenta: 8,
+      }),
+    );
+  });
+
+  it('restores a directly sold route container to the same vehicle bucket on cancellation', async () => {
+    const sale = buildAnulateSaleRow({
+      IdRutaSesion: 12,
+      TipoRegistro: 'VENTA',
+      DetalleVenta: [{
+        Id: 8,
+        IdInventarioItem: 5,
+        Cantidad: 1,
+        Nombre: 'Garrafón',
+        EstadoEnvase: 'LLENO',
+      }],
+    });
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
+    prismaMock.venta.findFirst.mockResolvedValueOnce(sale).mockResolvedValueOnce(sale);
+    prismaMock.despachoRuta.findUnique.mockResolvedValue({ Id: 31 });
+    prismaMock.rutaSesion.findFirst.mockResolvedValue({ Estado: 'EN_CURSO' });
+    prismaMock.devolucionRuta.findUnique.mockResolvedValue(null);
+    prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({
+      Id: 5,
+      Existencia: 10,
+      EsEnvaseRetornable: true,
+    });
+    prismaMock.detalleVenta.updateMany.mockResolvedValueOnce({});
+    prismaMock.pagoVenta.updateMany.mockResolvedValueOnce({});
+    prismaMock.venta.update.mockResolvedValueOnce({});
+    prismaMock.cuentaPorCobrar.updateMany.mockResolvedValueOnce({});
+
+    await anulateSale(7, 9);
+
+    expect(registerEnvaseBucketChangeMock).toHaveBeenCalledWith(
+      prismaMock,
+      expect.objectContaining({
+        idInventarioItem: 5,
+        bucket: { ubicacion: 'RUTA', estado: 'LLENO', idRutaSesion: 12 },
+        cantidad: 1,
+        entrada: true,
+        idRutaSesion: 12,
+        idDetalleVenta: 8,
+      }),
+    );
+    expect(prismaMock.inventarioItem.update).not.toHaveBeenCalled();
   });
 
   it('rejects cancelling a route sale after the physical return was received', async () => {

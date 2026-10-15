@@ -2,18 +2,26 @@ import { Prisma } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
 import { runSerializableTransaction } from '../utils/serializable-transaction';
-import { registerInventoryMovement } from './inventory-movement.service';
+import {
+  getEnvaseBucketQuantity,
+  registerInventoryMovement,
+  transferEnvaseBucket,
+} from './inventory-movement.service';
 import { expireProformaReservations } from './proforma-reservation.service';
 
 type RouteLineInput = {
   idInventarioItem: number;
   cantidad: number;
+  estadoEnvase?: 'VACIO' | 'LLENO';
 };
 
 type RouteReturnLineInput = {
   idInventarioItem: number;
   cantidadRecibida: number;
   cantidadDanada: number;
+  cantidadEnvaseVacio: number;
+  cantidadEnvaseLleno: number;
+  estadoEnvaseDanado?: 'VACIO' | 'LLENO';
   observaciones?: string;
   ubicacionDanada?: string;
 };
@@ -46,6 +54,17 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
             where: { Anulado: false },
             select: { IdInventarioItem: true, Cantidad: true },
           },
+        },
+      },
+      MovimientosEnvaseCliente: {
+        where: {
+          Anulado: false,
+          TipoMovimiento: { in: ['PRESTAMO', 'DEVOLUCION', 'DEVOLUCION_DANADA', 'BAJA'] },
+        },
+        select: {
+          IdInventarioItem: true,
+          TipoMovimiento: true,
+          Cantidad: true,
         },
       },
     },
@@ -147,6 +166,21 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
     );
   }
 
+  const envaseLoanedByItem = new Map<number, number>();
+  const envaseReturnedByItem = new Map<number, number>();
+  const envaseRetiredByItem = new Map<number, number>();
+  for (const movement of session.MovimientosEnvaseCliente) {
+    const target = movement.TipoMovimiento === 'PRESTAMO'
+      ? envaseLoanedByItem
+      : movement.TipoMovimiento === 'BAJA'
+        ? envaseRetiredByItem
+        : envaseReturnedByItem;
+    target.set(
+      movement.IdInventarioItem,
+      roundQuantity((target.get(movement.IdInventarioItem) ?? 0) + movement.Cantidad),
+    );
+  }
+
   const lines = (session.DespachoRuta?.Detalles ?? []).map((detail) => {
     const sold = soldByItem.get(detail.IdInventarioItem) ?? 0;
     const commercialReturn = commercialReturnByItem.get(detail.IdInventarioItem);
@@ -156,13 +190,19 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
     const damaged = returnedByItem.get(detail.IdInventarioItem)?.danada ?? 0;
     const adjusted = adjustedByItem.get(detail.IdInventarioItem) ?? 0;
     const reserved = reservedByItem.get(detail.IdInventarioItem) ?? 0;
-    const pendingReconciliation = roundQuantity(detail.Cantidad - sold + commercialReturned - returned - adjusted);
+    const envasePrestado = envaseLoanedByItem.get(detail.IdInventarioItem) ?? 0;
+    const envaseDevuelto = envaseReturnedByItem.get(detail.IdInventarioItem) ?? 0;
+    const envaseBaja = envaseRetiredByItem.get(detail.IdInventarioItem) ?? 0;
+    const pendingReconciliation = roundQuantity(
+      detail.Cantidad - sold + commercialReturned - returned - adjusted - envasePrestado + envaseDevuelto - envaseBaja,
+    );
 
     return {
       idInventarioItem: detail.IdInventarioItem,
       nombre: detail.NombreSnapshot,
       unidadMedida: detail.UnidadMedidaSnapshot,
       despachado: detail.Cantidad,
+      estadoEnvaseDespachado: detail.EstadoEnvase,
       vendido: sold,
       devolucionComercial: commercialReturned,
       noVendibleComercial: commercialNonSellable,
@@ -170,6 +210,9 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
       danado: damaged,
       ajustado: adjusted,
       reservado: reserved,
+      envasePrestado,
+      envaseDevuelto,
+      envaseBaja,
       pendienteConciliacion: pendingReconciliation,
       disponible: roundQuantity(pendingReconciliation - reserved - commercialNonSellable),
     };
@@ -266,7 +309,13 @@ export async function createRouteDispatch(
         Id: { in: input.detalle.map((item) => item.idInventarioItem) },
         Anulado: false,
       },
-      select: { Id: true, Nombre: true, UnidadMedida: true, Existencia: true },
+      select: {
+        Id: true,
+        Nombre: true,
+        UnidadMedida: true,
+        Existencia: true,
+        EsEnvaseRetornable: true,
+      },
     });
     const productsById = new Map(products.map((product) => [product.Id, product]));
 
@@ -279,6 +328,20 @@ export async function createRouteDispatch(
         throw new Error(
           `Stock insuficiente para ${product.Nombre}. Existencia actual ${product.Existencia}, requerida ${detail.cantidad}`,
         );
+      }
+      if (product.EsEnvaseRetornable) {
+        if (!detail.estadoEnvase || !Number.isInteger(detail.cantidad)) {
+          throw new Error(`Indica el estado y una cantidad entera para el envase ${product.Nombre}`);
+        }
+        const available = await getEnvaseBucketQuantity(tx, product.Id, {
+          ubicacion: 'PLANTA',
+          estado: detail.estadoEnvase,
+        });
+        if (available < detail.cantidad) {
+          throw new Error(`Stock verificado insuficiente de ${product.Nombre} (${detail.estadoEnvase}) en planta`);
+        }
+      } else if (detail.estadoEnvase) {
+        throw new Error(`${product.Nombre} no está configurado como envase retornable`);
       }
     }
 
@@ -298,6 +361,7 @@ export async function createRouteDispatch(
               NombreSnapshot: product.Nombre,
               UnidadMedidaSnapshot: product.UnidadMedida,
               Cantidad: detail.cantidad,
+              EstadoEnvase: product.EsEnvaseRetornable ? detail.estadoEnvase : null,
             };
           }),
         },
@@ -326,6 +390,18 @@ export async function createRouteDispatch(
         cantidad: detail.cantidad,
         nuevaExistencia: remaining,
       });
+      if (product.EsEnvaseRetornable) {
+        await transferEnvaseBucket(tx, {
+          idInventarioItem: product.Id,
+          idUsuario,
+          origen: { ubicacion: 'PLANTA', estado: detail.estadoEnvase! },
+          destino: { ubicacion: 'RUTA', estado: detail.estadoEnvase!, idRutaSesion },
+          cantidad: detail.cantidad,
+          nombre: `Despacho ruta #${idRutaSesion} - ${product.Nombre}`,
+          tipoDocumento: 'DES',
+          documento: dispatch.Id.toString(),
+        });
+      }
     }
 
     return dispatch;
@@ -358,7 +434,7 @@ export async function createRouteReturn(
     const productIds = input.detalle.map((detail) => detail.idInventarioItem);
     const products = await tx.inventarioItem.findMany({
       where: { Id: { in: productIds }, Anulado: false },
-      select: { Id: true },
+      select: { Id: true, EsEnvaseRetornable: true },
     });
     const productsById = new Map(products.map((product) => [product.Id, product]));
 
@@ -379,6 +455,27 @@ export async function createRouteReturn(
       if (!productsById.has(detail.idInventarioItem)) {
         throw new Error(`InventarioItem ${detail.idInventarioItem} no existe o está anulado`);
       }
+      const product = productsById.get(detail.idInventarioItem);
+      if (product?.EsEnvaseRetornable) {
+        if (
+          !Number.isInteger(detail.cantidadRecibida) ||
+          !Number.isInteger(detail.cantidadDanada) ||
+          !Number.isInteger(detail.cantidadEnvaseVacio) ||
+          !Number.isInteger(detail.cantidadEnvaseLleno) ||
+          detail.cantidadEnvaseVacio + detail.cantidadEnvaseLleno + detail.cantidadDanada !== detail.cantidadRecibida
+        ) {
+          throw new Error('Las cantidades vacías, llenas y dañadas deben coincidir con la devolución de envases');
+        }
+        if (detail.cantidadDanada > 0 && !detail.estadoEnvaseDanado) {
+          throw new Error('Indica si los envases dañados estaban vacíos o llenos antes de dañarse');
+        }
+      } else if (
+        detail.cantidadEnvaseVacio > 0 ||
+        detail.cantidadEnvaseLleno > 0 ||
+        detail.estadoEnvaseDanado
+      ) {
+        throw new Error('La clasificación vacío/lleno solo aplica a envases retornables');
+      }
     }
 
     const returnRecord = await tx.devolucionRuta.create({
@@ -391,6 +488,9 @@ export async function createRouteReturn(
             IdInventarioItem: detail.idInventarioItem,
             CantidadRecibida: detail.cantidadRecibida,
             CantidadDanada: detail.cantidadDanada,
+            CantidadEnvaseVacio: detail.cantidadEnvaseVacio,
+            CantidadEnvaseLleno: detail.cantidadEnvaseLleno,
+            EstadoEnvaseDanado: detail.estadoEnvaseDanado ?? null,
             Observaciones: detail.observaciones,
             UbicacionDanada: detail.cantidadDanada > 0 ? detail.ubicacionDanada?.trim() : null,
           })),
@@ -417,6 +517,9 @@ export async function transferVerifiedRouteReturnToPlant(
           IdInventarioItem: true,
           CantidadRecibida: true,
           CantidadDanada: true,
+          CantidadEnvaseVacio: true,
+          CantidadEnvaseLleno: true,
+          EstadoEnvaseDanado: true,
         },
       },
     },
@@ -425,49 +528,109 @@ export async function transferVerifiedRouteReturnToPlant(
     return;
   }
 
-  const sellableByItem = new Map<number, number>();
-  for (const detail of routeReturn.Detalles) {
-    const sellableQuantity = roundQuantity(detail.CantidadRecibida - detail.CantidadDanada);
-    if (sellableQuantity > 0) {
-      sellableByItem.set(
-        detail.IdInventarioItem,
-        roundQuantity((sellableByItem.get(detail.IdInventarioItem) ?? 0) + sellableQuantity),
-      );
-    }
-  }
-
-  if (sellableByItem.size === 0) {
+  if (routeReturn.Detalles.length === 0) {
     return;
   }
 
   const products = await tx.inventarioItem.findMany({
-    where: { Id: { in: [...sellableByItem.keys()] }, Anulado: false },
-    select: { Id: true, Nombre: true, Existencia: true },
+    where: { Id: { in: routeReturn.Detalles.map((detail) => detail.IdInventarioItem) }, Anulado: false },
+    select: { Id: true, Nombre: true, Existencia: true, EsEnvaseRetornable: true },
   });
   const productsById = new Map(products.map((product) => [product.Id, product]));
 
-  for (const [idInventarioItem, sellableQuantity] of sellableByItem) {
+  for (const line of routeReturn.Detalles) {
+    const idInventarioItem = line.IdInventarioItem;
     const product = productsById.get(idInventarioItem);
     if (!product) {
       throw new Error(`InventarioItem ${idInventarioItem} no existe o está anulado`);
     }
 
-    const newExistence = roundQuantity(product.Existencia + sellableQuantity);
-    await tx.inventarioItem.update({
-      where: { Id: idInventarioItem },
-      data: { Existencia: newExistence },
-    });
-    await registerInventoryMovement(tx, {
-      idInventarioItem,
-      idUsuario,
-      tipoDocumento: 'DEV',
-      documento: routeReturn.Id.toString(),
-      nombre: `Traslado de devolución ruta #${idRutaSesion} a planta - ${product.Nombre}`,
-      tipoMovimiento: true,
-      existenciaAnterior: product.Existencia,
-      cantidad: sellableQuantity,
-      nuevaExistencia: newExistence,
-    });
+    const sellableQuantity = roundQuantity(line.CantidadRecibida - line.CantidadDanada);
+    if (sellableQuantity > 0) {
+      const newExistence = roundQuantity(product.Existencia + sellableQuantity);
+      await tx.inventarioItem.update({
+        where: { Id: idInventarioItem },
+        data: { Existencia: newExistence },
+      });
+      await registerInventoryMovement(tx, {
+        idInventarioItem,
+        idUsuario,
+        tipoDocumento: 'DEV',
+        documento: routeReturn.Id.toString(),
+        nombre: `Traslado de devolución ruta #${idRutaSesion} a planta - ${product.Nombre}`,
+        tipoMovimiento: true,
+        existenciaAnterior: product.Existencia,
+        cantidad: sellableQuantity,
+        nuevaExistencia: newExistence,
+      });
+    }
+
+    if (product.EsEnvaseRetornable) {
+      if (line.CantidadEnvaseVacio + line.CantidadEnvaseLleno + line.CantidadDanada !== line.CantidadRecibida) {
+        throw new Error(`Falta clasificar la devolución física del envase ${product.Nombre}`);
+      }
+      if (line.CantidadEnvaseVacio > 0) {
+        await transferEnvaseBucket(tx, {
+          idInventarioItem,
+          idUsuario,
+          origen: { ubicacion: 'RUTA', estado: 'VACIO', idRutaSesion },
+          destino: { ubicacion: 'PLANTA', estado: 'VACIO' },
+          cantidad: line.CantidadEnvaseVacio,
+          nombre: `Devolución ruta #${idRutaSesion} a planta - ${product.Nombre}`,
+          tipoDocumento: 'DEV',
+          documento: routeReturn.Id.toString(),
+        });
+      }
+      if (line.CantidadEnvaseLleno > 0) {
+        await transferEnvaseBucket(tx, {
+          idInventarioItem,
+          idUsuario,
+          origen: { ubicacion: 'RUTA', estado: 'LLENO', idRutaSesion },
+          destino: { ubicacion: 'PLANTA', estado: 'LLENO' },
+          cantidad: line.CantidadEnvaseLleno,
+          nombre: `Devolución ruta #${idRutaSesion} a planta - ${product.Nombre}`,
+          tipoDocumento: 'DEV',
+          documento: routeReturn.Id.toString(),
+        });
+      }
+      if (line.CantidadDanada > 0) {
+        const alreadyDamaged = await getEnvaseBucketQuantity(tx, idInventarioItem, {
+          ubicacion: 'RUTA',
+          estado: 'DANADO',
+          idRutaSesion,
+        });
+        const damagedFromCustomerReturns = Math.min(alreadyDamaged, line.CantidadDanada);
+        if (damagedFromCustomerReturns > 0) {
+          await transferEnvaseBucket(tx, {
+            idInventarioItem,
+            idUsuario,
+            origen: { ubicacion: 'RUTA', estado: 'DANADO', idRutaSesion },
+            destino: { ubicacion: 'CUARENTENA', estado: 'DANADO' },
+            cantidad: damagedFromCustomerReturns,
+            nombre: `Envase dañado segregado al cierre ruta #${idRutaSesion} - ${product.Nombre}`,
+            tipoDocumento: 'DEV',
+            documento: routeReturn.Id.toString(),
+          });
+        }
+        const damagedFromRouteStock = line.CantidadDanada - damagedFromCustomerReturns;
+        if (damagedFromRouteStock > 0) {
+          const damagedState = line.EstadoEnvaseDanado;
+          if (!damagedState) {
+            throw new Error(`Falta estado de origen de los envases dañados de ${product.Nombre}`);
+          }
+          await transferEnvaseBucket(tx, {
+            idInventarioItem,
+            idUsuario,
+            origen: { ubicacion: 'RUTA', estado: damagedState as 'VACIO' | 'LLENO', idRutaSesion },
+            destino: { ubicacion: 'CUARENTENA', estado: 'DANADO' },
+            cantidad: damagedFromRouteStock,
+            nombre: `Envase dañado segregado al cierre ruta #${idRutaSesion} - ${product.Nombre}`,
+            tipoDocumento: 'DEV',
+            documento: routeReturn.Id.toString(),
+          });
+        }
+      }
+    }
   }
 }
 

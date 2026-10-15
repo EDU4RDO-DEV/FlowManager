@@ -13,10 +13,10 @@ function getThemeLabel(theme: string | undefined): string {
   return "Sistema";
 }
 
-function getThemeIcon(theme: string | undefined) {
-  if (theme === "dark") return MoonStar;
-  if (theme === "light") return Sun;
-  return MonitorCog;
+function ThemeIcon({ theme }: { theme: string | undefined }) {
+  if (theme === "dark") return <MoonStar className="size-4" />;
+  if (theme === "light") return <Sun className="size-4" />;
+  return <MonitorCog className="size-4" />;
 }
 
 export function ThemeToggle({ compact = false }: { compact?: boolean }) {
@@ -24,8 +24,6 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const current = theme ?? "system";
   const currentIndex = ORDER.indexOf(current as "light" | "dark" | "system");
   const next = ORDER[(currentIndex + 1) % ORDER.length];
-  const Icon = getThemeIcon(current);
-
   return (
     <Button
       type="button"
@@ -36,7 +34,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
       aria-label={`Cambiar tema. Actual: ${getThemeLabel(current)}. Siguiente: ${getThemeLabel(next)}.`}
       title={`Tema ${getThemeLabel(current)}${current === "system" ? ` (${resolvedTheme === "dark" ? "oscuro" : "claro"} por sistema)` : ""}`}
     >
-      <Icon className="size-4" />
+      <ThemeIcon theme={current} />
       {!compact ? <span>{getThemeLabel(current)}</span> : null}
     </Button>
   );

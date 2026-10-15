@@ -31,7 +31,7 @@ export function buildVentaWhere(params: VentaFilterParams): Prisma.VentaWhereInp
     ...(params.condicionPago ? { CondicionPago: params.condicionPago } : {}),
     ...(params.estadoPago ? { EstadoPago: params.estadoPago } : {}),
     ...(params.estadoEntrega ? { EstadoEntrega: params.estadoEntrega } : {}),
-    ...(params.tipoRegistro ? { TipoRegistro: params.tipoRegistro } : {}),
+    TipoRegistro: params.tipoRegistro ?? 'VENTA',
     ...(params.idRuta || params.idVendedor
       ? {
           RutaSesion: {

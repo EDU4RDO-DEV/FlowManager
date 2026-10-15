@@ -25,6 +25,11 @@ export type ProductFormValues = {
   idProveedor: string;
   costoPromedio: string;
   precioVenta: string;
+  esVendible: boolean;
+  esEnvaseRetornable: boolean;
+  capacidadEnvaseGalones: string;
+  idEnvasePresentacion: string;
+  unidadesEnvasePorUnidad: string;
   rutaImagen: string;
   idCategoriaComision: string;
 };
@@ -82,7 +87,6 @@ export function ProductFormCard({
   onCancel,
   onSubmit,
 }: ProductFormCardProps) {
-  const isFinishedProduct = form.categoria === "PRODUCTO_TERMINADO";
   const [providersOpen, setProvidersOpen] = useState(false);
 
   const selectedProvider = useMemo(
@@ -137,8 +141,8 @@ export function ProductFormCard({
                 onChange({
                   ...form,
                   categoria: event.target.value as ProductDto["categoria"],
-                  precioVenta:
-                    event.target.value === "PRODUCTO_TERMINADO" ? form.precioVenta : "",
+                  esVendible: event.target.value === "PRODUCTO_TERMINADO",
+                  esEnvaseRetornable: event.target.value === "ENVASE",
                 })
               }
               className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
@@ -162,6 +166,75 @@ export function ProductFormCard({
               className="bg-background"
             />
           </div>
+
+          <div className="space-y-2 rounded-lg border bg-background/70 p-3 md:col-span-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.esVendible}
+                onChange={(event) => onChange({ ...form, esVendible: event.target.checked })}
+              />
+              Artículo vendible
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.esEnvaseRetornable}
+                onChange={(event) => onChange({ ...form, esEnvaseRetornable: event.target.checked })}
+              />
+              Envase físico retornable
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Las capacidades son independientes de la categoría. Un envase vendible excepcionalmente no genera un préstamo.
+            </p>
+          </div>
+
+          {form.esEnvaseRetornable ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="product-container-capacity">Capacidad (galones)</Label>
+              <Input
+                id="product-container-capacity"
+                type="number"
+                min={0.001}
+                step="0.001"
+                value={form.capacidadEnvaseGalones}
+                onChange={(event) => onChange({ ...form, capacidadEnvaseGalones: event.target.value })}
+                placeholder="5"
+                className="bg-background"
+              />
+            </div>
+          ) : null}
+
+          {form.esVendible ? (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="product-container-item">ID del envase de presentación</Label>
+                <Input
+                  id="product-container-item"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={form.idEnvasePresentacion}
+                  onChange={(event) => onChange({ ...form, idEnvasePresentacion: event.target.value })}
+                  placeholder="ID de un artículo retornable"
+                  className="bg-background"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="product-container-units">Envases por unidad vendida</Label>
+                <Input
+                  id="product-container-units"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={form.unidadesEnvasePorUnidad}
+                  onChange={(event) => onChange({ ...form, unidadesEnvasePorUnidad: event.target.value })}
+                  placeholder="1"
+                  className="bg-background"
+                />
+              </div>
+            </>
+          ) : null}
 
           <div className="space-y-1.5">
             <Label htmlFor="product-provider">Proveedor</Label>
@@ -284,7 +357,7 @@ export function ProductFormCard({
             />
           </div>
 
-          {isFinishedProduct ? (
+          {form.esVendible ? (
             <div className="space-y-1.5">
               <Label htmlFor="product-price">Precio venta</Label>
               <Input
@@ -302,7 +375,7 @@ export function ProductFormCard({
             <div className="space-y-1.5">
               <Label>Precio venta</Label>
               <div className="rounded-lg border border-dashed border-border bg-background px-3 py-2 text-sm text-muted-foreground">
-                Solo aplica para PRODUCTO_TERMINADO.
+                Habilita precio para cualquier artículo vendible.
               </div>
             </div>
           )}

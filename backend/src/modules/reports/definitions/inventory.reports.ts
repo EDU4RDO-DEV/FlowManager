@@ -170,6 +170,8 @@ const movimientosInventario: ReportDefinition<MovimientosInventarioParams> = {
     const movimientos = await prisma.bitacoraInventario.findMany({
       where: {
         Anulado: false,
+        UbicacionEnvase: null,
+        EstadoEnvase: null,
         ...(fechaFilter ? { FechaRegistro: fechaFilter } : {}),
         ...(params.idInventarioItem ? { IdInventarioItem: params.idInventarioItem } : {}),
         ...(params.tipoMovimiento ? { TipoMovimiento: params.tipoMovimiento === 'ENTRADA' } : {}),

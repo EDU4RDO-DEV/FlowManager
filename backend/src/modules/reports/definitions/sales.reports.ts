@@ -132,13 +132,16 @@ const ventasPorPeriodo: ReportDefinition<VentasPorPeriodoParams> = {
     const ventas = await fetchVentas(buildVentaWhere(params));
     const granularity: PeriodGranularity = params.agrupacion;
 
-    type Row = Record<string, unknown> & { __fecha: Date };
+    type Row = Record<string, unknown> & { __fecha: Date | null };
     const rows: Row[] = [];
 
     if (params.vista === 'detalle') {
       for (const venta of ventas) {
-        const fecha = venta.FechaRegistro ?? new Date();
-        for (const detalle of venta.DetalleVenta) {
+        const fecha = venta.FechaRegistro;
+        const detalles = venta.DetalleVenta.filter(
+          (detalle) => !params.idProducto || detalle.IdInventarioItem === params.idProducto,
+        );
+        for (const detalle of detalles) {
           rows.push({
             __fecha: fecha,
             fecha,
@@ -148,13 +151,16 @@ const ventasPorPeriodo: ReportDefinition<VentasPorPeriodoParams> = {
             cantidad: detalle.Cantidad,
             precioUnitario: Number(detalle.PrecioUnitario),
             bonificacion: detalle.EsBonificacion ? 'Sí' : 'No',
-            subtotal: round2(detalle.Cantidad * Number(detalle.PrecioUnitario)),
+            subtotal: detalle.EsBonificacion ? 0 : round2(detalle.Cantidad * Number(detalle.PrecioUnitario)),
           });
         }
       }
     } else {
       for (const venta of ventas) {
-        const fecha = venta.FechaRegistro ?? new Date();
+        const fecha = venta.FechaRegistro;
+        const detalles = venta.DetalleVenta.filter(
+          (detalle) => !params.idProducto || detalle.IdInventarioItem === params.idProducto,
+        );
         rows.push({
           __fecha: fecha,
           fecha,
@@ -164,14 +170,22 @@ const ventasPorPeriodo: ReportDefinition<VentasPorPeriodoParams> = {
           ruta: getRutaNombre(venta),
           condicionPago: venta.CondicionPago,
           estadoEntrega: venta.EstadoEntrega,
-          subtotal: round2(ventaSubtotal(venta)),
+          subtotal: round2(
+            detalles.reduce(
+              (sum, detalle) =>
+                sum + (!detalle.EsBonificacion ? detalle.Cantidad * Number(detalle.PrecioUnitario) : 0),
+              0,
+            ),
+          ),
         });
       }
     }
 
     const groupsMap = new Map<string, { label: string; rows: Row[] }>();
     for (const row of rows) {
-      const { key, label } = periodKey(row.__fecha, granularity);
+      const { key, label } = row.__fecha
+        ? periodKey(row.__fecha, granularity)
+        : { key: 'sin-fecha', label: 'Sin fecha' };
       const group = groupsMap.get(key) ?? { label, rows: [] };
       group.rows.push(row);
       groupsMap.set(key, group);
@@ -581,7 +595,9 @@ const bonificacionesOtorgadas: ReportDefinition<BonificacionesParams> = {
 
     const byProducto = new Map<string, { nombre: string; cantidad: number; valor: number }>();
     for (const venta of ventas) {
-      for (const detalle of venta.DetalleVenta) {
+      for (const detalle of venta.DetalleVenta.filter(
+        (item) => !params.idProducto || item.IdInventarioItem === params.idProducto,
+      )) {
         if (!detalle.EsBonificacion) continue;
         const key = String(detalle.IdInventarioItem);
         const nombre = detalle.InventarioItem?.Nombre ?? detalle.Nombre;
@@ -743,6 +759,7 @@ const ventasAnuladas: ReportDefinition<VentasAnuladasParams> = {
     const ventas = await prisma.venta.findMany({
       where: {
         Anulado: true,
+        TipoRegistro: 'VENTA',
         ...(params.fechaInicio || params.fechaFin
           ? {
               FechaAnulacion: {

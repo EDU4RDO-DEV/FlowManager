@@ -24,6 +24,11 @@ const EMPTY_FORM: ProductFormValues = {
   idProveedor: "",
   costoPromedio: "",
   precioVenta: "",
+  esVendible: true,
+  esEnvaseRetornable: false,
+  capacidadEnvaseGalones: "",
+  idEnvasePresentacion: "",
+  unidadesEnvasePorUnidad: "",
   rutaImagen: "",
   idCategoriaComision: "",
 };
@@ -64,10 +69,18 @@ export default function EditProductPage() {
           unidadMedida: productData.unidadMedida ?? "",
           idProveedor: String(productData.idProveedor),
           costoPromedio: String(productData.costoPromedio),
-          precioVenta:
-            productData.categoria === "PRODUCTO_TERMINADO"
-              ? String(productData.precioVenta)
-              : "",
+          precioVenta: productData.esVendible ? String(productData.precioVenta) : "",
+          esVendible: productData.esVendible,
+          esEnvaseRetornable: productData.esEnvaseRetornable,
+          capacidadEnvaseGalones: productData.capacidadEnvaseGalones == null
+            ? ""
+            : String(productData.capacidadEnvaseGalones),
+          idEnvasePresentacion: productData.idEnvasePresentacion == null
+            ? ""
+            : String(productData.idEnvasePresentacion),
+          unidadesEnvasePorUnidad: productData.unidadesEnvasePorUnidad == null
+            ? ""
+            : String(productData.unidadesEnvasePorUnidad),
           rutaImagen: productData.rutaImagen ?? "",
           idCategoriaComision: productData.idCategoriaComision
             ? String(productData.idCategoriaComision)
@@ -108,7 +121,6 @@ export default function EditProductPage() {
     }
 
     const costoPromedio = Number(form.costoPromedio);
-    const isFinishedProduct = form.categoria === "PRODUCTO_TERMINADO";
     const precioVenta = Number(form.precioVenta);
 
     if (!Number.isFinite(costoPromedio) || costoPromedio <= 0) {
@@ -116,7 +128,7 @@ export default function EditProductPage() {
       return;
     }
 
-    if (isFinishedProduct) {
+    if (form.esVendible) {
       if (!Number.isFinite(precioVenta) || precioVenta <= 0) {
         toast.error("El precio de venta debe ser mayor a 0 para producto terminado.");
         return;
@@ -135,9 +147,20 @@ export default function EditProductPage() {
         idProveedor,
         nombre: form.nombre.trim(),
         categoria: form.categoria,
+        esVendible: form.esVendible,
+        esEnvaseRetornable: form.esEnvaseRetornable,
         unidadMedida: form.unidadMedida.trim() || null,
         costoPromedio,
-        precioVenta: isFinishedProduct ? precioVenta : undefined,
+        precioVenta: form.esVendible ? precioVenta : undefined,
+        capacidadEnvaseGalones: form.capacidadEnvaseGalones
+          ? Number(form.capacidadEnvaseGalones)
+          : null,
+        idEnvasePresentacion: form.idEnvasePresentacion
+          ? Number(form.idEnvasePresentacion)
+          : null,
+        unidadesEnvasePorUnidad: form.unidadesEnvasePorUnidad
+          ? Number(form.unidadesEnvasePorUnidad)
+          : null,
         rutaImagen: form.rutaImagen.trim() || undefined,
         idCategoriaComision: form.idCategoriaComision ? Number(form.idCategoriaComision) : null,
       });

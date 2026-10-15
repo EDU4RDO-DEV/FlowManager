@@ -169,7 +169,11 @@ export async function createRouteDispatch(
   idRutaSesion: number,
   payload: {
     observaciones?: string;
-    detalle: Array<{ idInventarioItem: number; cantidad: number }>;
+    detalle: Array<{
+      idInventarioItem: number;
+      cantidad: number;
+      estadoEnvase?: "VACIO" | "LLENO";
+    }>;
   },
 ): Promise<void> {
   await api.post(`/api/logistics/rutas/sesiones/${idRutaSesion}/despacho`, payload);
@@ -183,6 +187,9 @@ export async function createRouteReturn(
       idInventarioItem: number;
       cantidadRecibida: number;
       cantidadDanada: number;
+      cantidadEnvaseVacio?: number;
+      cantidadEnvaseLleno?: number;
+      estadoEnvaseDanado?: "VACIO" | "LLENO";
       observaciones?: string;
       ubicacionDanada?: string;
     }>;

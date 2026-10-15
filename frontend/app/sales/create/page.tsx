@@ -1,6 +1,6 @@
 "use client";
 
-import { type ChangeEvent, useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, BadgeCheck, Loader2, Plus, Search, Trash2, UserPlus } from "lucide-react";
@@ -53,6 +53,7 @@ import type { ClientDto } from "@/types/clients";
 import type { ProductDto } from "@/types/products";
 import type {
   BonusPreviewItem,
+  CreateSalePayload,
   CreateSaleDetailPayload,
   RouteSessionOptionDto,
   SalePaymentPayload,
@@ -66,6 +67,9 @@ type DetailRow = {
   nombre: string;
   cantidad: number;
   precioUnitario: number;
+  envasePropio: number;
+  envasePrestado: number;
+  estadoEnvase: "VACIO" | "LLENO" | "";
 };
 
 function toMoney(value: number): string {
@@ -84,6 +88,7 @@ function normalizeNit(value: string): string {
 export default function CreateSalePage() {
   const router = useRouter();
   const { user } = useAuth();
+  const saleRequest = useRef<{ fingerprint: string; key: string } | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
@@ -137,7 +142,7 @@ export default function CreateSalePage() {
           listClients(),
           listTalonarios(),
           listAvailableRouteSessions(),
-          listProducts({ anulado: false, categoria: "PRODUCTO_TERMINADO", page: 1, limit: 100 }),
+          listProducts({ anulado: false, page: 1, limit: 100 }),
         ]);
 
         const pages = firstProductsPage.pagination.totalPages;
@@ -146,7 +151,7 @@ export default function CreateSalePage() {
         if (pages > 1) {
           const rest = await Promise.all(
             Array.from({ length: pages - 1 }, (_, idx) =>
-              listProducts({ anulado: false, categoria: "PRODUCTO_TERMINADO", page: idx + 2, limit: 100 }),
+              listProducts({ anulado: false, page: idx + 2, limit: 100 }),
             ),
           );
           allProducts = [...allProducts, ...rest.flatMap((page) => page.items)];
@@ -155,7 +160,7 @@ export default function CreateSalePage() {
         setClients(clientsData.filter((client) => !client.anulado));
         setTalonarios(talonariosData.filter((talonario) => !talonario.anulado));
         setRouteSessions(routeSessionsData);
-        setProducts(allProducts.filter((product) => !product.anulado));
+        setProducts(allProducts.filter((product) => !product.anulado && product.esVendible));
       } catch (error) {
         toast.error(getApiErrorMessage(error, "No se pudo cargar catálogo comercial"));
       } finally {
@@ -223,6 +228,9 @@ export default function CreateSalePage() {
         nombre: found.nombre,
         cantidad: 1,
         precioUnitario,
+        envasePropio: 0,
+        envasePrestado: 0,
+        estadoEnvase: "",
       },
     ]);
 
@@ -267,41 +275,61 @@ export default function CreateSalePage() {
 
   useEffect(() => {
     const sellRows = detalle.filter((row) => row.cantidad > 0);
+    let cancelled = false;
     if (sellRows.length === 0) {
-      setBonusPreview([]);
-      return;
+      const timeoutId = setTimeout(() => {
+        if (!cancelled) setBonusPreview([]);
+      }, 0);
+      return () => {
+        cancelled = true;
+        clearTimeout(timeoutId);
+      };
     }
 
     const timeoutId = setTimeout(() => {
       void previewSaleBonuses(
         sellRows.map((row) => ({ idInventarioItem: row.idInventarioItem, cantidad: row.cantidad })),
       )
-        .then(setBonusPreview)
-        .catch(() => setBonusPreview([]));
+        .then((items) => {
+          if (!cancelled) setBonusPreview(items);
+        })
+        .catch(() => {
+          if (!cancelled) setBonusPreview([]);
+        });
     }, 300);
 
-    return () => clearTimeout(timeoutId);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [detalle]);
 
   useEffect(() => {
     if (!requiereFactura) {
-      setNitConsultaError("");
-      setClientMatchState("idle");
-      return;
+      const resetTimeout = setTimeout(() => {
+        setNitConsultaError("");
+        setClientMatchState("idle");
+        setIsConsultingNit(false);
+      }, 0);
+      return () => clearTimeout(resetTimeout);
     }
 
     const nit = nitFacturado.trim();
     if (!nit || nit.toUpperCase() === "CF" || nit.toUpperCase() === "C/F") {
-      setNitConsultaError("");
-      setClientMatchState("idle");
-      return;
+      const resetTimeout = setTimeout(() => {
+        setNitConsultaError("");
+        setClientMatchState("idle");
+        setIsConsultingNit(false);
+      }, 0);
+      return () => clearTimeout(resetTimeout);
     }
 
     let cancelled = false;
-    setIsConsultingNit(true);
-    setNitConsultaError("");
-
     const timeoutId = setTimeout(() => {
+      if (cancelled) return;
+      setIsConsultingNit(true);
+      setNitConsultaError("");
+
       const normalized = normalizeNit(nit);
       const localMatch = clients.find((client) => normalizeNit(client.entidad.nit ?? "") === normalized);
 
@@ -379,8 +407,8 @@ export default function CreateSalePage() {
 
   function updateRow(
     idInventarioItem: number,
-    field: "cantidad" | "precioUnitario",
-    value: number,
+    field: "cantidad" | "precioUnitario" | "envasePropio" | "envasePrestado" | "estadoEnvase",
+    value: number | "VACIO" | "LLENO" | "",
   ) {
     setDetalle((prev) =>
       prev.map((row) =>
@@ -424,6 +452,21 @@ export default function CreateSalePage() {
     const invalidRow = detalle.find((row) => row.cantidad <= 0 || row.precioUnitario <= 0);
     if (invalidRow) {
       return "Cantidad y precio deben ser mayores a 0";
+    }
+    for (const row of detalle) {
+      const product = products.find((item) => item.id === row.idInventarioItem);
+      if (product?.esEnvaseRetornable && !row.estadoEnvase) {
+        return `Indica si el envase que vendes (${row.nombre}) está vacío o lleno`;
+      }
+      if (!product?.idEnvasePresentacion) continue;
+      const factor = product.unidadesEnvasePorUnidad ?? 0;
+      const expected = row.cantidad * factor;
+      if (!Number.isInteger(expected) || row.envasePropio + row.envasePrestado !== expected) {
+        return `Indica cuántos envases propios y prestados corresponden a ${row.nombre} (total: ${expected})`;
+      }
+      if (tipoRegistro === "PROFORMA" && row.envasePrestado > 0) {
+        return "Las proformas no pueden prestar envases antes de confirmar la entrega";
+      }
     }
 
     if (condicionPago === "CONTADO" && pagoMonto <= 0) {
@@ -471,11 +514,35 @@ export default function CreateSalePage() {
       return;
     }
 
-    const detailPayload: CreateSaleDetailPayload[] = detalle.map((row) => ({
-      idInventarioItem: row.idInventarioItem,
-      cantidad: Number(row.cantidad),
-      precioUnitario: Number(row.precioUnitario.toFixed(2)),
-    }));
+    const detailPayload: CreateSaleDetailPayload[] = detalle.map((row) => {
+      const product = products.find((item) => item.id === row.idInventarioItem);
+      return {
+        idInventarioItem: row.idInventarioItem,
+        cantidad: Number(row.cantidad),
+        precioUnitario: Number(row.precioUnitario.toFixed(2)),
+        ...(row.estadoEnvase ? { estadoEnvase: row.estadoEnvase } : {}),
+        ...(product?.idEnvasePresentacion
+          ? {
+              envases: [
+                ...(row.envasePropio > 0
+                  ? [{
+                      idInventarioItemEnvase: product.idEnvasePresentacion,
+                      modo: "CLIENTE_PROPIO" as const,
+                      cantidad: row.envasePropio,
+                    }]
+                  : []),
+                ...(row.envasePrestado > 0
+                  ? [{
+                      idInventarioItemEnvase: product.idEnvasePresentacion,
+                      modo: "PRESTAMO_EMPRESA" as const,
+                      cantidad: row.envasePrestado,
+                    }]
+                  : []),
+              ],
+            }
+          : {}),
+      };
+    });
 
     const paymentPayload: SalePaymentPayload | undefined =
       condicionPago === "CONTADO"
@@ -491,7 +558,7 @@ export default function CreateSalePage() {
 
     setIsSubmitting(true);
     try {
-      const result = await createSale({
+      const salePayload: CreateSalePayload = {
         idUsuario: user.id,
         idCliente,
         idRutaSesion: idRutaSesion ?? undefined,
@@ -509,7 +576,13 @@ export default function CreateSalePage() {
         lugarEntrega: lugarEntrega.trim() || undefined,
         detalle: detailPayload,
         pagoInicial: paymentPayload,
-      });
+      };
+      const fingerprint = JSON.stringify(salePayload);
+      if (!saleRequest.current || saleRequest.current.fingerprint !== fingerprint) {
+        saleRequest.current = { fingerprint, key: crypto.randomUUID() };
+      }
+      const result = await createSale(salePayload, saleRequest.current.key);
+      saleRequest.current = null;
 
       toast.success(`${tipoRegistro === "PROFORMA" ? "Proforma" : "Venta"} #${result.numeroVenta} registrada correctamente`);
       router.push(`/sales/${result.id}`);
@@ -872,12 +945,34 @@ export default function CreateSalePage() {
               ) : null}
 
               <div className="space-y-2">
-                {detalle.map((row) => (
+                {detalle.map((row) => {
+                  const product = products.find((item) => item.id === row.idInventarioItem);
+                  const envaseQuantity = product?.unidadesEnvasePorUnidad
+                    ? row.cantidad * product.unidadesEnvasePorUnidad
+                    : 0;
+                  return (
                   <div key={row.idInventarioItem} className="grid grid-cols-1 gap-2 rounded-lg border p-3 md:grid-cols-[2fr_120px_140px_120px_auto] md:items-end">
                     <div>
                       <p className="text-xs text-muted-foreground">Producto</p>
                       <p className="font-medium">{row.nombre}</p>
                     </div>
+                    {product?.esEnvaseRetornable ? (
+                      <div className="space-y-1">
+                        <Label>Estado del envase vendido</Label>
+                        <Select
+                          value={row.estadoEnvase}
+                          onValueChange={(value) =>
+                            updateRow(row.idInventarioItem, "estadoEnvase", value as "VACIO" | "LLENO")
+                          }
+                        >
+                          <SelectTrigger><SelectValue placeholder="Selecciona estado" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="VACIO">Vacío</SelectItem>
+                            <SelectItem value="LLENO">Lleno</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : null}
                     <div className="space-y-1">
                       <Label>Cantidad</Label>
                       <Input
@@ -914,8 +1009,40 @@ export default function CreateSalePage() {
                     >
                       <Trash2 className="size-4 text-rose-600" />
                     </Button>
+                    {product?.idEnvasePresentacion ? (
+                      <div className="grid gap-3 rounded-md bg-muted/40 p-3 md:col-span-5 md:grid-cols-[1fr_1fr_auto] md:items-end">
+                        <div className="space-y-1">
+                          <Label>Envases propios del cliente</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={row.envasePropio}
+                            onChange={(event) =>
+                              updateRow(row.idInventarioItem, "envasePropio", Number(event.target.value || 0))
+                            }
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Envases prestados por la empresa</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={row.envasePrestado}
+                            onChange={(event) =>
+                              updateRow(row.idInventarioItem, "envasePrestado", Number(event.target.value || 0))
+                            }
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Envases requeridos: {envaseQuantity}
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {bonusPreview.length > 0 ? (

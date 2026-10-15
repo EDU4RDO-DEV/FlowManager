@@ -60,6 +60,12 @@ function toInventoryLogDto(movement: {
   Anulado: boolean;
   IdUsuarioAnulador: number | null;
   FechaAnulacion: Date | null;
+  ClaveMovimiento: string | null;
+  UbicacionEnvase: string | null;
+  EstadoEnvase: string | null;
+  IdRutaSesion: number | null;
+  IdMovimientoEnvase: number | null;
+  IdDetalleVenta: number | null;
   InventarioItem: {
     Id: number;
     Nombre: string;
@@ -87,6 +93,12 @@ function toInventoryLogDto(movement: {
     anulado: movement.Anulado,
     idUsuarioAnulador: movement.IdUsuarioAnulador,
     fechaAnulacion: movement.FechaAnulacion,
+    claveMovimiento: movement.ClaveMovimiento,
+    ubicacionEnvase: movement.UbicacionEnvase,
+    estadoEnvase: movement.EstadoEnvase,
+    idRutaSesion: movement.IdRutaSesion,
+    idMovimientoEnvase: movement.IdMovimientoEnvase,
+    idDetalleVenta: movement.IdDetalleVenta,
     inventarioItem: {
       id: movement.InventarioItem.Id,
       nombre: movement.InventarioItem.Nombre,

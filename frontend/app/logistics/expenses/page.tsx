@@ -1,14 +1,11 @@
 "use client";
 
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
-import { FileText, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { LogisticsEmptyState } from "@/app/logistics/_components/logistics-empty-state";
-import {
-  LogisticsCardsSkeleton,
-  LogisticsTableSkeleton,
-} from "@/app/logistics/_components/logistics-skeletons";
+import { LogisticsCardsSkeleton } from "@/app/logistics/_components/logistics-skeletons";
 import { useAuth } from "@/components/auth-provider";
 import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
@@ -87,32 +84,44 @@ export default function LogisticsExpensesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-
-  async function loadData() {
-    setIsLoading(true);
-    try {
-      const [active, trash, routeSessions, providerList] = await Promise.all([
-        listGastosVehiculo({ anulado: false }),
-        listGastosVehiculo({ anulado: true }),
-        listRutaSesiones({ anulado: false }),
-        listProviders(),
-      ]);
-
-      setActiveItems(active);
-      setTrashItems(trash);
-      setSessions(routeSessions);
-      setProviders(providerList);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "No se pudo cargar gastos de vehículo"));
-    } finally {
-      setIsLoading(false);
-      setHasLoadedOnce(true);
-    }
-  }
+  const [reloadVersion, setReloadVersion] = useState(0);
 
   useEffect(() => {
-    void loadData();
-  }, []);
+    let isCurrent = true;
+    void Promise.all([
+      listGastosVehiculo({ anulado: false }),
+      listGastosVehiculo({ anulado: true }),
+      listRutaSesiones({ anulado: false }),
+      listProviders(),
+    ])
+      .then(([active, trash, routeSessions, providerList]) => {
+        if (!isCurrent) return;
+        setActiveItems(active);
+        setTrashItems(trash);
+        setSessions(routeSessions);
+        setProviders(providerList);
+      })
+      .catch((error: unknown) => {
+        if (isCurrent) {
+          toast.error(getApiErrorMessage(error, "No se pudo cargar gastos de vehículo"));
+        }
+      })
+      .finally(() => {
+        if (isCurrent) {
+          setIsLoading(false);
+          setHasLoadedOnce(true);
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [reloadVersion]);
+
+  function reloadData() {
+    setIsLoading(true);
+    setReloadVersion((version) => version + 1);
+  }
 
   const metrics = useMemo(() => {
     const totalActivo = activeItems.reduce((acc, item) => acc + item.monto, 0);
@@ -269,7 +278,7 @@ export default function LogisticsExpensesPage() {
           )}
 
           <div className="flex justify-end">
-            <Button variant="outline" onClick={loadData} disabled={isLoading}>
+            <Button variant="outline" onClick={reloadData} disabled={isLoading}>
               {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
               Recargar
             </Button>

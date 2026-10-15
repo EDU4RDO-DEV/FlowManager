@@ -25,6 +25,11 @@ vi.mock('../services/notification.service', () => ({
   send: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
+vi.mock('../services/fel.service', () => ({
+  emitFelInvoice: vi.fn().mockRejectedValue(new Error('FEL: failure simulated for rollback test')),
+  anulateFelInvoice: vi.fn().mockResolvedValue({ rutaPdfFel: null }),
+}));
+
 const integrationEnabled = process.env.ROUTE_SQLSERVER_INTEGRATION === '1';
 const integrationDescribe = integrationEnabled ? describe : describe.skip;
 const accessSecret = 'flowmanager-route-sqlserver-integration-secret';
@@ -100,6 +105,7 @@ integrationDescribe('route module SQL Server integration', () => {
         IdProveedor: providerId,
         Nombre: `Ruta integration product ${unique}-${testInventoryItemIds.length}`,
         Categoria: 'PRODUCTO_TERMINADO',
+        EsVendible: true,
         UnidadMedida: 'unidad',
         Existencia: existence,
         CostoPromedio: 1,
@@ -180,28 +186,46 @@ integrationDescribe('route module SQL Server integration', () => {
 
   beforeAll(async () => {
     const database = await prisma.$queryRaw<Array<{ databaseName: string }>>`SELECT DB_NAME() AS databaseName`;
-    if (database[0]?.databaseName !== 'FlowManager_Test') {
-      throw new Error('Las pruebas de integración requieren exclusivamente FlowManager_Test');
+    const databaseName = database[0]?.databaseName;
+    const allowFlowManager =
+      databaseName === 'FlowManager' && process.env.FLOWMANAGER_SQLSERVER_INTEGRATION === '1';
+    if (databaseName !== 'FlowManager_Test' && !allowFlowManager) {
+      throw new Error('Las pruebas de integración requieren FlowManager_Test o el permiso explícito para FlowManager');
     }
     process.env.JWT_SECRET = accessSecret;
 
-    const owner = await prisma.usuario.findFirst({
-      where: { Correo: 'sqlserver-integration@flowmanager.test' },
-      select: { Id: true, IdRol: true },
-    });
+    let owner: { Id: number; IdRol: number } | null = null;
+    if (databaseName === 'FlowManager_Test') {
+      owner = await prisma.usuario.findFirst({
+        where: { Correo: 'sqlserver-integration@flowmanager.test' },
+        select: { Id: true, IdRol: true },
+      });
+    } else {
+      const adminRole = await prisma.rol.findFirst({
+        where: { Nombre: 'Administrador', Anulado: false },
+        select: { Id: true },
+      });
+      owner = adminRole
+        ? await prisma.usuario.findFirst({
+            where: { IdRol: adminRole.Id, Anulado: false },
+            select: { Id: true, IdRol: true },
+          })
+        : null;
+    }
     if (!owner?.IdRol) throw new Error('Falta el usuario administrador del seed de integración');
     ownerId = owner.Id;
     adminRoleId = owner.IdRol;
 
-    const [auxiliaryRole, route] = await Promise.all([
-      prisma.rol.findFirst({ where: { Nombre: 'Auxiliar de Planta', Anulado: false }, select: { Id: true } }),
-      prisma.ruta.create({
-        data: { IdUsuario: ownerId, Nombre: `SQL Server route ${unique}` },
-        select: { Id: true },
-      }),
-    ]);
+    const auxiliaryRole = await prisma.rol.findFirst({
+      where: { Nombre: 'Auxiliar de Planta', Anulado: false },
+      select: { Id: true },
+    });
     if (!auxiliaryRole) throw new Error('Falta el rol Auxiliar de Planta del seed');
     noLogisticsRoleId = auxiliaryRole.Id;
+    const route = await prisma.ruta.create({
+      data: { IdUsuario: ownerId, Nombre: `SQL Server route ${unique}` },
+      select: { Id: true },
+    });
     routeId = route.Id;
 
     driverId = await makeUser('Integration driver', adminRoleId);
@@ -322,6 +346,7 @@ integrationDescribe('route module SQL Server integration', () => {
       .post('/api/logistics/rutas/sesiones')
       .set('Authorization', `Bearer ${adminCredential.token}`)
       .send(body);
+    if (opened.body?.data?.id) testRouteSessionIds.push(opened.body.data.id);
     expect(opened.status).toBe(201);
     expect(opened.body.data).toMatchObject({
       idRuta: routeId,
@@ -330,7 +355,6 @@ integrationDescribe('route module SQL Server integration', () => {
       idUsuarioVendedor: sellerId,
       estado: 'EN_CURSO',
     });
-    testRouteSessionIds.push(opened.body.data.id);
   });
 
   it('serializes competing dispatches, rejects insufficient plant stock, and records one plant movement', async () => {
@@ -537,7 +561,7 @@ integrationDescribe('route module SQL Server integration', () => {
       expirySession,
       itemId,
       1,
-      new Date(Date.now() + 150),
+      new Date(Date.now() + 1_500),
     );
     const stopExpiryWorker = startProformaReservationExpiryWorker(25);
     try {

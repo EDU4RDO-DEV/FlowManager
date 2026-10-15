@@ -55,7 +55,7 @@ describe('inventory movement report', () => {
 
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { Anulado: false },
+        where: { Anulado: false, UbicacionEnvase: null, EstadoEnvase: null },
         orderBy: [{ FechaRegistro: 'desc' }, { Id: 'desc' }],
         take: 5000,
       }),

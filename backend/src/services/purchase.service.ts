@@ -3,7 +3,11 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
 import { runSerializableTransaction } from '../utils/serializable-transaction';
-import { registerInventoryMovement } from './inventory-movement.service';
+import {
+  getEnvaseBucketQuantity,
+  registerEnvaseBucketChange,
+  registerInventoryMovement,
+} from './inventory-movement.service';
 
 type ListPurchasesInput = {
   page?: number;
@@ -442,11 +446,15 @@ export async function createPurchase(input: CreatePurchaseInput) {
             Nombre: true,
             Existencia: true,
             CostoPromedio: true,
+            EsEnvaseRetornable: true,
           },
         });
 
         if (!item) {
           throw new Error(`InventarioItem ${detail.idInventarioItem} no existe o está anulado`);
+        }
+        if (item.EsEnvaseRetornable && !Number.isInteger(detail.cantidad)) {
+          throw new Error(`La cantidad de envases en compra debe ser entera (${item.Nombre})`);
         }
 
         await tx.detalleCompra.create({
@@ -487,6 +495,18 @@ export async function createPurchase(input: CreatePurchaseInput) {
           cantidad: detail.cantidad,
           nuevaExistencia,
         });
+        if (item.EsEnvaseRetornable) {
+          await registerEnvaseBucketChange(tx, {
+            idInventarioItem: item.Id,
+            idUsuario: input.idUsuario,
+            bucket: { ubicacion: 'PLANTA', estado: 'PENDIENTE_CONTEO' },
+            cantidad: detail.cantidad,
+            entrada: true,
+            nombre: `Recepción de envase pendiente de clasificación - ${item.Nombre}`,
+            tipoDocumento: 'COM',
+            documento: formatDocumentoId(compra.Id),
+          });
+        }
       }
     }
 
@@ -582,11 +602,31 @@ export async function anulatePurchase(id: number, idUsuarioAnulador?: number) {
             Id: true,
             Nombre: true,
             Existencia: true,
+            EsEnvaseRetornable: true,
           },
         });
 
         if (!item) {
           throw new Error(`InventarioItem ${detail.IdInventarioItem} no existe o está anulado`);
+        }
+        if (item.EsEnvaseRetornable) {
+          const pending = await getEnvaseBucketQuantity(tx, item.Id, {
+            ubicacion: 'PLANTA',
+            estado: 'PENDIENTE_CONTEO',
+          });
+          if (!Number.isInteger(detail.Cantidad) || pending < detail.Cantidad) {
+            throw new Error(`No se puede anular compra: clasifica o reconcilia primero el envase ${item.Nombre}`);
+          }
+          await registerEnvaseBucketChange(tx, {
+            idInventarioItem: item.Id,
+            idUsuario: idUsuarioAnulador ?? purchase.IdUsuario,
+            bucket: { ubicacion: 'PLANTA', estado: 'PENDIENTE_CONTEO' },
+            cantidad: detail.Cantidad,
+            entrada: false,
+            nombre: `Anulación compra pendiente de conteo - ${item.Nombre}`,
+            tipoDocumento: 'COMAN',
+            documento: formatDocumentoId(purchase.Id),
+          });
         }
 
         if (item.Existencia < detail.Cantidad) {
@@ -696,6 +736,7 @@ export async function restorePurchase(id: number, idUsuarioModificador?: number)
             Id: true,
             Nombre: true,
             Existencia: true,
+            EsEnvaseRetornable: true,
           },
         });
 
@@ -724,6 +765,21 @@ export async function restorePurchase(id: number, idUsuarioModificador?: number)
           cantidad: detail.Cantidad,
           nuevaExistencia,
         });
+        if (item.EsEnvaseRetornable) {
+          if (!Number.isInteger(detail.Cantidad)) {
+            throw new Error(`La cantidad del envase en compra debe ser entera (${item.Nombre})`);
+          }
+          await registerEnvaseBucketChange(tx, {
+            idInventarioItem: item.Id,
+            idUsuario: idUsuarioModificador ?? purchase.IdUsuario,
+            bucket: { ubicacion: 'PLANTA', estado: 'PENDIENTE_CONTEO' },
+            cantidad: detail.Cantidad,
+            entrada: true,
+            nombre: `Restauración compra pendiente de conteo - ${item.Nombre}`,
+            tipoDocumento: 'COMRES',
+            documento: formatDocumentoId(purchase.Id),
+          });
+        }
       }
 
       await tx.detalleCompra.updateMany({

@@ -36,6 +36,13 @@ export interface SaleDetailItemDto {
   precioUnitario: number;
   esBonificacion: boolean;
   subtotal: number;
+  envases?: Array<{
+    id: number;
+    idInventarioItemEnvase: number;
+    nombre: string;
+    modo: "CLIENTE_PROPIO" | "PRESTAMO_EMPRESA";
+    cantidad: number;
+  }>;
   inventarioItem: {
     id: number;
     nombre: string;
@@ -226,6 +233,12 @@ export interface CreateSaleDetailPayload {
   cantidad: number;
   precioUnitario?: number;
   esBonificacion?: boolean;
+  estadoEnvase?: "VACIO" | "LLENO";
+  envases?: Array<{
+    idInventarioItemEnvase: number;
+    modo: "CLIENTE_PROPIO" | "PRESTAMO_EMPRESA";
+    cantidad: number;
+  }>;
 }
 
 export interface SalePaymentPayload {

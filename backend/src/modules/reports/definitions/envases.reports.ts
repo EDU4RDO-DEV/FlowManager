@@ -11,6 +11,9 @@ const CATEGORIA_LABEL = 'Envases / Garrafones';
 const tipoMovimientoOptions = [
   { value: 'PRESTAMO', label: 'Préstamo' },
   { value: 'DEVOLUCION', label: 'Devolución' },
+  { value: 'DEVOLUCION_DANADA', label: 'Devolución dañada' },
+  { value: 'PERDIDA', label: 'Pérdida' },
+  { value: 'BAJA', label: 'Baja' },
 ];
 
 function clienteParam(): ReportParamField {
@@ -80,7 +83,7 @@ const movimientosEnvasesSchema = withDateRangeValidation(
     fechaFin: optionalDateParam,
     idCliente: optionalPositiveIntParam,
     idInventarioItem: optionalPositiveIntParam,
-    tipoMovimiento: z.enum(['PRESTAMO', 'DEVOLUCION']).optional(),
+    tipoMovimiento: z.enum(['PRESTAMO', 'DEVOLUCION', 'DEVOLUCION_DANADA', 'PERDIDA', 'BAJA']).optional(),
   }),
 );
 type MovimientosEnvasesParams = z.infer<typeof movimientosEnvasesSchema>;
@@ -90,7 +93,7 @@ const movimientosEnvases: ReportDefinition<MovimientosEnvasesParams> = {
   categoria: CATEGORIA,
   categoriaLabel: CATEGORIA_LABEL,
   nombre: 'Movimientos de envases',
-  descripcion: 'Préstamos y devoluciones registradas en el período.',
+  descripcion: 'Préstamos, devoluciones, pérdidas y bajas registradas en el período.',
   moduloPermiso: 'envases',
   parametros: [
     { key: 'fechaInicio', label: 'Fecha inicial', type: 'date' },
@@ -120,15 +123,21 @@ const movimientosEnvases: ReportDefinition<MovimientosEnvasesParams> = {
 
     const rows = movimientos.map((mov) => ({
       fecha: mov.FechaMovimiento,
-      cliente: mov.Cliente.Entidad.NombreCompleto,
+      cliente: mov.Cliente?.Entidad.NombreCompleto ?? 'Inventario empresa',
       producto: mov.InventarioItem.Nombre,
       tipoMovimiento: mov.TipoMovimiento,
+      estadoEnvase: mov.EstadoEnvase,
+      ubicacionEnvase: mov.UbicacionEnvase,
       cantidad: round2(mov.Cantidad),
       saldoNuevo: round2(mov.SaldoNuevo),
     }));
 
-    const entradas = rows.filter((r) => r.tipoMovimiento === 'DEVOLUCION').reduce((s, r) => s + Number(r.cantidad), 0);
+    const entradas = rows
+      .filter((r) => r.tipoMovimiento === 'DEVOLUCION' || r.tipoMovimiento === 'DEVOLUCION_DANADA')
+      .reduce((s, r) => s + Number(r.cantidad), 0);
     const salidas = rows.filter((r) => r.tipoMovimiento === 'PRESTAMO').reduce((s, r) => s + Number(r.cantidad), 0);
+    const perdidas = rows.filter((r) => r.tipoMovimiento === 'PERDIDA').reduce((s, r) => s + Number(r.cantidad), 0);
+    const bajas = rows.filter((r) => r.tipoMovimiento === 'BAJA').reduce((s, r) => s + Number(r.cantidad), 0);
 
     return {
       columns: [
@@ -136,6 +145,8 @@ const movimientosEnvases: ReportDefinition<MovimientosEnvasesParams> = {
         { key: 'cliente', label: 'Cliente', type: 'text' },
         { key: 'producto', label: 'Producto', type: 'text' },
         { key: 'tipoMovimiento', label: 'Tipo', type: 'badge' },
+        { key: 'estadoEnvase', label: 'Estado', type: 'text' },
+        { key: 'ubicacionEnvase', label: 'Ubicación', type: 'text' },
         { key: 'cantidad', label: 'Cantidad', type: 'number' },
         { key: 'saldoNuevo', label: 'Saldo resultante', type: 'number' },
       ],
@@ -143,6 +154,8 @@ const movimientosEnvases: ReportDefinition<MovimientosEnvasesParams> = {
       indicators: [
         { label: 'Devoluciones', value: round2(entradas) },
         { label: 'Préstamos', value: round2(salidas) },
+        { label: 'Pérdidas', value: round2(perdidas) },
+        { label: 'Bajas', value: round2(bajas) },
       ],
       meta: { totalRegistros: rows.length, truncado: movimientos.length >= 5000, generadoEn: nowIso() },
     };
@@ -206,7 +219,7 @@ const rotacionEnvases: ReportDefinition<RotacionEnvasesParams> = {
   categoria: CATEGORIA,
   categoriaLabel: CATEGORIA_LABEL,
   nombre: 'Rotación de envases',
-  descripcion: 'Entradas (devoluciones) vs. salidas (préstamos) por producto.',
+  descripcion: 'Préstamos, devoluciones, pérdidas y bajas por artículo.',
   moduloPermiso: 'envases',
   parametros: [
     { key: 'fechaInicio', label: 'Fecha inicial', type: 'date' },
@@ -221,31 +234,34 @@ const rotacionEnvases: ReportDefinition<RotacionEnvasesParams> = {
       take: 5000,
     });
 
-    const byProducto = new Map<string, { entradas: number; salidas: number }>();
+    const byProducto = new Map<string, { prestamos: number; devoluciones: number; perdidas: number; bajas: number }>();
     for (const mov of movimientos) {
       const nombre = mov.InventarioItem.Nombre;
-      const entry = byProducto.get(nombre) ?? { entradas: 0, salidas: 0 };
-      if (mov.TipoMovimiento === 'DEVOLUCION') {
-        entry.entradas += mov.Cantidad;
-      } else {
-        entry.salidas += mov.Cantidad;
+      const entry = byProducto.get(nombre) ?? { prestamos: 0, devoluciones: 0, perdidas: 0, bajas: 0 };
+      if (mov.TipoMovimiento === 'PRESTAMO') entry.prestamos += mov.Cantidad;
+      if (mov.TipoMovimiento === 'DEVOLUCION' || mov.TipoMovimiento === 'DEVOLUCION_DANADA') {
+        entry.devoluciones += mov.Cantidad;
       }
+      if (mov.TipoMovimiento === 'PERDIDA') entry.perdidas += mov.Cantidad;
+      if (mov.TipoMovimiento === 'BAJA') entry.bajas += mov.Cantidad;
       byProducto.set(nombre, entry);
     }
 
     const rows = Array.from(byProducto.entries()).map(([producto, entry]) => ({
       producto,
-      entradas: round2(entry.entradas),
-      salidas: round2(entry.salidas),
-      neto: round2(entry.entradas - entry.salidas),
+      prestamos: round2(entry.prestamos),
+      devoluciones: round2(entry.devoluciones),
+      perdidas: round2(entry.perdidas),
+      bajas: round2(entry.bajas),
     }));
 
     return {
       columns: [
         { key: 'producto', label: 'Producto', type: 'text' },
-        { key: 'entradas', label: 'Entradas (devoluciones)', type: 'number' },
-        { key: 'salidas', label: 'Salidas (préstamos)', type: 'number' },
-        { key: 'neto', label: 'Neto', type: 'number' },
+        { key: 'prestamos', label: 'Préstamos', type: 'number' },
+        { key: 'devoluciones', label: 'Devoluciones', type: 'number' },
+        { key: 'perdidas', label: 'Pérdidas', type: 'number' },
+        { key: 'bajas', label: 'Bajas físicas', type: 'number' },
       ],
       rows,
       meta: { totalRegistros: rows.length, truncado: movimientos.length >= 5000, generadoEn: nowIso() },

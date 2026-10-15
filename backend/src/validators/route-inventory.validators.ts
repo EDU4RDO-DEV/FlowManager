@@ -25,7 +25,11 @@ export const routeInventoryIdParamsSchema = routeIdParamsSchema;
 export const createRouteDispatchSchema = z.object({
   observaciones: z.string().trim().max(255).optional(),
   detalle: z
-    .array(z.object({ idInventarioItem: positiveInt, cantidad: finitePositiveNumber }))
+    .array(z.object({
+      idInventarioItem: positiveInt,
+      cantidad: finitePositiveNumber,
+      estadoEnvase: z.enum(['VACIO', 'LLENO']).optional(),
+    }))
     .min(1, 'detalle debe incluir al menos un producto')
     .superRefine(uniqueItems),
 });
@@ -38,6 +42,8 @@ export const createRouteReturnSchema = z.object({
         idInventarioItem: positiveInt,
         cantidadRecibida: finitePositiveNumber,
         cantidadDanada: z.number().finite().min(0).default(0),
+        cantidadEnvaseVacio: z.number().finite().min(0).default(0),
+        cantidadEnvaseLleno: z.number().finite().min(0).default(0),
         observaciones: z.string().trim().max(255).optional(),
         ubicacionDanada: z.string().trim().min(1).max(255).optional(),
       }).superRefine((detail, ctx) => {

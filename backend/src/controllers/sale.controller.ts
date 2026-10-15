@@ -22,6 +22,7 @@ import {
   anulateSalePaymentBodySchema,
   createSalePaymentSchema,
   createSaleSchema,
+  createSaleIdempotencyKeySchema,
   felPingSchema,
   felReceptorQuerySchema,
   listAvailableRutaSesionesQuerySchema,
@@ -199,8 +200,13 @@ export async function getSaleByIdController(req: Request, res: Response) {
 export async function createSaleController(req: Request, res: Response) {
   try {
     const payload = createSaleSchema.parse(req.body);
+    const claveSolicitud = createSaleIdempotencyKeySchema.parse(req.header('Idempotency-Key'));
+    if (!req.auth?.userId) {
+      return res.status(401).json({ ok: false, message: 'Token inválido o expirado' });
+    }
     const data = await createSale({
       ...payload,
+      idUsuario: req.auth.userId,
       nitFacturado: payload.nitFacturado?.trim(),
       nombreClienteFacturado: payload.nombreClienteFacturado?.trim(),
       direccionClienteFacturado: payload.direccionClienteFacturado?.trim(),
@@ -218,12 +224,16 @@ export async function createSaleController(req: Request, res: Response) {
             rutaFirma: payload.pagoInicial.rutaFirma?.trim(),
           }
         : undefined,
-    });
+    }, claveSolicitud);
 
     return res.status(201).json({ ok: true, data, message: 'Venta registrada correctamente' });
   } catch (error) {
     if (error instanceof ZodError) {
       return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    if (error instanceof Error && error.message === 'La clave de idempotencia ya fue utilizada con datos diferentes') {
+      return res.status(409).json({ ok: false, message: error.message });
     }
 
     if (isNumeroVentaUniqueConflict(error)) {
@@ -382,6 +392,10 @@ export async function anulateSaleController(req: Request, res: Response) {
       message.includes('no existe o está anulado')
     ) {
       return res.status(404).json({ ok: false, message });
+    }
+
+    if (message.startsWith('No se puede anular una venta')) {
+      return res.status(409).json({ ok: false, message });
     }
 
     if (message.startsWith('FEL:')) {

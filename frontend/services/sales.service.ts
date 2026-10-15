@@ -129,8 +129,13 @@ export async function restoreTalonario(id: number, payload?: RestoreTalonarioPay
   return data.data;
 }
 
-export async function createSale(payload: CreateSalePayload): Promise<CreateSaleResult> {
-  const { data } = await api.post<CreateSaleResponse>("/api/ventas", payload);
+export async function createSale(
+  payload: CreateSalePayload,
+  idempotencyKey: string,
+): Promise<CreateSaleResult> {
+  const { data } = await api.post<CreateSaleResponse>("/api/ventas", payload, {
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
   if (!data.data) {
     throw new Error(data.message || "Respuesta inválida al crear venta");
   }

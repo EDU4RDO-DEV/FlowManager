@@ -21,14 +21,31 @@ integrationDescribe('sale payment SQL Server rollback integration', () => {
 
   beforeAll(async () => {
     const database = await prisma.$queryRaw<Array<{ databaseName: string }>>`SELECT DB_NAME() AS databaseName`;
-    if (database[0]?.databaseName !== 'FlowManager_Test') {
-      throw new Error('Las pruebas de integración requieren exclusivamente FlowManager_Test');
+    const databaseName = database[0]?.databaseName;
+    const allowFlowManager =
+      databaseName === 'FlowManager' && process.env.FLOWMANAGER_SQLSERVER_INTEGRATION === '1';
+    if (databaseName !== 'FlowManager_Test' && !allowFlowManager) {
+      throw new Error('Las pruebas de integración requieren FlowManager_Test o el permiso explícito para FlowManager');
     }
 
-    const owner = await prisma.usuario.findFirst({
-      where: { Correo: 'sqlserver-integration@flowmanager.test', Anulado: false },
-      select: { Id: true },
-    });
+    let owner: { Id: number } | null = null;
+    if (databaseName === 'FlowManager_Test') {
+      owner = await prisma.usuario.findFirst({
+        where: { Correo: 'sqlserver-integration@flowmanager.test', Anulado: false },
+        select: { Id: true },
+      });
+    } else {
+      const adminRole = await prisma.rol.findFirst({
+        where: { Nombre: 'Administrador', Anulado: false },
+        select: { Id: true },
+      });
+      owner = adminRole
+        ? await prisma.usuario.findFirst({
+            where: { IdRol: adminRole.Id, Anulado: false },
+            select: { Id: true },
+          })
+        : null;
+    }
     if (!owner) throw new Error('Falta el usuario inicial del seed de integración');
     ownerId = owner.Id;
 
@@ -69,23 +86,25 @@ integrationDescribe('sale payment SQL Server rollback integration', () => {
     });
     itemId = item.Id;
 
-    const lastSale = await prisma.venta.findFirst({
-      orderBy: { NumeroVenta: 'desc' },
-      select: { NumeroVenta: true },
-    });
-    const sale = await prisma.venta.create({
-      data: {
-        IdCliente: clientId,
-        IdUsuario: ownerId,
-        NumeroVenta: (lastSale?.NumeroVenta ?? 0) + 1,
-        TipoRegistro: 'VENTA',
-        EstadoEntrega: 'PENDIENTE',
-        CondicionPago: 'CREDITO',
-        EstadoPago: 'PENDIENTE',
-        RequiereFactura: false,
-      },
-      select: { Id: true },
-    });
+    const sale = await prisma.$transaction(async (tx) => {
+      const lastSale = await tx.venta.findFirst({
+        orderBy: { NumeroVenta: 'desc' },
+        select: { NumeroVenta: true },
+      });
+      return tx.venta.create({
+        data: {
+          IdCliente: clientId,
+          IdUsuario: ownerId,
+          NumeroVenta: (lastSale?.NumeroVenta ?? 0) + 1,
+          TipoRegistro: 'VENTA',
+          EstadoEntrega: 'PENDIENTE',
+          CondicionPago: 'CREDITO',
+          EstadoPago: 'PENDIENTE',
+          RequiereFactura: false,
+        },
+        select: { Id: true },
+      });
+    }, { isolationLevel: 'Serializable' });
     saleId = sale.Id;
     await prisma.detalleVenta.create({
       data: {

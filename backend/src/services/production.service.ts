@@ -224,6 +224,7 @@ export async function getProductionOrder(id: number) {
     where: {
       TipoDocumento: 'PROD',
       Documento: id.toString(),
+      UbicacionEnvase: null,
     },
     orderBy: { Id: 'asc' },
     select: {
@@ -386,7 +387,12 @@ export async function confirmProductionOrder(
         Categoria: 'PRODUCTO_TERMINADO',
         Anulado: false,
       },
-      select: { Id: true, Nombre: true, Existencia: true, UnidadMedida: true },
+      select: {
+        Id: true,
+        Nombre: true,
+        Existencia: true,
+        UnidadMedida: true,
+      },
     });
     if (!finished) {
       throw new Error('Producto terminado no existe o está inactivo');
@@ -454,7 +460,6 @@ export async function confirmProductionOrder(
       cantidad: order.CantidadProducir,
       nuevaExistencia: nuevaExistenciaFinal,
     });
-
     const updated = await tx.ordenProduccion.updateMany({
       where: { Id: id, Estado: 'PENDIENTE', Anulado: false },
       data: {

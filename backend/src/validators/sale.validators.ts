@@ -20,6 +20,12 @@ const saleDetailItemSchema = z.object({
   cantidad: finitePositiveNumber,
   precioUnitario: finitePositiveNumber.optional(),
   esBonificacion: z.boolean().optional().default(false),
+  estadoEnvase: z.enum(['VACIO', 'LLENO']).optional(),
+  envases: z.array(z.object({
+    idInventarioItemEnvase: positiveInt,
+    modo: z.enum(['CLIENTE_PROPIO', 'PRESTAMO_EMPRESA']),
+    cantidad: z.number().int().positive(),
+  })).optional(),
 });
 
 const salePaymentSchema = z
@@ -38,6 +44,7 @@ export const salePaymentIdParamsSchema = z.object({
 });
 
 export const createCommercialReturnIdempotencyKeySchema = z.string().uuid();
+export const createSaleIdempotencyKeySchema = z.string().uuid('El encabezado Idempotency-Key debe ser UUID');
 
 export const createCommercialReturnSchema = z.object({
   detalle: z.array(z.object({

@@ -18,7 +18,10 @@ describe('report PDF templates', () => {
         descripcion: commercialDescription,
         categoriaLabel: 'Ventas',
       },
-      metaItems: [{ label: 'Fecha inicial', value: '01/01/2026' }],
+      metaItems: [
+        { label: 'Fecha inicial', value: '01/01/2026' },
+        { label: 'Generado', value: '15 oct 2026, 15:11' },
+      ],
       indicators: [{ label: 'Total vendido', value: 'Q 100.00' }],
       columns: [{ key: 'cliente', label: 'Cliente', type: 'text', align: 'left' }],
       columnCount: 1,
@@ -33,6 +36,7 @@ describe('report PDF templates', () => {
     expect(html).toContain('Empresa de prueba');
     expect(html).toContain('report-header__logo-fallback');
     expect(html).toContain('Ventas');
+    expect(html).toContain('15 oct 2026, 15:11');
     expect(html).not.toContain(commercialDescription);
     expect(html).not.toContain('report-header__subtitle');
   });
