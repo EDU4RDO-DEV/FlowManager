@@ -48,6 +48,8 @@ export interface RolePermissionModuleDto {
     | "roles"
     | "clientes"
     | "ventas"
+    | "logistica"
+    | "despacho"
     | "empleados"
     | "proveedores"
     | "compras"

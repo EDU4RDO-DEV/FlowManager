@@ -14,7 +14,12 @@ const { prismaMock } = vi.hoisted(() => ({
     transactionClient: {
       usuario: { findFirst: vi.fn() },
       inventarioItem: { findFirst: vi.fn(), update: vi.fn() },
-      estructuraProducto: { findMany: vi.fn() },
+      estructuraProducto: {
+        create: vi.fn(),
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        update: vi.fn(),
+      },
     },
   },
 }));
@@ -29,6 +34,7 @@ import {
   applyRecipeCost,
   getRecipeCostEstimate,
   restoreProductStructure,
+  updateProductStructure,
   updateRecipeCostPolicy,
 } from '../services/product-structure.service';
 
@@ -40,20 +46,20 @@ describe('Fase 11 - auditoría en estructura de producto', () => {
     );
   });
 
-  it('rejects a non-finished product as a recipe parent', async () => {
-    prismaMock.inventarioItem.findFirst.mockResolvedValueOnce(null);
+  it('rejects a product that does not allow recipe configuration as a recipe parent', async () => {
+    prismaMock.transactionClient.inventarioItem.findFirst.mockResolvedValueOnce(null);
 
     await expect(createProductStructure({
       idProductoTerminado: 1,
       idMateriaPrima: 2,
       cantidadRequerida: 1,
-    })).rejects.toThrow('Producto terminado no existe o no es un producto final');
+    })).rejects.toThrow('Producto no existe o no permite configurar recetas');
 
-    expect(prismaMock.estructuraProducto.create).not.toHaveBeenCalled();
+    expect(prismaMock.transactionClient.estructuraProducto.create).not.toHaveBeenCalled();
   });
 
   it('rejects finished products as recipe components', async () => {
-    prismaMock.inventarioItem.findFirst
+    prismaMock.transactionClient.inventarioItem.findFirst
       .mockResolvedValueOnce({ Id: 1 })
       .mockResolvedValueOnce(null);
 
@@ -63,7 +69,146 @@ describe('Fase 11 - auditoría en estructura de producto', () => {
       cantidadRequerida: 1,
     })).rejects.toThrow('El componente debe ser una materia prima o insumo activo');
 
-    expect(prismaMock.estructuraProducto.create).not.toHaveBeenCalled();
+    expect(prismaMock.transactionClient.estructuraProducto.create).not.toHaveBeenCalled();
+  });
+
+  it('allows a recipe-enabled insumo to be a recipe parent and rejects circular structures', async () => {
+    prismaMock.transactionClient.inventarioItem.findFirst
+      .mockResolvedValueOnce({ Id: 1 })
+      .mockResolvedValueOnce({ Id: 2 });
+    prismaMock.transactionClient.estructuraProducto.findMany.mockResolvedValueOnce([
+      { IdProductoTerminado: 2, IdMateriaPrima: 1 },
+    ]);
+
+    await expect(createProductStructure({
+      idProductoTerminado: 1,
+      idMateriaPrima: 2,
+      cantidadRequerida: 1,
+    })).rejects.toThrow('La receta generaría una dependencia circular');
+
+    expect(prismaMock.transactionClient.estructuraProducto.create).not.toHaveBeenCalled();
+  });
+
+  it.each([43, 50])(
+    'creates a recipe for recipe-enabled product %i regardless of category or fabrication capability',
+    async (idProductoTerminado) => {
+      prismaMock.transactionClient.inventarioItem.findFirst
+        .mockResolvedValueOnce({ Id: idProductoTerminado })
+        .mockResolvedValueOnce({ Id: 9999 });
+      prismaMock.transactionClient.estructuraProducto.findMany.mockResolvedValueOnce([]);
+      prismaMock.transactionClient.estructuraProducto.findFirst.mockResolvedValueOnce(null);
+      prismaMock.transactionClient.estructuraProducto.create.mockResolvedValueOnce({
+        Id: 5,
+        IdProductoTerminado: idProductoTerminado,
+        IdMateriaPrima: 9999,
+        CantidadRequerida: 1,
+        FechaRegistro: new Date(),
+        IdUsuarioModificador: null,
+        FechaModificacion: null,
+        Anulado: false,
+        IdUsuarioAnulador: null,
+        FechaAnulacion: null,
+        InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
+          Id: 9999,
+          Nombre: 'Componente de prueba',
+          Categoria: 'MATERIA_PRIMA',
+          Existencia: 100,
+          CostoPromedio: 1,
+          PrecioVenta: 0,
+          RutaImagen: null,
+          Anulado: false,
+        },
+      });
+
+      await expect(createProductStructure({
+        idProductoTerminado,
+        idMateriaPrima: 9999,
+        cantidadRequerida: 1,
+      })).resolves.toMatchObject({
+        idProductoTerminado,
+        idMateriaPrima: 9999,
+        cantidadRequerida: 1,
+      });
+
+      expect(prismaMock.transactionClient.inventarioItem.findFirst).toHaveBeenNthCalledWith(1, {
+        where: { Id: idProductoTerminado, PermitirReceta: true, Anulado: false },
+        select: { Id: true },
+      });
+      expect(prismaMock.transactionClient.inventarioItem.findFirst).toHaveBeenNthCalledWith(2, {
+        where: {
+          Id: 9999,
+          Anulado: false,
+          Categoria: { in: ['MATERIA_PRIMA', 'INSUMO'] },
+        },
+        select: { Id: true },
+      });
+    },
+  );
+
+  it.each([43, 50])(
+    'allows editing recipe components for recipe-enabled product %i regardless of category or fabrication capability',
+    async (idProductoTerminado) => {
+      prismaMock.estructuraProducto.findFirst.mockResolvedValueOnce({
+        Id: 5,
+        IdProductoTerminado: idProductoTerminado,
+        IdMateriaPrima: 9999,
+      });
+      prismaMock.inventarioItem.findFirst
+        .mockResolvedValueOnce({ Id: idProductoTerminado })
+        .mockResolvedValueOnce({ Id: 9999 });
+      prismaMock.estructuraProducto.update.mockResolvedValueOnce({
+        Id: 5,
+        IdProductoTerminado: idProductoTerminado,
+        IdMateriaPrima: 9999,
+        CantidadRequerida: 2,
+        FechaRegistro: new Date(),
+        IdUsuarioModificador: null,
+        FechaModificacion: new Date(),
+        Anulado: false,
+        IdUsuarioAnulador: null,
+        FechaAnulacion: null,
+        InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
+          Id: 9999,
+          Nombre: 'Componente de prueba',
+          Categoria: 'MATERIA_PRIMA',
+          Existencia: 100,
+          CostoPromedio: 1,
+          PrecioVenta: 0,
+          RutaImagen: null,
+          Anulado: false,
+        },
+      });
+
+      await expect(updateProductStructure(5, { cantidadRequerida: 2 }))
+        .resolves.toMatchObject({ idProductoTerminado, cantidadRequerida: 2 });
+
+      expect(prismaMock.inventarioItem.findFirst).toHaveBeenNthCalledWith(1, {
+        where: { Id: idProductoTerminado, PermitirReceta: true, Anulado: false },
+        select: { Id: true },
+      });
+      expect(prismaMock.inventarioItem.findFirst).toHaveBeenNthCalledWith(2, {
+        where: {
+          Id: 9999,
+          Anulado: false,
+          Categoria: { in: ['MATERIA_PRIMA', 'INSUMO'] },
+        },
+        select: { Id: true },
+      });
+    },
+  );
+
+  it('rejects editing a recipe when its parent no longer allows recipes', async () => {
+    prismaMock.estructuraProducto.findFirst.mockResolvedValueOnce({
+      Id: 5,
+      IdProductoTerminado: 43,
+      IdMateriaPrima: 42,
+    });
+    prismaMock.inventarioItem.findFirst.mockResolvedValueOnce(null);
+
+    await expect(updateProductStructure(5, { cantidadRequerida: 2 }))
+      .rejects.toThrow('Producto no existe o no permite configurar recetas');
+
+    expect(prismaMock.estructuraProducto.update).not.toHaveBeenCalled();
   });
 
   it('deleteProductStructure registra IdUsuarioAnulador y FechaAnulacion', async () => {
@@ -84,16 +229,17 @@ describe('Fase 11 - auditoría en estructura de producto', () => {
   });
 
   it('restoreProductStructure limpia anulación y registra IdUsuarioModificador/FechaModificacion', async () => {
-    prismaMock.estructuraProducto.findFirst.mockResolvedValueOnce({
+    prismaMock.transactionClient.estructuraProducto.findFirst.mockResolvedValueOnce({
       Id: 5,
       IdProductoTerminado: 1,
       IdMateriaPrima: 2,
     });
     prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
-    prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({ Id: 1 });
-    prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({ Id: 2 });
-    prismaMock.estructuraProducto.findFirst.mockResolvedValueOnce(null);
-    prismaMock.estructuraProducto.update.mockResolvedValueOnce({
+    prismaMock.transactionClient.inventarioItem.findFirst.mockResolvedValueOnce({ Id: 1 });
+    prismaMock.transactionClient.inventarioItem.findFirst.mockResolvedValueOnce({ Id: 2 });
+    prismaMock.transactionClient.estructuraProducto.findMany.mockResolvedValueOnce([]);
+    prismaMock.transactionClient.estructuraProducto.findFirst.mockResolvedValueOnce(null);
+    prismaMock.transactionClient.estructuraProducto.update.mockResolvedValueOnce({
       Id: 5,
       IdProductoTerminado: 1,
       IdMateriaPrima: 2,
@@ -118,7 +264,7 @@ describe('Fase 11 - auditoría en estructura de producto', () => {
 
     await restoreProductStructure(5, 9);
 
-    expect(prismaMock.estructuraProducto.update).toHaveBeenCalledWith({
+    expect(prismaMock.transactionClient.estructuraProducto.update).toHaveBeenCalledWith({
       where: { Id: 5 },
       data: expect.objectContaining({
         Anulado: false,
@@ -135,6 +281,7 @@ describe('Fase 11 - auditoría en estructura de producto', () => {
     prismaMock.transactionClient.inventarioItem.findFirst.mockResolvedValueOnce({
       Id: 1,
       Categoria: 'PRODUCTO_TERMINADO',
+      PermitirReceta: true,
       EsVendible: true,
       ActualizarCostoSegunReceta: true,
       UnidadMedida: 'paquete',
@@ -178,6 +325,7 @@ describe('Fase 11 - auditoría en estructura de producto', () => {
     prismaMock.transactionClient.inventarioItem.findFirst.mockResolvedValueOnce({
       Id: 1,
       Categoria: 'PRODUCTO_TERMINADO',
+      PermitirReceta: true,
       EsVendible: false,
       ActualizarCostoSegunReceta: true,
       UnidadMedida: 'paquete',
@@ -208,6 +356,7 @@ describe('Fase 11 - auditoría en estructura de producto', () => {
     prismaMock.transactionClient.inventarioItem.findFirst.mockResolvedValueOnce({
       Id: 1,
       Categoria: 'PRODUCTO_TERMINADO',
+      PermitirReceta: true,
       EsVendible: false,
       ActualizarCostoSegunReceta: true,
       UnidadMedida: null,
@@ -216,7 +365,7 @@ describe('Fase 11 - auditoría en estructura de producto', () => {
     });
 
     await expect(getRecipeCostEstimate(1)).rejects.toThrow(
-      'El producto terminado no tiene unidad de medida configurada',
+      'El producto no tiene unidad de medida configurada',
     );
     expect(prismaMock.transactionClient.estructuraProducto.findMany).not.toHaveBeenCalled();
     expect(prismaMock.transactionClient.inventarioItem.update).not.toHaveBeenCalled();
@@ -226,6 +375,7 @@ describe('Fase 11 - auditoría en estructura de producto', () => {
     prismaMock.transactionClient.inventarioItem.findFirst.mockResolvedValueOnce({
       Id: 1,
       Categoria: 'PRODUCTO_TERMINADO',
+      PermitirReceta: true,
       EsVendible: true,
       ActualizarCostoSegunReceta: true,
       UnidadMedida: 'paquete',
@@ -261,6 +411,7 @@ describe('Fase 11 - auditoría en estructura de producto', () => {
     prismaMock.transactionClient.inventarioItem.findFirst.mockResolvedValueOnce({
       Id: 1,
       Categoria: 'PRODUCTO_TERMINADO',
+      PermitirReceta: true,
       EsVendible: false,
       ActualizarCostoSegunReceta: true,
       UnidadMedida: 'paquete',
@@ -287,12 +438,12 @@ describe('Fase 11 - auditoría en estructura de producto', () => {
     expect(prismaMock.transactionClient.inventarioItem.update).not.toHaveBeenCalled();
   });
 
-  it('requires a finished product when saving the recipe cost preference', async () => {
+  it('requires recipe permission when saving the recipe cost preference', async () => {
     prismaMock.transactionClient.inventarioItem.findFirst.mockResolvedValueOnce(null);
 
     await expect(updateRecipeCostPolicy(1, {
       actualizarCostoSegunReceta: true,
-    })).rejects.toThrow('Producto terminado no existe o no es un producto final');
+    })).rejects.toThrow('Producto no existe o no permite configurar recetas');
     expect(prismaMock.transactionClient.inventarioItem.update).not.toHaveBeenCalled();
   });
 
@@ -320,6 +471,7 @@ describe('Fase 11 - auditoría en estructura de producto', () => {
     prismaMock.transactionClient.inventarioItem.findFirst.mockResolvedValueOnce({
       Id: 1,
       Categoria: 'PRODUCTO_TERMINADO',
+      PermitirReceta: true,
       EsVendible: false,
       ActualizarCostoSegunReceta: false,
       UnidadMedida: 'paquete',
@@ -350,6 +502,7 @@ describe('Fase 11 - auditoría en estructura de producto', () => {
     prismaMock.transactionClient.inventarioItem.findFirst.mockResolvedValueOnce({
       Id: 1,
       Categoria: 'PRODUCTO_TERMINADO',
+      PermitirReceta: true,
       EsVendible: true,
       ActualizarCostoSegunReceta: true,
       UnidadMedida: 'paquete',

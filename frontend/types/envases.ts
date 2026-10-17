@@ -66,6 +66,7 @@ export interface EnvasePhysicalBalanceDto {
   estado: string;
   idRutaSesion: number | null;
   cantidad: number;
+  esSaldoLegadoPendiente?: boolean;
 }
 
 export type EnvasesListResponse<T> = ApiResponse<T[]>;

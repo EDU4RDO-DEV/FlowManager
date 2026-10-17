@@ -25,12 +25,14 @@ const ROLE_PERMISSIONS: Record<Exclude<(typeof ROLE_ORDER)[number], 'Administrad
     ventas: ['read', 'create', 'update', 'delete'],
     inventario: ['read'],
     logistica: ['read', 'create', 'update'],
+    despacho: ['read', 'create', 'update'],
     envases: ['read', 'create'],
     reportes: ['read'],
   },
   Chofer: {
     resumen: ['read'],
     logistica: ['read', 'create', 'update'],
+    despacho: ['read', 'create', 'update'],
     envases: ['read', 'create'],
   },
   'Encargado de Producción': {

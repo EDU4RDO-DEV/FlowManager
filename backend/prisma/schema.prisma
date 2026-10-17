@@ -558,6 +558,8 @@ model InventarioItem {
   Categoria                                                                      String                    @db.VarChar(50)
   EsVendible                                                                     Boolean                   @default(false, map: "DF_InventarioItem_EsVendible")
   EsEnvaseRetornable                                                             Boolean                   @default(false, map: "DF_InventarioItem_EsEnvaseRetornable")
+  EsFabricable                                                                   Boolean                   @default(false, map: "DF_InventarioItem_EsFabricable")
+  PermitirReceta                                                                 Boolean                   @default(false, map: "DF_InventarioItem_PermitirReceta")
   ActualizarCostoSegunReceta                                                     Boolean                   @default(false, map: "DF_InventarioItem_ActualizarCostoSegunReceta")
   CapacidadEnvaseGalones                                                         Decimal?                  @db.Decimal(8, 3)
   UnidadMedida                                                                   String?                   @db.VarChar(30)

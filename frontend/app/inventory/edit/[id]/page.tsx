@@ -27,6 +27,8 @@ const EMPTY_FORM: ProductFormValues = {
   precioVenta: "",
   esVendible: false,
   esEnvaseRetornable: false,
+  esFabricable: false,
+  permitirReceta: false,
   capacidadEnvaseLitros: "",
   rutaImagen: "",
   idCategoriaComision: "",
@@ -71,6 +73,8 @@ export default function EditProductPage() {
           precioVenta: productData.esVendible ? String(productData.precioVenta) : "",
           esVendible: productData.esVendible,
           esEnvaseRetornable: productData.esEnvaseRetornable,
+          esFabricable: productData.esFabricable,
+          permitirReceta: productData.permitirReceta,
           capacidadEnvaseLitros: productData.capacidadEnvaseGalones == null
             ? ""
             : String(gallonsToLiters(productData.capacidadEnvaseGalones)),
@@ -142,6 +146,8 @@ export default function EditProductPage() {
         categoria: form.categoria,
         esVendible: form.esVendible,
         esEnvaseRetornable: form.esEnvaseRetornable,
+        esFabricable: form.esFabricable,
+        permitirReceta: form.permitirReceta,
         unidadMedida: form.unidadMedida.trim() || null,
         costoPromedio,
         precioVenta: form.esVendible ? precioVenta : undefined,

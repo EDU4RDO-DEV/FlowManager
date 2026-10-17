@@ -285,24 +285,30 @@ export async function listEnvaseClienteSaldos(filters: ListSaldosInput) {
 }
 
 export async function listEnvasePhysicalBalances() {
-  const movements = await prisma.bitacoraInventario.findMany({
-    where: {
-      Anulado: false,
-      UbicacionEnvase: { not: null },
-      EstadoEnvase: { not: null },
-      InventarioItem: { EsEnvaseRetornable: true, Anulado: false },
-    },
-    orderBy: { Id: 'desc' },
-    select: {
-      Id: true,
-      IdInventarioItem: true,
-      UbicacionEnvase: true,
-      EstadoEnvase: true,
-      IdRutaSesion: true,
-      NuevaExistencia: true,
-      InventarioItem: { select: { Nombre: true, Existencia: true } },
-    },
-  });
+  const [movements, returnableItems] = await Promise.all([
+    prisma.bitacoraInventario.findMany({
+      where: {
+        Anulado: false,
+        UbicacionEnvase: { not: null },
+        EstadoEnvase: { not: null },
+        InventarioItem: { EsEnvaseRetornable: true, Anulado: false },
+      },
+      orderBy: { Id: 'desc' },
+      select: {
+        Id: true,
+        IdInventarioItem: true,
+        UbicacionEnvase: true,
+        EstadoEnvase: true,
+        IdRutaSesion: true,
+        NuevaExistencia: true,
+        InventarioItem: { select: { Nombre: true, Existencia: true } },
+      },
+    }),
+    prisma.inventarioItem.findMany({
+      where: { EsEnvaseRetornable: true, Anulado: false, Existencia: { gt: 0 } },
+      select: { Id: true, Nombre: true, Existencia: true },
+    }),
+  ]);
   const balances = new Map<string, {
     idInventarioItem: number;
     nombre: string;
@@ -311,6 +317,7 @@ export async function listEnvasePhysicalBalances() {
     estado: string;
     idRutaSesion: number | null;
     cantidad: number;
+    esSaldoLegadoPendiente?: boolean;
   }>();
 
   for (const movement of movements) {
@@ -332,7 +339,69 @@ export async function listEnvasePhysicalBalances() {
     });
   }
 
+  for (const item of returnableItems) {
+    const balanceForState = (state: string) =>
+      balances.get(`${item.Id}:PLANTA:${state}:`)?.cantidad ?? 0;
+    const unclassified = Number((
+      item.Existencia -
+      balanceForState('VACIO') -
+      balanceForState('LLENO') -
+      balanceForState('PENDIENTE_CONTEO')
+    ).toFixed(2));
+    if (unclassified <= 0.009) continue;
+
+    const pendingKey = `${item.Id}:PLANTA:PENDIENTE_CONTEO:`;
+    const currentPending = balances.get(pendingKey);
+    balances.set(pendingKey, {
+      idInventarioItem: item.Id,
+      nombre: item.Nombre,
+      existenciaCatalogo: item.Existencia,
+      ubicacion: 'PLANTA',
+      estado: 'PENDIENTE_CONTEO',
+      idRutaSesion: null,
+      cantidad: Number(((currentPending?.cantidad ?? 0) + unclassified).toFixed(2)),
+      esSaldoLegadoPendiente: true,
+    });
+  }
+
   return [...balances.values()].filter((balance) => balance.cantidad !== 0);
+}
+
+export async function listEnvasePlantBucketBalances(idInventarioItems: number[]) {
+  if (idInventarioItems.length === 0) return [];
+
+  const movements = await prisma.bitacoraInventario.findMany({
+    where: {
+      IdInventarioItem: { in: idInventarioItems },
+      UbicacionEnvase: 'PLANTA',
+      EstadoEnvase: { in: ['VACIO', 'LLENO', 'PENDIENTE_CONTEO'] },
+      Anulado: false,
+    },
+    orderBy: { Id: 'desc' },
+    select: {
+      IdInventarioItem: true,
+      EstadoEnvase: true,
+      NuevaExistencia: true,
+    },
+  });
+  const balances = new Map<string, {
+    idInventarioItem: number;
+    estado: string;
+    cantidad: number;
+  }>();
+
+  for (const movement of movements) {
+    if (!movement.EstadoEnvase) continue;
+    const key = `${movement.IdInventarioItem}:${movement.EstadoEnvase}`;
+    if (balances.has(key)) continue;
+    balances.set(key, {
+      idInventarioItem: movement.IdInventarioItem,
+      estado: movement.EstadoEnvase,
+      cantidad: movement.NuevaExistencia,
+    });
+  }
+
+  return [...balances.values()];
 }
 
 export async function reconcileEnvasePhysicalStock(input: {
@@ -356,15 +425,46 @@ export async function reconcileEnvasePhysicalStock(input: {
       ubicacion: 'PLANTA',
       estado: 'PENDIENTE_CONTEO',
     });
+    const empty = await getEnvaseBucketQuantity(tx, item.Id, {
+      ubicacion: 'PLANTA',
+      estado: 'VACIO',
+    });
+    const full = await getEnvaseBucketQuantity(tx, item.Id, {
+      ubicacion: 'PLANTA',
+      estado: 'LLENO',
+    });
+    const unclassified = Number((item.Existencia - pending - empty - full).toFixed(2));
+    if (unclassified < -0.009) {
+      throw new Error(
+        `El saldo físico verificado de planta supera la existencia del catálogo de ${item.Nombre}; revisa los movimientos antes de clasificar`,
+      );
+    }
+    if (!Number.isInteger(unclassified)) {
+      throw new Error(`El saldo no clasificado de ${item.Nombre} debe ser entero para poder conciliar envases`);
+    }
+    const effectivePending = Number((pending + unclassified).toFixed(2));
     const classified = quantities.reduce((sum, quantity) => sum + quantity, 0);
-    if (pending <= 0) {
+    if (effectivePending <= 0) {
       throw new Error('No hay saldo pendiente de conteo para este envase');
     }
-    if (classified !== pending) {
-      throw new Error(`La clasificación debe sumar exactamente el saldo pendiente (${pending})`);
+    if (classified !== effectivePending) {
+      throw new Error(`La clasificación debe sumar exactamente el saldo pendiente (${effectivePending})`);
     }
     if (input.cantidadDanada > item.Existencia) {
       throw new Error('El saldo de inventario disponible no cubre la cantidad dañada');
+    }
+
+    if (unclassified > 0) {
+      await recordEnvaseBucketCount(tx, {
+        idInventarioItem: item.Id,
+        idUsuario: input.idUsuario,
+        bucket: { ubicacion: 'PLANTA', estado: 'PENDIENTE_CONTEO' },
+        cantidadContada: effectivePending,
+        observaciones: 'Saldo de catálogo legado pendiente de clasificación',
+        tipoDocumento: 'ENVLG',
+        documento: item.Id.toString(),
+        claveMovimiento: randomUUID(),
+      });
     }
 
     for (const [quantity, state, location] of [
@@ -455,16 +555,6 @@ async function recordEnvasePhysicalCount(input: RecordEnvasePhysicalCountInput) 
       }
     }
 
-    if (input.ubicacionEnvase === 'PLANTA') {
-      const pending = await getEnvaseBucketQuantity(tx, item.Id, {
-        ubicacion: 'PLANTA',
-        estado: 'PENDIENTE_CONTEO',
-      });
-      if (pending > 0) {
-        throw new Error('Clasifica primero el saldo legado PENDIENTE_CONTEO antes de registrar un nuevo conteo');
-      }
-    }
-
     const states = input.ubicacionEnvase === 'CUARENTENA'
       ? [{ estado: 'DANADO' as const, cantidad: input.cantidadDanada }]
       : [
@@ -505,6 +595,23 @@ async function recordEnvasePhysicalCount(input: RecordEnvasePhysicalCountInput) 
         throw new Error('La clave de idempotencia ya fue utilizada con datos diferentes');
       }
       return;
+    }
+
+    if (input.ubicacionEnvase === 'PLANTA') {
+      const [pending, empty, full] = await Promise.all([
+        getEnvaseBucketQuantity(tx, item.Id, { ubicacion: 'PLANTA', estado: 'PENDIENTE_CONTEO' }),
+        getEnvaseBucketQuantity(tx, item.Id, { ubicacion: 'PLANTA', estado: 'VACIO' }),
+        getEnvaseBucketQuantity(tx, item.Id, { ubicacion: 'PLANTA', estado: 'LLENO' }),
+      ]);
+      const unclassified = Number((item.Existencia - pending - empty - full).toFixed(2));
+      if (unclassified < -0.009) {
+        throw new Error(
+          `El saldo físico verificado de planta supera la existencia del catálogo de ${item.Nombre}; revisa los movimientos antes de contar`,
+        );
+      }
+      if (pending > 0 || unclassified > 0.009) {
+        throw new Error('Clasifica primero el saldo legado PENDIENTE_CONTEO antes de registrar un nuevo conteo');
+      }
     }
 
     const priorBalances = new Map<string, number>();
@@ -650,7 +757,18 @@ export async function registrarPrestamoEnvase(input: RegistrarPrestamoInput) {
     };
     const physicalQuantity = await getEnvaseBucketQuantity(tx, item.Id, bucket);
     if (physicalQuantity < input.cantidad) {
-      throw new Error(`Stock físico verificado insuficiente de ${item.Nombre} (${estadoEnvase})`);
+      const pendingQuantity = ubicacionEnvase === 'PLANTA'
+        ? await getEnvaseBucketQuantity(tx, item.Id, {
+            ubicacion: 'PLANTA',
+            estado: 'PENDIENTE_CONTEO',
+          })
+        : 0;
+      const pendingMessage = pendingQuantity > 0
+        ? ` Hay ${pendingQuantity} pendiente(s) de clasificación en Envases.`
+        : '';
+      throw new Error(
+        `Stock físico verificado insuficiente de ${item.Nombre} (${estadoEnvase}/${ubicacionEnvase}): disponible ${physicalQuantity}, solicitado ${input.cantidad}.${pendingMessage}`,
+      );
     }
 
     const saldoExistente = await tx.envaseClienteSaldo.findFirst({
@@ -1026,7 +1144,9 @@ export async function registrarBajaEnvase(input: RegistrarBajaEnvaseInput) {
     };
     const physicalAvailable = await getEnvaseBucketQuantity(tx, item.Id, bucket);
     if (physicalAvailable < input.cantidad) {
-      throw new Error('No hay suficientes envases físicos en el estado y ubicación indicados para dar de baja');
+      throw new Error(
+        `No hay suficientes envases físicos en ${input.ubicacionEnvase}/${input.estadoEnvase} para dar de baja: disponibles ${physicalAvailable}, solicitados ${input.cantidad}`,
+      );
     }
     const adjustsPlantStock = input.ubicacionEnvase === 'PLANTA' && input.estadoEnvase !== 'DANADO';
     if (adjustsPlantStock && item.Existencia < input.cantidad) {

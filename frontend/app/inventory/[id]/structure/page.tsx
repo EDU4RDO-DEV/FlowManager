@@ -190,7 +190,7 @@ export default function ProductStructurePage() {
       toast.success("Componente agregado correctamente.");
       setIsFormOpen(false);
       await loadData();
-      if (product?.actualizarCostoSegunReceta) {
+      if (product?.permitirReceta && product.actualizarCostoSegunReceta) {
         await openRecipeCostConfirmation();
       }
     } catch (err) {
@@ -248,7 +248,7 @@ export default function ProductStructurePage() {
       setEditCandidate(null);
       setEditCantidad("");
       await loadData();
-      if (product?.actualizarCostoSegunReceta) {
+      if (product?.permitirReceta && product.actualizarCostoSegunReceta) {
         await openRecipeCostConfirmation();
       }
     } catch (err) {
@@ -275,7 +275,7 @@ export default function ProductStructurePage() {
 
       toast.success("Componente restaurado correctamente.");
       await loadData();
-      if (product?.actualizarCostoSegunReceta) {
+      if (product?.permitirReceta && product.actualizarCostoSegunReceta) {
         await openRecipeCostConfirmation();
       }
     } catch (err) {
@@ -309,7 +309,7 @@ export default function ProductStructurePage() {
       setAnulatedStructure((prev) => [movedToTrash, ...prev]);
       setDeleteCandidate(null);
       toast.success("Componente anulado correctamente.");
-      if (product?.actualizarCostoSegunReceta) {
+      if (product?.permitirReceta && product.actualizarCostoSegunReceta) {
         await openRecipeCostConfirmation();
       }
     } catch (err) {
@@ -333,7 +333,7 @@ export default function ProductStructurePage() {
   }
 
   async function handleRecipeCostPolicyChange(enabled: boolean) {
-    if (!canUpdateStructure || !product || product.categoria !== "PRODUCTO_TERMINADO") {
+    if (!canUpdateStructure || !product || !product.permitirReceta) {
       toast.error("No tienes permiso para cambiar la actualización de costo de la receta.");
       return;
     }
@@ -399,7 +399,7 @@ export default function ProductStructurePage() {
             {product?.nombre ?? `Producto #${productId}`}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Receta del producto terminado · {activeStructure.length + anulatedStructure.length} componentes
+          Receta del producto · {activeStructure.length + anulatedStructure.length} componentes
           </p>
         </div>
         <Button
@@ -598,7 +598,7 @@ export default function ProductStructurePage() {
         <TableSkeleton rows={6} columns={7} />
       ) : (
         <>
-        {product?.categoria === "PRODUCTO_TERMINADO" ? (
+        {product?.permitirReceta ? (
           <Card className="module-page-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Costo según receta</CardTitle>
@@ -655,7 +655,7 @@ export default function ProductStructurePage() {
             {activeStructure.length === 0 ? (
               <InventoryEmptyState
                 title="No hay componentes registrados"
-                description="Agregue materias primas o insumos para construir la estructura BOM de este producto terminado."
+                description="Agregue materias primas o insumos para construir la estructura BOM de este producto."
               />
             ) : (
               <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>

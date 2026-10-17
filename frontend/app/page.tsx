@@ -110,6 +110,7 @@ const dashboardModules: AppModuleKey[] = [
   "empleados",
   "clientes",
   "ventas",
+  "despacho",
   "proveedores",
   "compras",
   "sesiones",

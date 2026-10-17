@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-import { finitePositiveNumber, positiveInt } from './validation';
+import {
+  finitePositiveNumber,
+  optionalLimitFromQuery,
+  optionalPageFromQuery,
+  positiveInt,
+} from './validation';
 
 const routeIdParamsSchema = z.object({
   id: z.coerce.number().int().positive(),
@@ -21,6 +26,12 @@ const uniqueItems = <T extends { idInventarioItem: number }>(items: T[], ctx: z.
 };
 
 export const routeInventoryIdParamsSchema = routeIdParamsSchema;
+
+export const dispatchProductsQuerySchema = z.object({
+  page: optionalPageFromQuery,
+  limit: optionalLimitFromQuery,
+  busqueda: z.string().trim().max(255).optional(),
+});
 
 export const createRouteDispatchSchema = z.object({
   observaciones: z.string().trim().max(255).optional(),

@@ -22,10 +22,12 @@ describe('product category and independent capabilities', () => {
     expect(createProductSchema.safeParse({ ...baseProduct, categoria: 'ENVASE' }).success).toBe(false);
   });
 
-  it('defaults vendibility and physical-container tracking to false independently of category', () => {
+  it('defaults product capabilities to false independently of category', () => {
     const product = createProductSchema.parse(baseProduct);
     expect(product.esVendible).toBe(false);
     expect(product.esEnvaseRetornable).toBe(false);
+    expect(product.esFabricable).toBe(false);
+    expect(product.permitirReceta).toBe(false);
 
     const sellableInput = createProductSchema.parse({
       ...baseProduct,
@@ -35,6 +37,7 @@ describe('product category and independent capabilities', () => {
     });
     expect(sellableInput.esVendible).toBe(true);
     expect(sellableInput.esEnvaseRetornable).toBe(false);
+    expect(sellableInput.esFabricable).toBe(false);
 
     const returnableFinishedProduct = createProductSchema.parse({
       ...baseProduct,
@@ -43,6 +46,15 @@ describe('product category and independent capabilities', () => {
       precioVenta: 12,
     });
     expect(returnableFinishedProduct.esEnvaseRetornable).toBe(true);
+    expect(returnableFinishedProduct.esFabricable).toBe(false);
+
+    const fabricableSupply = createProductSchema.parse({
+      ...baseProduct,
+      categoria: 'INSUMO',
+      esFabricable: true,
+    });
+    expect(fabricableSupply.esFabricable).toBe(true);
+    expect(fabricableSupply.esVendible).toBe(false);
   });
 
   it('requires a valid price for any vendible product, not based on category', () => {
@@ -60,6 +72,8 @@ describe('product category and independent capabilities', () => {
 
   it('accepts server-side sales catalog filtering and rejects capacity on non-returnable items', () => {
     expect(listProductsQuerySchema.parse({ esVendible: 'true' }).esVendible).toBe(true);
+    expect(listProductsQuerySchema.parse({ esFabricable: 'true' }).esFabricable).toBe(true);
+    expect(listProductsQuerySchema.parse({ permitirReceta: 'true' }).permitirReceta).toBe(true);
     expect(createProductSchema.safeParse({
       ...baseProduct,
       capacidadEnvaseGalones: 5,

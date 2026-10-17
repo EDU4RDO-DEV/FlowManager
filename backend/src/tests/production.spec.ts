@@ -9,8 +9,10 @@ import { roleHasModulePermission } from '../middlewares/auth.middleware';
 import {
   calculateProductionRequirements,
   confirmProductionOrder,
+  createProductionOrder,
   getProductionOrder,
   cancelProductionOrder,
+  listProductionRecipes,
   listProductionOrders,
 } from '../services/production.service';
 import {
@@ -34,7 +36,12 @@ function mockProductionTransaction(
     UnidadMedidaSnapshot: 'unidad',
     Estado: 'PENDIENTE',
     Anulado: false,
-    InventarioItem: { Id: 20, Nombre: 'Producto terminado', UnidadMedida: 'unidad' },
+    InventarioItem: {
+      Id: 20,
+      Nombre: 'Producto terminado',
+      Categoria: 'INSUMO',
+      UnidadMedida: 'unidad',
+    },
     Detalles: [{
       Id: 1,
       IdOrdenProduccion: 41,
@@ -79,11 +86,24 @@ function mockProductionTransaction(
             Id: 20,
             Nombre: 'Producto terminado',
             Existencia: stock.get(20) ?? 0,
+            EsFabricable: true,
+            PermitirReceta: true,
             UnidadMedida: 'unidad',
           }),
       update: vi.fn(async (input: { where: { Id: number }; data: { Existencia: number } }) => {
         stock.set(input.where.Id, input.data.Existencia);
       }),
+    },
+    estructuraProducto: {
+      findMany: vi.fn(async () => [{
+        CantidadRequerida: 1,
+        InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
+          Nombre: 'Materia prima',
+          Categoria: 'MATERIA_PRIMA',
+          UnidadMedida: 'kg',
+          Anulado: false,
+        },
+      }]),
     },
     bitacoraInventario: {
       count: vi.fn(async () => 0),
@@ -115,6 +135,73 @@ function mockProductionTransaction(
   }) as never);
 
   return { order, stock, movements, physicalBuckets, tx };
+}
+
+function mockProductionOrderCreation(
+  categoria = 'INSUMO',
+  fabricable = true,
+  recipePermission = true,
+) {
+  const product = {
+    Id: 20,
+    Nombre: 'Producto fabricable',
+    Categoria: categoria,
+    UnidadMedida: 'paquete',
+    PermitirReceta: true,
+  };
+  const component = {
+    Id: 10,
+    Nombre: 'Componente intermedio',
+    Categoria: 'INSUMO',
+    Existencia: 8,
+    UnidadMedida: 'unidad',
+    Anulado: false,
+  };
+  const order = {
+    Id: 41,
+    IdProductoTerminado: product.Id,
+    NombreProductoTerminadoSnapshot: product.Nombre,
+    CantidadProducir: 2,
+    UnidadMedidaSnapshot: product.UnidadMedida,
+    Estado: 'PENDIENTE',
+    FechaRegistro: new Date(),
+    InventarioItem: product,
+    Detalles: [{
+      Id: 1,
+      IdOrdenProduccion: 41,
+      IdInventarioItem: component.Id,
+      NombreSnapshot: component.Nombre,
+      CantidadPorUnidad: 3,
+      CantidadTotal: 6,
+      UnidadMedidaSnapshot: component.UnidadMedida,
+      InventarioItem: { Id: component.Id, Nombre: component.Nombre },
+    }],
+  };
+  const tx = {
+    inventarioItem: {
+      findFirst: vi.fn(async () => fabricable && recipePermission ? product : null),
+    },
+    estructuraProducto: {
+      findMany: vi.fn(async () => [{
+        CantidadRequerida: 3,
+        InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: component,
+      }]),
+    },
+    ordenProduccion: {
+      create: vi.fn(async () => order),
+    },
+  };
+
+  vi.spyOn(prisma, '$transaction').mockImplementation((async (callback: unknown) => {
+    if (typeof callback !== 'function') {
+      throw new Error('Se esperaba una transacción interactiva');
+    }
+    return (callback as (client: Prisma.TransactionClient) => Promise<unknown>)(
+      tx as unknown as Prisma.TransactionClient,
+    );
+  }) as never);
+
+  return { order, tx };
 }
 
 function buildToken() {
@@ -245,6 +332,122 @@ describe('Production module', () => {
     }));
   });
 
+  it.each(['PRODUCTO_TERMINADO', 'INSUMO'])(
+    'creates a production order for a %s when fabrication is enabled',
+    async (categoria) => {
+      const { tx } = mockProductionOrderCreation(categoria);
+
+      const order = await createProductionOrder({
+        idProductoTerminado: 20,
+        cantidadProducir: 2,
+        idUsuario: 101,
+      });
+
+      expect(order.productoTerminado.categoria).toBe(categoria);
+      expect(tx.inventarioItem.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { Id: 20, EsFabricable: true, PermitirReceta: true, Anulado: false },
+      }));
+      expect(tx.ordenProduccion.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          Detalles: {
+            create: [expect.objectContaining({
+              IdInventarioItem: 10,
+              CantidadTotal: 6,
+            })],
+          },
+        }),
+      }));
+      expect(tx.estructuraProducto.findMany).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('rejects a product that is not enabled for fabrication', async () => {
+    mockProductionOrderCreation('PRODUCTO_TERMINADO', false);
+
+    await expect(createProductionOrder({
+      idProductoTerminado: 20,
+      cantidadProducir: 1,
+      idUsuario: 101,
+    })).rejects.toThrow('Producto no existe, no está habilitado para fabricación o no permite recetas');
+  });
+
+  it('rejects production when fabrication is enabled but recipes are not permitted', async () => {
+    mockProductionOrderCreation('INSUMO', true, false);
+
+    await expect(createProductionOrder({
+      idProductoTerminado: 20,
+      cantidadProducir: 1,
+      idUsuario: 101,
+    })).rejects.toThrow('no permite recetas');
+  });
+
+  it('lists only fabrication-enabled products for production', async () => {
+    const findMany = vi.spyOn(prisma.inventarioItem, 'findMany').mockResolvedValue([{
+      Id: 43,
+      Nombre: 'Bolsa de Agua (500 ml)',
+      Categoria: 'INSUMO',
+      Existencia: 0,
+      UnidadMedida: 'Mililitro',
+      EstructuraProducto_EstructuraProducto_IdProductoTerminadoToInventarioItem: [],
+    }] as never);
+
+    const recipes = await listProductionRecipes();
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { EsFabricable: true, PermitirReceta: true, Anulado: false },
+    }));
+    expect(recipes).toEqual([
+      expect.objectContaining({
+        id: 43,
+        categoria: 'INSUMO',
+        aptoParaProduccion: false,
+        errores: ['No tiene receta activa'],
+      }),
+    ]);
+  });
+
+  it('lists enabled items from other categories as selectable when their recipes are valid', async () => {
+    const validRecipe = [{
+      CantidadRequerida: 1,
+      InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
+        Id: 9999,
+        Nombre: 'Componente de prueba',
+        Categoria: 'MATERIA_PRIMA',
+        Existencia: 10,
+        UnidadMedida: 'Unidad',
+        Anulado: false,
+      },
+    }];
+    const findMany = vi.spyOn(prisma.inventarioItem, 'findMany').mockResolvedValue([
+      {
+        Id: 43,
+        Nombre: 'Bolsa de Agua (500 ml)',
+        Categoria: 'INSUMO',
+        Existencia: 0,
+        UnidadMedida: 'Unidad',
+        EstructuraProducto_EstructuraProducto_IdProductoTerminadoToInventarioItem: validRecipe,
+      },
+      {
+        Id: 50,
+        Nombre: 'Bolsa de Refresco (500 ml)',
+        Categoria: 'INSUMO',
+        Existencia: 0,
+        UnidadMedida: 'Unidad',
+        EstructuraProducto_EstructuraProducto_IdProductoTerminadoToInventarioItem: validRecipe,
+      },
+    ] as never);
+
+    const recipes = await listProductionRecipes();
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { EsFabricable: true, PermitirReceta: true, Anulado: false },
+    }));
+    expect(recipes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 43, categoria: 'INSUMO', aptoParaProduccion: true }),
+      expect.objectContaining({ id: 50, categoria: 'INSUMO', aptoParaProduccion: true }),
+    ]));
+  });
+
   it('scopes the negative-stock permission to the production module', () => {
     expect(rolePermissionEntrySchema.safeParse({
       moduleKey: 'produccion',
@@ -293,6 +496,11 @@ describe('Production module', () => {
     expect(stock.get(20)).toBe(7);
     expect(movements).toHaveLength(2);
     expect(movements.map((movement) => movement.TipoMovimiento)).toEqual([false, true]);
+    expect(movements.map((movement) => movement.IdInventarioItem)).toEqual([10, 20]);
+    expect(movements.map((movement) => [movement.TipoDocumento, movement.Documento])).toEqual([
+      ['PROD', '41'],
+      ['PROD', '41'],
+    ]);
   });
 
   it('keeps water production independent from the physical container ledger', async () => {
@@ -356,6 +564,18 @@ describe('Production module', () => {
     expect(movements).toHaveLength(0);
   });
 
+  it('requires an active valid recipe at confirmation time', async () => {
+    const { tx, movements } = mockProductionTransaction(5);
+    tx.estructuraProducto.findMany.mockResolvedValueOnce([]);
+
+    await expect(confirmProductionOrder(41, 101, false)).rejects.toThrow(
+      'El producto no tiene una receta activa',
+    );
+
+    expect(tx.inventarioItem.update).not.toHaveBeenCalled();
+    expect(movements).toHaveLength(0);
+  });
+
   it('serializes concurrent confirmations so only one can apply movements', async () => {
     const { movements } = mockProductionTransaction(5, true);
 
@@ -377,6 +597,17 @@ describe('Production module', () => {
     expect(tx.inventarioItem.update).not.toHaveBeenCalled();
     expect(movements).toHaveLength(0);
     expect(stock.get(10)).toBe(1);
+  });
+
+  it('rejects invalid saved recipe quantities before any movement', async () => {
+    const { order, movements } = mockProductionTransaction(5);
+    order.Detalles[0]!.CantidadTotal = 3;
+
+    await expect(confirmProductionOrder(41, 101, false)).rejects.toThrow(
+      'La cantidad registrada de Materia prima en la orden no es válida',
+    );
+
+    expect(movements).toHaveLength(0);
   });
 
   it('allows a negative projected ingredient balance only when the dedicated permission is passed', async () => {

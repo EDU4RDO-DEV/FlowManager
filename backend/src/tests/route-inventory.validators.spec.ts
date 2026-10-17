@@ -4,9 +4,18 @@ import {
   createRouteAdjustmentSchema,
   createRouteDispatchSchema,
   createRouteReturnSchema,
+  dispatchProductsQuerySchema,
 } from '../validators/route-inventory.validators';
 
 describe('route inventory validators', () => {
+  it('supports paginated dispatch catalog queries and respects the API page size limit', () => {
+    expect(dispatchProductsQuerySchema.parse({ page: '2', limit: '100' })).toEqual({
+      page: 2,
+      limit: 100,
+    });
+    expect(() => dispatchProductsQuerySchema.parse({ page: '1', limit: '101' })).toThrow();
+  });
+
   it('requires unique products and positive dispatch quantities', () => {
     expect(() => createRouteDispatchSchema.parse({
       detalle: [

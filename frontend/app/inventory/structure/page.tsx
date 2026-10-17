@@ -39,13 +39,28 @@ export default function InventoryStructureIndexPage() {
   async function loadData() {
     try {
       setIsLoading(true);
-      const response = await listProducts({
+      const firstPage = await listProducts({
         page: 1,
         limit: 100,
         anulado: false,
-        categoria: "PRODUCTO_TERMINADO",
+        permitirReceta: true,
       });
-      setItems(response.items);
+      const otherPages = await Promise.all(
+        Array.from({ length: firstPage.pagination.totalPages - 1 }, (_, index) =>
+          listProducts({
+            page: index + 2,
+            limit: 100,
+            anulado: false,
+            permitirReceta: true,
+          }),
+        ),
+      );
+      const recipeEnabledProducts = [
+        ...firstPage.items,
+        ...otherPages.flatMap((pageResult) => pageResult.items),
+      ].filter((product) => product.permitirReceta);
+
+      setItems(recipeEnabledProducts);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cargar productos para estructura."));
     } finally {
@@ -83,14 +98,14 @@ export default function InventoryStructureIndexPage() {
     <RequireAuth>
       <DashboardShell
         title="Estructura / Recetas (BOM)"
-        description="Selecciona un producto terminado para gestionar su estructura"
+        description="Selecciona un producto que permita recetas para gestionar su estructura"
       >
         <div className="space-y-4">
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             <Card className="metric-card metric-card-primary rounded-xl bg-background">
               <CardContent className="flex items-center justify-between p-4">
                 <div>
-                  <p className="text-sm text-muted-foreground">Productos terminados</p>
+                  <p className="text-sm text-muted-foreground">Productos que permiten receta</p>
                   <p className="metric-number-primary text-2xl font-bold tracking-tight">{metrics.total}</p>
                 </div>
                 <BadgeCheck className="size-5 text-sky-600" />
@@ -181,7 +196,7 @@ export default function InventoryStructureIndexPage() {
                     {!isLoading && filtered.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
-                          No hay productos terminados disponibles.
+                          No hay productos habilitados para fabricación.
                         </TableCell>
                       </TableRow>
                     ) : null}

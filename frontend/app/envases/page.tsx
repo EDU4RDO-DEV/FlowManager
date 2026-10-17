@@ -176,6 +176,44 @@ export default function EnvasesPage() {
     ),
     [physicalBalances],
   );
+  const selectedItemStock = useMemo(() => {
+    const item = envaseItems.find((candidate) => String(candidate.id) === form.idInventarioItem);
+    if (!item || form.tipoMovimiento === "PERDIDA") return null;
+
+    const location = form.tipoMovimiento === "BAJA"
+      ? form.ubicacionEnvase
+      : form.estadoEnvase === "DANADO"
+        ? "CUARENTENA"
+        : "PLANTA";
+    const routeId = location === "RUTA" && form.idRutaSesion ? Number(form.idRutaSesion) : null;
+    const balance = physicalBalances.find((candidate) =>
+      candidate.idInventarioItem === item.id &&
+      candidate.ubicacion === location &&
+      candidate.estado === form.estadoEnvase &&
+      candidate.idRutaSesion === routeId,
+    );
+    const pending = physicalBalances.find((candidate) =>
+      candidate.idInventarioItem === item.id &&
+      candidate.ubicacion === "PLANTA" &&
+      candidate.estado === "PENDIENTE_CONTEO" &&
+      candidate.idRutaSesion === null,
+    )?.cantidad ?? 0;
+    const plantTracked = physicalBalances
+      .filter((candidate) =>
+        candidate.idInventarioItem === item.id &&
+        candidate.ubicacion === "PLANTA" &&
+        ["VACIO", "LLENO", "PENDIENTE_CONTEO"].includes(candidate.estado),
+      )
+      .reduce((sum, candidate) => sum + candidate.cantidad, 0);
+
+    return {
+      item,
+      location,
+      quantity: balance?.cantidad ?? 0,
+      pending,
+      unclassified: item.existencia - plantTracked,
+    };
+  }, [envaseItems, form, physicalBalances]);
 
   function resetForm() {
     setForm(EMPTY_FORM);
@@ -277,6 +315,34 @@ export default function EnvasesPage() {
       (form.tipoMovimiento === "BAJA" && form.ubicacionEnvase === "RUTA" && !form.idRutaSesion)
     ) {
       toast.error("Completa los datos requeridos para el movimiento");
+      return;
+    }
+
+    const requestedQuantity = Number(form.cantidad);
+    if (!Number.isInteger(requestedQuantity) || requestedQuantity <= 0) {
+      toast.error("La cantidad de envases debe ser un entero mayor que cero");
+      return;
+    }
+    if (
+      selectedItemStock &&
+      ["PRESTAMO", "BAJA"].includes(form.tipoMovimiento) &&
+      requestedQuantity > selectedItemStock.quantity
+    ) {
+      toast.error(
+        `Stock físico insuficiente para ${selectedItemStock.item.nombre} (${form.estadoEnvase}/${selectedItemStock.location}): disponible ${selectedItemStock.quantity}, solicitado ${requestedQuantity}`,
+      );
+      return;
+    }
+    if (
+      selectedItemStock &&
+      ["PRESTAMO", "BAJA"].includes(form.tipoMovimiento) &&
+      selectedItemStock.location === "PLANTA" &&
+      form.estadoEnvase !== "DANADO" &&
+      requestedQuantity > selectedItemStock.item.existencia
+    ) {
+      toast.error(
+        `Stock de catálogo insuficiente para ${selectedItemStock.item.nombre}: disponible ${selectedItemStock.item.existencia}, solicitado ${requestedQuantity}`,
+      );
       return;
     }
 
@@ -531,6 +597,26 @@ export default function EnvasesPage() {
                 </div>
               </div>
 
+              {selectedItemStock ? (
+                <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                  <p>
+                    Stock físico registrado para {selectedItemStock.location}/{form.estadoEnvase}:{" "}
+                    <strong>{selectedItemStock.quantity}</strong>. Existencia general en catálogo:{" "}
+                    <strong>{selectedItemStock.item.existencia}</strong>. Pendiente de clasificación en planta:{" "}
+                    <strong>{selectedItemStock.pending}</strong>.
+                  </p>
+                  {selectedItemStock.unclassified > 0 ? (
+                    <p className="mt-1 text-amber-700 dark:text-amber-400">
+                      Hay {selectedItemStock.unclassified} unidad(es) de catálogo aún sin clasificación física. Confirma el conteo real y clasifícalas en la sección de existencias pendientes; esa clasificación no vuelve a sumar el saldo al catálogo.
+                    </p>
+                  ) : selectedItemStock.unclassified < 0 ? (
+                    <p className="mt-1 text-destructive">
+                      El saldo físico de planta supera la existencia del catálogo por {Math.abs(selectedItemStock.unclassified)}. Revisa los movimientos antes de registrar otra operación.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="flex flex-wrap gap-2">
                 <Button
                   onClick={submitMovimiento}
@@ -681,7 +767,7 @@ export default function EnvasesPage() {
                       <option value="">Selecciona saldo</option>
                       {pendingBalances.map((balance) => (
                         <option key={balance.idInventarioItem} value={balance.idInventarioItem}>
-                          {balance.nombre}: {balance.cantidad} por contar
+                            {balance.nombre}: {balance.cantidad} por contar{balance.esSaldoLegadoPendiente ? " (saldo legado sin clasificar)" : ""}
                         </option>
                       ))}
                     </select>
@@ -724,7 +810,10 @@ export default function EnvasesPage() {
                     <TableRow key={`${balance.idInventarioItem}-${balance.ubicacion}-${balance.estado}-${balance.idRutaSesion ?? "none"}-${index}`}>
                       <TableCell>{balance.nombre}</TableCell>
                       <TableCell>{balance.ubicacion}</TableCell>
-                      <TableCell>{balance.estado}</TableCell>
+                      <TableCell>
+                        {balance.estado}
+                        {balance.esSaldoLegadoPendiente ? " (incluye saldo legado)" : ""}
+                      </TableCell>
                       <TableCell>{balance.idRutaSesion ?? "—"}</TableCell>
                       <TableCell className="text-right">{balance.cantidad}</TableCell>
                     </TableRow>

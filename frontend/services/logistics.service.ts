@@ -6,6 +6,7 @@ import type {
   CreateRutaPayload,
   CreateRutaSesionPayload,
   CreateVehiculoPayload,
+  DispatchProductListResult,
   GastoVehiculoDto,
   LogisticsListResponse,
   MantenimientoVehiculoDto,
@@ -122,6 +123,42 @@ export async function listRutaSesiones(params?: {
   return data.data ?? [];
 }
 
+export async function listDispatchRutaSesiones(params?: {
+  idRuta?: number;
+  idVehiculo?: number;
+  anulado?: boolean;
+  estado?: string;
+}): Promise<RutaSesionDto[]> {
+  const { data } = await api.get<LogisticsListResponse<RutaSesionDto>>("/api/logistics/despacho/sesiones", {
+    params: {
+      ...(params?.idRuta !== undefined ? { idRuta: params.idRuta } : {}),
+      ...(params?.idVehiculo !== undefined ? { idVehiculo: params.idVehiculo } : {}),
+      ...(params?.anulado !== undefined ? { anulado: String(params.anulado) } : {}),
+      ...(params?.estado ? { estado: params.estado } : {}),
+    },
+  });
+
+  return data.data ?? [];
+}
+
+export async function listDispatchProducts(params?: {
+  page?: number;
+  limit?: number;
+  busqueda?: string;
+}): Promise<DispatchProductListResult> {
+  const { data } = await api.get<ApiResponse<DispatchProductListResult>>("/api/logistics/despacho/productos", {
+    params: {
+      ...(params?.page !== undefined ? { page: params.page } : {}),
+      ...(params?.limit !== undefined ? { limit: params.limit } : {}),
+      ...(params?.busqueda ? { busqueda: params.busqueda } : {}),
+    },
+  });
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al consultar productos vendibles para despacho");
+  }
+  return data.data;
+}
+
 export async function createRutaSesion(payload: CreateRutaSesionPayload): Promise<RutaSesionDto> {
   const { data } = await api.post<ApiResponse<RutaSesionDto>>("/api/logistics/rutas/sesiones", payload);
   if (!data.data) {
@@ -141,6 +178,17 @@ export async function updateRutaSesion(
   );
   if (!data.data) {
     throw new Error(data.message || "Respuesta invalida al actualizar sesión");
+  }
+  return data.data;
+}
+
+export async function closeRouteSession(idRutaSesion: number, payload: { kmFinal: number }): Promise<RutaSesionDto> {
+  const { data } = await api.patch<ApiResponse<RutaSesionDto>>(
+    `/api/logistics/despacho/sesiones/${idRutaSesion}/cerrar`,
+    payload,
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al cerrar ruta");
   }
   return data.data;
 }

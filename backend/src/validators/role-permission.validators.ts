@@ -9,6 +9,7 @@ export const rbacModuleKeys = [
   'clientes',
   'ventas',
   'logistica',
+  'despacho',
   'empleados',
   'proveedores',
   'compras',

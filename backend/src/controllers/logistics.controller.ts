@@ -33,6 +33,7 @@ import {
   createRutaSchema,
   createRutaSesionSchema,
   createVehiculoSchema,
+  closeRouteSessionSchema,
   deleteGastoVehiculoBodySchema,
   deleteRutaBodySchema,
   deleteRutaSesionBodySchema,
@@ -480,6 +481,7 @@ export async function updateRutaSesionController(req: Request, res: Response) {
       message === 'Vehiculo no disponible por estado actual' ||
       message === 'La sesión está cerrada y no admite modificaciones' ||
       message === 'No se puede modificar la asignación de una sesión con operaciones registradas' ||
+      message === 'La ruta tiene productos pendientes de devolución, ajuste autorizado o proformas sin confirmar' ||
       message === 'La ruta tiene productos pendientes de devolución o ajuste autorizado'
     ) {
       return res.status(409).json({ ok: false, message });
@@ -497,6 +499,50 @@ export async function updateRutaSesionController(req: Request, res: Response) {
       return res.status(400).json({ ok: false, message });
     }
 
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function closeRutaSesionFromDispatchController(req: Request, res: Response) {
+  try {
+    const idUsuario = req.auth?.userId;
+    if (!idUsuario) return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
+    const { id } = logisticsIdParamsSchema.parse(req.params);
+    const { kmFinal } = closeRouteSessionSchema.parse(req.body);
+    const data = await updateRutaSesion(id, {
+      estado: 'CERRADA',
+      kmFinal,
+      idUsuarioModificador: idUsuario,
+    });
+    return res.status(200).json({ ok: true, data, message: 'Ruta cerrada y liquidada correctamente' });
+  } catch (error) {
+    const parsed = handleValidationError(error, res);
+    if (parsed) return parsed;
+
+    if (isSerializationConflict(error)) {
+      return res.status(409).json({
+        ok: false,
+        message: 'La sesión cambió por una operación concurrente. Verifique su estado antes de reintentar.',
+      });
+    }
+
+    const message = getMessage(error);
+    if (message === 'RutaSesion no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+    if (
+      message === 'La sesión está cerrada y no admite modificaciones' ||
+      message === 'La ruta tiene productos pendientes de devolución, ajuste autorizado o proformas sin confirmar'
+    ) {
+      return res.status(409).json({ ok: false, message });
+    }
+    if (
+      message === 'kmInicial es requerido cuando la sesión está CERRADA' ||
+      message === 'kmFinal es requerido cuando la sesión está CERRADA' ||
+      message === 'kmFinal no puede ser menor que kmInicial'
+    ) {
+      return res.status(400).json({ ok: false, message });
+    }
     return res.status(500).json({ ok: false, message });
   }
 }

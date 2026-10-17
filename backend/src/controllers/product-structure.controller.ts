@@ -117,7 +117,7 @@ export async function listStructureByProductController(req: Request, res: Respon
 
     const message = error instanceof Error ? error.message : 'Error interno';
 
-    if (message === 'Producto terminado no existe o no es un producto final') {
+    if (message === 'Producto no existe o no está habilitado para fabricación') {
       return res.status(404).json({ ok: false, message });
     }
 
@@ -139,7 +139,7 @@ export async function listAnulatedStructureByProductController(req: Request, res
 
     const message = error instanceof Error ? error.message : 'Error interno';
 
-    if (message === 'Producto terminado no existe o no es un producto final') {
+    if (message === 'Producto no existe o no está habilitado para fabricación') {
       return res.status(404).json({ ok: false, message });
     }
 
@@ -187,10 +187,11 @@ export async function createProductStructureController(req: Request, res: Respon
     const message = error instanceof Error ? error.message : 'Error interno';
 
     if (
-      message === 'Producto terminado no existe o no es un producto final' ||
+      message === 'Producto no existe o no está habilitado para fabricación' ||
       message === 'Materia prima no existe' ||
       message === 'El componente debe ser una materia prima o insumo activo' ||
       message === 'Un producto no puede ser componente de sí mismo' ||
+      message === 'La receta generaría una dependencia circular' ||
       message === 'Este componente ya existe en la estructura del producto'
     ) {
       return res.status(409).json({ ok: false, message });
@@ -271,7 +272,7 @@ export async function restoreProductStructureController(req: Request, res: Respo
     if (
       message === 'Componente anulado no existe' ||
       message === 'Usuario no existe' ||
-      message === 'Producto terminado no existe o no es un producto final' ||
+      message === 'Producto no existe o no está habilitado para fabricación' ||
       message === 'El componente debe ser una materia prima o insumo activo'
     ) {
       return res.status(404).json({ ok: false, message });

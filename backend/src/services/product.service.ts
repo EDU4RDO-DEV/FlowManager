@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma';
 import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
+import { Prisma } from '@prisma/client';
 import {
   anulateInventoryMovementByReference,
   registerInventoryMovement,
@@ -14,6 +15,8 @@ type ListProductsInput = {
   anulado?: boolean;
   idProveedor?: number;
   esVendible?: boolean;
+  esFabricable?: boolean;
+  permitirReceta?: boolean;
 };
 
 type CreateProductInput = {
@@ -26,6 +29,8 @@ type CreateProductInput = {
   precioVenta?: number;
   esVendible?: boolean;
   esEnvaseRetornable?: boolean;
+  esFabricable?: boolean;
+  permitirReceta?: boolean;
   capacidadEnvaseGalones?: number;
   rutaImagen?: string;
   idCategoriaComision?: number | null;
@@ -42,6 +47,8 @@ type UpdateProductInput = {
   precioVenta?: number;
   esVendible?: boolean;
   esEnvaseRetornable?: boolean;
+  esFabricable?: boolean;
+  permitirReceta?: boolean;
   capacidadEnvaseGalones?: number | null;
   rutaImagen?: string;
   idCategoriaComision?: number | null;
@@ -79,6 +86,8 @@ function toProductDto(product: {
   Categoria: string;
   EsVendible: boolean;
   EsEnvaseRetornable: boolean;
+  EsFabricable: boolean;
+  PermitirReceta: boolean;
   ActualizarCostoSegunReceta: boolean;
   CapacidadEnvaseGalones: unknown;
   IdCategoriaComision: number | null;
@@ -110,6 +119,8 @@ function toProductDto(product: {
     categoria: product.Categoria,
     esVendible: product.EsVendible,
     esEnvaseRetornable: product.EsEnvaseRetornable,
+    esFabricable: product.EsFabricable,
+    permitirReceta: product.PermitirReceta,
     actualizarCostoSegunReceta: product.ActualizarCostoSegunReceta,
     capacidadEnvaseGalones: product.CapacidadEnvaseGalones == null
       ? null
@@ -185,6 +196,8 @@ export async function listProducts(input: ListProductsInput) {
     ...(input.categoria !== undefined ? { Categoria: input.categoria } : {}),
     ...(input.idProveedor !== undefined ? { IdProveedor: input.idProveedor } : {}),
     ...(input.esVendible !== undefined ? { EsVendible: input.esVendible } : {}),
+    ...(input.esFabricable !== undefined ? { EsFabricable: input.esFabricable } : {}),
+    ...(input.permitirReceta !== undefined ? { PermitirReceta: input.permitirReceta } : {}),
     ...(input.busqueda
       ? {
           Nombre: {
@@ -288,6 +301,8 @@ export async function createProduct(input: CreateProductInput) {
 
   const esVendible = input.esVendible ?? false;
   const esEnvaseRetornable = input.esEnvaseRetornable ?? false;
+  const esFabricable = input.esFabricable ?? false;
+  const permitirReceta = input.permitirReceta ?? false;
   if (!esEnvaseRetornable && input.capacidadEnvaseGalones !== undefined) {
     throw new Error('La capacidad solo aplica a un envase físico retornable');
   }
@@ -306,6 +321,8 @@ export async function createProduct(input: CreateProductInput) {
         Categoria: input.categoria,
         EsVendible: esVendible,
         EsEnvaseRetornable: esEnvaseRetornable,
+        EsFabricable: esFabricable,
+        PermitirReceta: permitirReceta,
         CapacidadEnvaseGalones: input.capacidadEnvaseGalones ?? null,
         IdCategoriaComision: input.idCategoriaComision ?? null,
         UnidadMedida: input.unidadMedida ?? null,
@@ -357,6 +374,8 @@ export async function updateProduct(id: number, input: UpdateProductInput) {
       Categoria: true,
       EsVendible: true,
       EsEnvaseRetornable: true,
+      EsFabricable: true,
+      PermitirReceta: true,
       CapacidadEnvaseGalones: true,
       CostoPromedio: true,
       PrecioVenta: true,
@@ -392,6 +411,8 @@ export async function updateProduct(id: number, input: UpdateProductInput) {
   const nextCategoria = input.categoria ?? existing.Categoria;
   const nextEsVendible = input.esVendible ?? existing.EsVendible;
   const nextEsEnvaseRetornable = input.esEnvaseRetornable ?? existing.EsEnvaseRetornable;
+  const nextEsFabricable = input.esFabricable ?? existing.EsFabricable;
+  const nextPermitirReceta = input.permitirReceta ?? existing.PermitirReceta;
   const nextCapacidadEnvaseGalones = nextEsEnvaseRetornable
     ? input.capacidadEnvaseGalones !== undefined
       ? input.capacidadEnvaseGalones
@@ -399,20 +420,21 @@ export async function updateProduct(id: number, input: UpdateProductInput) {
     : null;
 
   if (input.categoria !== undefined && input.categoria !== existing.Categoria) {
-    const [parentStructures, componentStructures] = await Promise.all([
-      prisma.estructuraProducto.count({
-        where: { IdProductoTerminado: id, Anulado: false },
-      }),
-      prisma.estructuraProducto.count({
-        where: { IdMateriaPrima: id, Anulado: false },
-      }),
-    ]);
+    const componentStructures = await prisma.estructuraProducto.count({
+      where: { IdMateriaPrima: id, Anulado: false },
+    });
 
-    if (input.categoria !== 'PRODUCTO_TERMINADO' && parentStructures > 0) {
-      throw new Error('No se puede cambiar la categoría: el producto es padre de una receta activa');
-    }
     if (!['MATERIA_PRIMA', 'INSUMO'].includes(input.categoria) && componentStructures > 0) {
       throw new Error('No se puede cambiar la categoría: el producto es componente de una receta activa');
+    }
+  }
+
+  if (existing.EsFabricable && !nextEsFabricable) {
+    const pendingOrders = await prisma.ordenProduccion.count({
+      where: { IdProductoTerminado: id, Estado: 'PENDIENTE', Anulado: false },
+    });
+    if (pendingOrders > 0) {
+      throw new Error('No se puede deshabilitar fabricación mientras existan órdenes pendientes');
     }
   }
 
@@ -427,46 +449,61 @@ export async function updateProduct(id: number, input: UpdateProductInput) {
     costoPromedio,
     input.precioVenta ?? Number(existing.PrecioVenta),
   );
-  const updated = await prisma.inventarioItem.update({
-    where: { Id: id },
-    data: {
-      ...(input.idUsuario !== undefined ? { IdUsuario: input.idUsuario } : {}),
-      ...(input.idUsuarioModificador !== undefined
-        ? { IdUsuarioModificador: input.idUsuarioModificador }
-        : {}),
-      ...(input.idProveedor !== undefined ? { IdProveedor: input.idProveedor } : {}),
-      ...(input.nombre !== undefined ? { Nombre: input.nombre } : {}),
-      ...(input.categoria !== undefined ? { Categoria: input.categoria } : {}),
-      EsVendible: nextEsVendible,
-      EsEnvaseRetornable: nextEsEnvaseRetornable,
-      ...(input.capacidadEnvaseGalones !== undefined
-        ? { CapacidadEnvaseGalones: nextCapacidadEnvaseGalones }
-        : input.esEnvaseRetornable === false
-          ? { CapacidadEnvaseGalones: null }
+  const updated = await prisma.$transaction(async (tx) => {
+    if (input.permitirReceta === false && existing.PermitirReceta) {
+      const existingRecipes = await tx.estructuraProducto.count({
+        where: { IdProductoTerminado: id },
+      });
+      if (existingRecipes > 0) {
+        throw new Error(
+          'No se puede desactivar Permitir receta mientras el producto tenga recetas registradas, incluso anuladas.',
+        );
+      }
+    }
+
+    return tx.inventarioItem.update({
+      where: { Id: id },
+      data: {
+        ...(input.idUsuario !== undefined ? { IdUsuario: input.idUsuario } : {}),
+        ...(input.idUsuarioModificador !== undefined
+          ? { IdUsuarioModificador: input.idUsuarioModificador }
           : {}),
-      ...(input.idCategoriaComision !== undefined
-        ? { IdCategoriaComision: input.idCategoriaComision }
-        : {}),
-      ...(input.unidadMedida !== undefined ? { UnidadMedida: input.unidadMedida } : {}),
-      ...(input.costoPromedio !== undefined ? { CostoPromedio: input.costoPromedio } : {}),
-      PrecioVenta: precioVenta,
-      ...(input.rutaImagen !== undefined ? { RutaImagen: input.rutaImagen } : {}),
-      FechaModificacion: new Date(),
-    },
-    include: {
-      Proveedor: {
-        select: {
-          Id: true,
-          Anulado: true,
-          Entidad: {
-            select: {
-              NombreCompleto: true,
+        ...(input.idProveedor !== undefined ? { IdProveedor: input.idProveedor } : {}),
+        ...(input.nombre !== undefined ? { Nombre: input.nombre } : {}),
+        ...(input.categoria !== undefined ? { Categoria: input.categoria } : {}),
+        EsVendible: nextEsVendible,
+        EsEnvaseRetornable: nextEsEnvaseRetornable,
+        EsFabricable: nextEsFabricable,
+        PermitirReceta: nextPermitirReceta,
+        ...(input.capacidadEnvaseGalones !== undefined
+          ? { CapacidadEnvaseGalones: nextCapacidadEnvaseGalones }
+          : input.esEnvaseRetornable === false
+            ? { CapacidadEnvaseGalones: null }
+            : {}),
+        ...(input.idCategoriaComision !== undefined
+          ? { IdCategoriaComision: input.idCategoriaComision }
+          : {}),
+        ...(input.unidadMedida !== undefined ? { UnidadMedida: input.unidadMedida } : {}),
+        ...(input.costoPromedio !== undefined ? { CostoPromedio: input.costoPromedio } : {}),
+        PrecioVenta: precioVenta,
+        ...(input.rutaImagen !== undefined ? { RutaImagen: input.rutaImagen } : {}),
+        FechaModificacion: new Date(),
+      },
+      include: {
+        Proveedor: {
+          select: {
+            Id: true,
+            Anulado: true,
+            Entidad: {
+              select: {
+                NombreCompleto: true,
+              },
             },
           },
         },
       },
-    },
-  });
+    });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
   return toProductDto(updated);
 }

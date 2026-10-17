@@ -314,7 +314,7 @@ export default function ProductionPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Orden</TableHead>
-                            <TableHead>Producto terminado</TableHead>
+                            <TableHead>Producto fabricado</TableHead>
                             <TableHead>Cantidad</TableHead>
                             <TableHead>Receta / Consumo teórico</TableHead>
                             <TableHead>Estado</TableHead>
@@ -420,18 +420,24 @@ export default function ProductionPage() {
                   <CardContent className="space-y-5">
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-1.5">
-                        <Label htmlFor="production-product">Producto terminado con receta</Label>
+                        <Label htmlFor="production-product">Producto habilitado para fabricación con receta</Label>
                         <select
                           id="production-product"
                           value={selectedProductId}
                           onChange={(event) => setSelectedProductId(event.target.value)}
                           className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                          disabled={saving || eligibleRecipes.length === 0}
+                          disabled={saving || recipes.length === 0}
                         >
                           <option value="">Selecciona un producto</option>
-                          {eligibleRecipes.map((recipe) => (
-                            <option key={recipe.id} value={recipe.id}>
-                              {recipe.nombre} — existencia {formatQuantity(recipe.existencia)} {recipe.unidadMedida}
+                          {recipes.map((recipe) => (
+                            <option
+                              key={recipe.id}
+                              value={recipe.id}
+                              disabled={!recipe.aptoParaProduccion}
+                            >
+                              {recipe.nombre} ({recipe.categoria}) — {recipe.aptoParaProduccion
+                                ? `existencia ${formatQuantity(recipe.existencia)} ${recipe.unidadMedida}`
+                                : "Configura una receta para fabricar"}
                             </option>
                           ))}
                         </select>
@@ -511,13 +517,12 @@ export default function ProductionPage() {
                       </div>
                     ) : recipes.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                        No hay productos terminados activos para fabricar. Registra un producto terminado en Inventario
-                        y define su receta.
+                        No hay productos habilitados para fabricación. Activa la opción en Inventario y define su receta.
                       </div>
-                    ) : recipes.length > 0 ? (
+                    ) : eligibleRecipes.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                        No hay productos terminados aptos. Completa la unidad del producto y la de cada materia prima
-                        en Inventario, y define una receta activa.
+                        No hay productos fabricables aptos. Completa las unidades del producto y sus componentes en
+                        Inventario, y define una receta activa.
                       </div>
                     ) : null}
 
@@ -542,7 +547,7 @@ export default function ProductionPage() {
             <DialogHeader>
               <DialogTitle>Confirmar fabricación</DialogTitle>
               <DialogDescription>
-                La confirmación registrará el consumo de cada componente y la entrada del producto terminado en una
+                La confirmación registrará el consumo de cada componente y la entrada del producto fabricado en una
                 sola transacción. No se pueden repetir movimientos para la misma orden.
               </DialogDescription>
             </DialogHeader>

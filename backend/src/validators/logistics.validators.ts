@@ -139,6 +139,10 @@ export const updateRutaSesionSchema = z
     message: 'Debe enviar al menos un campo para actualizar',
   });
 
+export const closeRouteSessionSchema = z.object({
+  kmFinal: z.number().finite('kmFinal debe ser válido').min(0),
+});
+
 export const deleteRutaSesionBodySchema = z.object({
   idUsuarioAnulador: positiveInt.optional(),
 });

@@ -20,6 +20,7 @@ const MODULE_LABELS: Record<BackendModuleKey, string> = {
   clientes: 'Clientes',
   ventas: 'Ventas',
   logistica: 'Logistica',
+  despacho: 'Despacho',
   empleados: 'Empleados',
   proveedores: 'Proveedores',
   compras: 'Compras',

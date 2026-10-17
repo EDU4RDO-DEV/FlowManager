@@ -9,10 +9,13 @@ import {
   getRouteInventory,
   getRouteSettlement,
 } from '../services/route-inventory.service';
+import { listEnvasePlantBucketBalances } from '../services/envase.service';
+import { listProducts } from '../services/product.service';
 import {
   createRouteAdjustmentSchema,
   createRouteDispatchSchema,
   createRouteReturnSchema,
+  dispatchProductsQuerySchema,
   routeInventoryIdParamsSchema,
 } from '../validators/route-inventory.validators';
 import { getZodErrorMessage } from '../validators/validation';
@@ -50,6 +53,8 @@ function handleError(error: unknown, res: Response) {
     message.includes('ya tiene') ||
     message.includes('No se puede despachar') ||
     message.includes('Stock insuficiente') ||
+    message.includes('Stock físico verificado insuficiente') ||
+    message.includes('Existencia insuficiente del envase') ||
     message.includes('superior') ||
     message.includes('supera la diferencia') ||
     message.includes('Registre primero')
@@ -66,6 +71,53 @@ export async function getRouteInventoryController(req: Request, res: Response) {
     return res.status(200).json({ ok: true, data });
   } catch (error) {
     return handleError(error, res);
+  }
+}
+
+export async function listDispatchProductsController(req: Request, res: Response) {
+  try {
+    const query = dispatchProductsQuerySchema.parse(req.query);
+    const productList = await listProducts({
+      ...query,
+      anulado: false,
+      esVendible: true,
+    });
+    const returnableProductIds = productList.items
+      .filter((product) => product.esEnvaseRetornable)
+      .map((product) => product.id);
+    const bucketBalances = await listEnvasePlantBucketBalances(returnableProductIds);
+    const bucketsByProduct = new Map<number, Map<string, number>>();
+    for (const balance of bucketBalances) {
+      const states = bucketsByProduct.get(balance.idInventarioItem) ?? new Map<string, number>();
+      states.set(balance.estado, balance.cantidad);
+      bucketsByProduct.set(balance.idInventarioItem, states);
+    }
+    const data = {
+      ...productList,
+      items: productList.items.map((product) => {
+        if (!product.esEnvaseRetornable) return product;
+        const states = bucketsByProduct.get(product.id);
+        const vacio = states?.get('VACIO') ?? 0;
+        const lleno = states?.get('LLENO') ?? 0;
+        const pending = states?.get('PENDIENTE_CONTEO') ?? 0;
+        const difference = Number((product.existencia - vacio - lleno - pending).toFixed(2));
+        return {
+          ...product,
+          stockEnvasePlanta: {
+            vacio,
+            lleno,
+            pendienteClasificacion: pending + Math.max(0, difference),
+            diferenciaCatalogo: difference,
+          },
+        };
+      }),
+    };
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+    return res.status(500).json({ ok: false, message: getErrorMessage(error) });
   }
 }
 

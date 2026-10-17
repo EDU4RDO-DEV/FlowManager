@@ -43,7 +43,8 @@ function getStatusForProductionError(error: unknown, message: string): number {
     message.includes('no es una materia prima') ||
     message.includes('unidad') ||
     message.includes('cantidad') ||
-    message.includes('Producto terminado no existe')
+    message.includes('Producto terminado no existe') ||
+    message.includes('no está habilitado para fabricación')
   ) {
     return 400;
   }

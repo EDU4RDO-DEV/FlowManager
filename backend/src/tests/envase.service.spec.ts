@@ -6,12 +6,13 @@ const {
   registerEnvaseBucketChangeMock,
   getEnvaseBucketQuantityMock,
   recordEnvaseBucketCountMock,
+  transferEnvaseBucketMock,
 } = vi.hoisted(() => ({
   prismaMock: {
     usuario: { findFirst: vi.fn() },
     cliente: { findFirst: vi.fn() },
     venta: { findFirst: vi.fn() },
-    inventarioItem: { findFirst: vi.fn(), update: vi.fn() },
+    inventarioItem: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
     rutaSesion: { findFirst: vi.fn() },
     envaseClienteSaldo: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     movimientoEnvase: { create: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
@@ -22,6 +23,7 @@ const {
   registerEnvaseBucketChangeMock: vi.fn(),
   getEnvaseBucketQuantityMock: vi.fn().mockResolvedValue(100),
   recordEnvaseBucketCountMock: vi.fn(),
+  transferEnvaseBucketMock: vi.fn(),
 }));
 
 vi.mock('../config/prisma', () => ({
@@ -33,11 +35,14 @@ vi.mock('../services/inventory-movement.service', () => ({
   recordEnvaseBucketCount: recordEnvaseBucketCountMock,
   registerEnvaseBucketChange: registerEnvaseBucketChangeMock,
   registerInventoryMovement: registerInventoryMovementMock,
-  transferEnvaseBucket: vi.fn(),
+  transferEnvaseBucket: transferEnvaseBucketMock,
 }));
 
 import {
   anulateMovimientoEnvase,
+  listEnvasePhysicalBalances,
+  listEnvasePlantBucketBalances,
+  reconcileEnvasePhysicalStock,
   registrarDevolucionEnvase,
   registrarBajaEnvase,
   registrarPerdidaEnvase,
@@ -123,6 +128,131 @@ describe('Fase 5 - envases retornables (préstamo/devolución)', () => {
     await expect(
       registrarPrestamoEnvase({ idInventarioItem: 5, idCliente: 2, idUsuario: 1, cantidad: 3 }),
     ).rejects.toThrowError('Stock insuficiente');
+  });
+
+  it('muestra el saldo físico por estado y ubicación usando el movimiento más reciente', async () => {
+    prismaMock.bitacoraInventario.findMany.mockResolvedValueOnce([
+      { IdInventarioItem: 5, EstadoEnvase: 'VACIO', NuevaExistencia: 4 },
+      { IdInventarioItem: 5, EstadoEnvase: 'VACIO', NuevaExistencia: 2 },
+      { IdInventarioItem: 5, EstadoEnvase: 'PENDIENTE_CONTEO', NuevaExistencia: 3 },
+    ]);
+
+    await expect(listEnvasePlantBucketBalances([5])).resolves.toEqual([
+      { idInventarioItem: 5, estado: 'VACIO', cantidad: 4 },
+      { idInventarioItem: 5, estado: 'PENDIENTE_CONTEO', cantidad: 3 },
+    ]);
+    expect(prismaMock.bitacoraInventario.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        IdInventarioItem: { in: [5] },
+        UbicacionEnvase: 'PLANTA',
+      }),
+      orderBy: { Id: 'desc' },
+    }));
+  });
+
+  it('expone stock legado del catálogo como pendiente de clasificación sin alterar la existencia', async () => {
+    prismaMock.bitacoraInventario.findMany.mockResolvedValueOnce([]);
+    prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
+      { Id: 5, Nombre: 'Garrafón 20L', Existencia: 8 },
+    ]);
+
+    await expect(listEnvasePhysicalBalances()).resolves.toEqual([
+      {
+        idInventarioItem: 5,
+        nombre: 'Garrafón 20L',
+        existenciaCatalogo: 8,
+        ubicacion: 'PLANTA',
+        estado: 'PENDIENTE_CONTEO',
+        idRutaSesion: null,
+        cantidad: 8,
+        esSaldoLegadoPendiente: true,
+      },
+    ]);
+  });
+
+  it('clasifica stock legado en los buckets sin volver a sumarlo a la existencia de catálogo', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 1 });
+    prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({
+      Id: 5,
+      Nombre: 'Garrafón 20L',
+      EsEnvaseRetornable: true,
+      Existencia: 8,
+    });
+    getEnvaseBucketQuantityMock
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0);
+
+    await reconcileEnvasePhysicalStock({
+      idInventarioItem: 5,
+      idUsuario: 1,
+      cantidadVacia: 5,
+      cantidadLlena: 3,
+      cantidadDanada: 0,
+      observaciones: 'Conteo inicial confirmado',
+    });
+
+    expect(recordEnvaseBucketCountMock).toHaveBeenCalledWith(
+      prismaMock,
+      expect.objectContaining({
+        cantidadContada: 8,
+        tipoDocumento: 'ENVLG',
+        bucket: { ubicacion: 'PLANTA', estado: 'PENDIENTE_CONTEO' },
+      }),
+    );
+    expect(transferEnvaseBucketMock).toHaveBeenCalledTimes(2);
+    expect(prismaMock.inventarioItem.update).not.toHaveBeenCalled();
+  });
+
+  it('impide regularizar el conteo general mientras exista stock legado sin clasificar', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 1 });
+    prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({
+      Id: 5,
+      Nombre: 'Garrafón 20L',
+      EsEnvaseRetornable: true,
+      Existencia: 8,
+    });
+    prismaMock.bitacoraInventario.findMany.mockResolvedValueOnce([]);
+    getEnvaseBucketQuantityMock
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0);
+
+    await expect(registerEnvasePhysicalCount({
+      idInventarioItem: 5,
+      idUsuario: 1,
+      ubicacionEnvase: 'PLANTA',
+      cantidadVacia: 8,
+      cantidadLlena: 0,
+      cantidadDanada: 0,
+      observaciones: 'Conteo inicial confirmado',
+      autorizarRegularizacion: true,
+    })).rejects.toThrow('Clasifica primero el saldo legado PENDIENTE_CONTEO');
+
+    expect(recordEnvaseBucketCountMock).not.toHaveBeenCalled();
+    expect(prismaMock.inventarioItem.update).not.toHaveBeenCalled();
+  });
+
+  it('rechaza un préstamo si el catálogo tiene stock pero no el bucket físico solicitado', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 1 });
+    prismaMock.cliente.findFirst.mockResolvedValueOnce({ Id: 2 });
+    prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({
+      Id: 5,
+      Nombre: 'Garrafón 20L',
+      Categoria: 'PRODUCTO_TERMINADO',
+      Existencia: 20,
+      EsEnvaseRetornable: true,
+    });
+    getEnvaseBucketQuantityMock
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(6);
+
+    await expect(
+      registrarPrestamoEnvase({ idInventarioItem: 5, idCliente: 2, idUsuario: 1, cantidad: 2 }),
+    ).rejects.toThrow('disponible 0, solicitado 2. Hay 6 pendiente(s) de clasificación');
+
+    expect(prismaMock.movimientoEnvase.create).not.toHaveBeenCalled();
+    expect(prismaMock.inventarioItem.update).not.toHaveBeenCalled();
   });
 
   it('rechaza el préstamo si el producto no está marcado como retornable', async () => {

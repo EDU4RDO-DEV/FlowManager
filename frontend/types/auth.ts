@@ -17,6 +17,7 @@ export type PermissionModule =
   | "clientes"
   | "ventas"
   | "logistica"
+  | "despacho"
   | "proveedores"
   | "compras"
   | "planilla"

@@ -1,8 +1,23 @@
 import type { ApiResponse } from "@/types/auth";
+import type { ProductDto, ProductListPagination } from "@/types/products";
 
 export type VehiculoEstado = "DISPONIBLE" | "EN_RUTA" | "MANTENIMIENTO" | "NO_DISPONIBLE";
 export type RutaSesionEstado = "PROGRAMADA" | "EN_CURSO" | "CERRADA";
 export type GastoEstadoPago = "PENDIENTE" | "PAGADO";
+
+export interface DispatchProductDto extends ProductDto {
+  stockEnvasePlanta?: {
+    vacio: number;
+    lleno: number;
+    pendienteClasificacion: number;
+    diferenciaCatalogo: number;
+  };
+}
+
+export interface DispatchProductListResult {
+  items: DispatchProductDto[];
+  pagination: ProductListPagination;
+}
 
 export interface VehiculoDto {
   id: number;

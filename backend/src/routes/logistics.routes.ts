@@ -5,6 +5,7 @@ import {
   createRutaController,
   createRutaSesionController,
   createVehiculoController,
+  closeRutaSesionFromDispatchController,
   deleteGastoVehiculoController,
   deleteRutaController,
   deleteRutaSesionController,
@@ -35,6 +36,7 @@ import {
   createRouteReturnController,
   getRouteInventoryController,
   getRouteSettlementController,
+  listDispatchProductsController,
 } from '../controllers/route-inventory.controller';
 
 const logisticsRouter = Router();
@@ -48,29 +50,36 @@ logisticsRouter.patch('/vehiculos/:id/restaurar', requireModulePermission('logis
 
 logisticsRouter.get('/rutas', requireModulePermission('logistica', 'read'), listRutasController);
 logisticsRouter.get('/rutas/sesiones', requireModulePermission('logistica', 'read'), listRutaSesionesController);
+logisticsRouter.get('/despacho/sesiones', requireModulePermission('despacho', 'read'), listRutaSesionesController);
+logisticsRouter.get('/despacho/productos', requireModulePermission('despacho', 'read'), listDispatchProductsController);
+logisticsRouter.patch(
+  '/despacho/sesiones/:id/cerrar',
+  requireModulePermission('despacho', 'update'),
+  closeRutaSesionFromDispatchController,
+);
 logisticsRouter.get(
   '/rutas/sesiones/:id/inventario',
-  requireModulePermission('logistica', 'read'),
+  requireModulePermission('despacho', 'read'),
   getRouteInventoryController,
 );
 logisticsRouter.get(
   '/rutas/sesiones/:id/liquidacion',
-  requireModulePermission('logistica', 'read'),
+  requireModulePermission('despacho', 'read'),
   getRouteSettlementController,
 );
 logisticsRouter.post(
   '/rutas/sesiones/:id/despacho',
-  requireModulePermission('logistica', 'create'),
+  requireModulePermission('despacho', 'create'),
   createRouteDispatchController,
 );
 logisticsRouter.post(
   '/rutas/sesiones/:id/devolucion',
-  requireModulePermission('logistica', 'create'),
+  requireModulePermission('despacho', 'create'),
   createRouteReturnController,
 );
 logisticsRouter.post(
   '/rutas/sesiones/:id/ajustes',
-  requireModulePermission('logistica', 'update'),
+  requireModulePermission('despacho', 'update'),
   createRouteAdjustmentController,
 );
 logisticsRouter.get('/rutas/:id/sesiones/:idSesion', requireModulePermission('logistica', 'read'), getRutaSesionByIdController);

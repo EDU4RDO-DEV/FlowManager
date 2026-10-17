@@ -13,6 +13,7 @@ export interface ProductionRecipeComponentDto {
 export interface ProductionRecipeDto {
   id: number;
   nombre: string;
+  categoria: string;
   existencia: number;
   unidadMedida: string | null;
   componentes: ProductionRecipeComponentDto[];
@@ -34,6 +35,7 @@ export interface ProductionOrderDto {
   productoTerminado: {
     id: number;
     nombre: string;
+    categoria: string;
   };
   cantidadProducir: number;
   unidadMedida: string;

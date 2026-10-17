@@ -64,6 +64,7 @@ const orderInclude = {
     select: {
       Id: true,
       Nombre: true,
+      Categoria: true,
       UnidadMedida: true,
     },
   },
@@ -89,6 +90,7 @@ function toProductionOrderDto(
     productoTerminado: {
       id: order.InventarioItem.Id,
       nombre: order.NombreProductoTerminadoSnapshot,
+      categoria: order.InventarioItem.Categoria,
     },
     cantidadProducir: order.CantidadProducir,
     unidadMedida: order.UnidadMedidaSnapshot,
@@ -107,13 +109,15 @@ function toProductionOrderDto(
 export async function listProductionRecipes() {
   const products = await prisma.inventarioItem.findMany({
     where: {
-      Categoria: 'PRODUCTO_TERMINADO',
+      EsFabricable: true,
+      PermitirReceta: true,
       Anulado: false,
     },
     orderBy: { Nombre: 'asc' },
     select: {
       Id: true,
       Nombre: true,
+      Categoria: true,
       Existencia: true,
       UnidadMedida: true,
       EstructuraProducto_EstructuraProducto_IdProductoTerminadoToInventarioItem: {
@@ -168,6 +172,7 @@ export async function listProductionRecipes() {
     return {
       id: product.Id,
       nombre: product.Nombre,
+      categoria: product.Categoria,
       existencia: product.Existencia,
       unidadMedida: product.UnidadMedida,
       componentes: components,
@@ -267,13 +272,14 @@ export async function createProductionOrder(input: CreateProductionOrderInput) {
     const product = await tx.inventarioItem.findFirst({
       where: {
         Id: input.idProductoTerminado,
-        Categoria: 'PRODUCTO_TERMINADO',
+        EsFabricable: true,
+        PermitirReceta: true,
         Anulado: false,
       },
-      select: { Id: true, Nombre: true, UnidadMedida: true },
+        select: { Id: true, Nombre: true, Categoria: true, UnidadMedida: true },
     });
     if (!product) {
-      throw new Error('Producto terminado no existe o está inactivo');
+      throw new Error('Producto no existe, no está habilitado para fabricación o no permite recetas');
     }
     if (!product.UnidadMedida?.trim()) {
       throw new Error('Falta definir la unidad de medida del producto terminado');
@@ -384,7 +390,8 @@ export async function confirmProductionOrder(
     const finished = await tx.inventarioItem.findFirst({
       where: {
         Id: order.IdProductoTerminado,
-        Categoria: 'PRODUCTO_TERMINADO',
+        EsFabricable: true,
+        PermitirReceta: true,
         Anulado: false,
       },
       select: {
@@ -395,7 +402,46 @@ export async function confirmProductionOrder(
       },
     });
     if (!finished) {
-      throw new Error('Producto terminado no existe o está inactivo');
+      throw new Error('El producto ya no está habilitado para fabricación o recetas');
+    }
+    const activeRecipe = await tx.estructuraProducto.findMany({
+      where: {
+        IdProductoTerminado: order.IdProductoTerminado,
+        Anulado: false,
+      },
+      select: {
+        CantidadRequerida: true,
+        InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
+          select: {
+            Nombre: true,
+            Categoria: true,
+            UnidadMedida: true,
+            Anulado: true,
+          },
+        },
+      },
+    });
+    if (activeRecipe.length === 0) {
+      throw new Error('El producto no tiene una receta activa');
+    }
+    for (const entry of activeRecipe) {
+      const component = entry.InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem;
+      if (component.Anulado || !['MATERIA_PRIMA', 'INSUMO'].includes(component.Categoria)) {
+        throw new Error(`${component.Nombre} no es una materia prima o insumo activo`);
+      }
+      if (!component.UnidadMedida?.trim()) {
+        throw new Error(`Falta definir la unidad de medida de ${component.Nombre}`);
+      }
+      if (!Number.isFinite(entry.CantidadRequerida) || entry.CantidadRequerida <= 0) {
+        throw new Error(`La cantidad requerida de ${component.Nombre} no es válida`);
+      }
+    }
+    if (
+      !Number.isFinite(order.CantidadProducir) ||
+      order.CantidadProducir <= 0 ||
+      order.Detalles.length === 0
+    ) {
+      throw new Error('La orden no tiene una cantidad o receta válida');
     }
     if (finished.UnidadMedida?.trim().toLocaleUpperCase() !== order.UnidadMedidaSnapshot.trim().toLocaleUpperCase()) {
       throw new Error('La unidad del producto terminado cambió; crea una nueva orden');
@@ -403,6 +449,20 @@ export async function confirmProductionOrder(
 
     const components = order.Detalles.map((detail) => {
       const item = detail.InventarioItem;
+      const expectedQuantity = order.CantidadProducir * detail.CantidadPorUnidad;
+      if (
+        !Number.isFinite(detail.CantidadPorUnidad) ||
+        detail.CantidadPorUnidad <= 0 ||
+        !Number.isFinite(detail.CantidadTotal) ||
+        detail.CantidadTotal <= 0 ||
+        !Number.isFinite(expectedQuantity) ||
+        Math.abs(expectedQuantity - detail.CantidadTotal) > 0.000001
+      ) {
+        throw new Error(`La cantidad registrada de ${item.Nombre} en la orden no es válida`);
+      }
+      if (item.Id === finished.Id) {
+        throw new Error('El producto fabricado no puede consumirse a sí mismo');
+      }
       if (item.Anulado || !['MATERIA_PRIMA', 'INSUMO'].includes(item.Categoria)) {
         throw new Error(`${item.Nombre} ya no es una materia prima o insumo activo`);
       }

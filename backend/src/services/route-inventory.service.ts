@@ -314,6 +314,7 @@ export async function createRouteDispatch(
         Nombre: true,
         UnidadMedida: true,
         Existencia: true,
+        EsVendible: true,
         EsEnvaseRetornable: true,
       },
     });
@@ -323,6 +324,9 @@ export async function createRouteDispatch(
       const product = productsById.get(detail.idInventarioItem);
       if (!product) {
         throw new Error(`InventarioItem ${detail.idInventarioItem} no existe o está anulado`);
+      }
+      if (!product.EsVendible) {
+        throw new Error(`No se puede despachar ${product.Nombre}: el artículo no está habilitado para la venta`);
       }
       if (product.Existencia < detail.cantidad) {
         throw new Error(
@@ -338,7 +342,16 @@ export async function createRouteDispatch(
           estado: detail.estadoEnvase,
         });
         if (available < detail.cantidad) {
-          throw new Error(`Stock verificado insuficiente de ${product.Nombre} (${detail.estadoEnvase}) en planta`);
+          const pending = await getEnvaseBucketQuantity(tx, product.Id, {
+            ubicacion: 'PLANTA',
+            estado: 'PENDIENTE_CONTEO',
+          });
+          const pendingMessage = pending > 0
+            ? ` Hay ${pending} pendiente(s) de clasificación en Envases.`
+            : '';
+          throw new Error(
+            `Stock físico verificado insuficiente de ${product.Nombre} (${detail.estadoEnvase}/PLANTA): disponible ${available}, solicitado ${detail.cantidad}.${pendingMessage}`,
+          );
         }
       } else if (detail.estadoEnvase) {
         throw new Error(`${product.Nombre} no está configurado como envase retornable`);

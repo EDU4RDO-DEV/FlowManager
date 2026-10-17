@@ -84,6 +84,8 @@ function mapErrorStatus(error: unknown, message: string): number {
   if (message.startsWith('Stock insuficiente')) return 409;
   if (message.startsWith('Stock físico verificado insuficiente')) return 409;
   if (message.startsWith('No hay suficientes envases')) return 409;
+  if (message.startsWith('El saldo físico verificado de planta supera')) return 409;
+  if (message.startsWith('El saldo no clasificado')) return 409;
   if (message.startsWith('La clasificación') || message.startsWith('No hay saldo pendiente')) return 409;
   if (message === 'cantidad debe ser mayor a 0') return 400;
   return 500;

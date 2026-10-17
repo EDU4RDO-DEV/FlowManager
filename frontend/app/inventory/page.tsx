@@ -360,7 +360,7 @@ export default function InventoryPage() {
                                 <TableCell>{formatDate(product.fechaRegistro)}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-2">
-                                    {product.categoria === "PRODUCTO_TERMINADO" && (
+                                    {product.esFabricable && (
                                       <Button
                                         size="xs"
                                         variant="outline"

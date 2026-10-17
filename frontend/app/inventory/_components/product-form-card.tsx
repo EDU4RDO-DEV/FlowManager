@@ -34,6 +34,8 @@ export type ProductFormValues = {
   precioVenta: string;
   esVendible: boolean;
   esEnvaseRetornable: boolean;
+  esFabricable: boolean;
+  permitirReceta: boolean;
   capacidadEnvaseLitros: string;
   rutaImagen: string;
   idCategoriaComision: string;
@@ -247,8 +249,24 @@ export function ProductFormCard({
               />
               Envase físico retornable
             </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.esFabricable}
+                onChange={(event) => onChange({ ...form, esFabricable: event.target.checked })}
+              />
+              Permitir fabricación
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.permitirReceta}
+                onChange={(event) => onChange({ ...form, permitirReceta: event.target.checked })}
+              />
+              Permitir receta
+            </label>
             <p className="text-xs text-muted-foreground">
-              La categoría, la opción vendible y el seguimiento de envases retornables son independientes.
+              La categoría, vendibilidad, fabricación, recetas y seguimiento de envases retornables son independientes.
             </p>
           </div>
 

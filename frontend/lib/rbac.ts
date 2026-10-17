@@ -8,6 +8,7 @@ export type AppModuleKey =
   | 'clientes'
   | 'ventas'
   | 'logistica'
+  | 'despacho'
   | 'proveedores'
   | 'compras'
   | 'planilla'
@@ -29,6 +30,7 @@ const ALL_MODULES: AppModuleKey[] = [
   'clientes',
   'ventas',
   'logistica',
+  'despacho',
   'proveedores',
   'compras',
   'planilla',

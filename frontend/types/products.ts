@@ -14,6 +14,8 @@ export interface ProductDto {
   categoria: "INSUMO" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA";
   esVendible: boolean;
   esEnvaseRetornable: boolean;
+  esFabricable: boolean;
+  permitirReceta: boolean;
   actualizarCostoSegunReceta: boolean;
   capacidadEnvaseGalones: number | null;
   idCategoriaComision: number | null;
@@ -54,6 +56,8 @@ export interface ProductFilters {
   anulado?: boolean;
   idProveedor?: number;
   esVendible?: boolean;
+  esFabricable?: boolean;
+  permitirReceta?: boolean;
 }
 
 export interface CreateProductPayload {
@@ -66,6 +70,8 @@ export interface CreateProductPayload {
   precioVenta?: number;
   esVendible?: boolean;
   esEnvaseRetornable?: boolean;
+  esFabricable?: boolean;
+  permitirReceta?: boolean;
   capacidadEnvaseGalones?: number;
   rutaImagen?: string;
   idCategoriaComision?: number | null;
@@ -82,6 +88,8 @@ export interface UpdateProductPayload {
   precioVenta?: number;
   esVendible?: boolean;
   esEnvaseRetornable?: boolean;
+  esFabricable?: boolean;
+  permitirReceta?: boolean;
   capacidadEnvaseGalones?: number | null;
   rutaImagen?: string;
   idCategoriaComision?: number | null;

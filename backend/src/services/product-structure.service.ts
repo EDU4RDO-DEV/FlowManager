@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma';
+import { runSerializableTransaction } from '../utils/serializable-transaction';
 import { Prisma } from '@prisma/client';
 
 type ListStructureByProductInput = {
@@ -33,6 +34,10 @@ type RecipeCostPolicyInput = {
 };
 
 type RecipeCostTransaction = Prisma.TransactionClient;
+type StructureValidationClient = Pick<
+  Prisma.TransactionClient,
+  'inventarioItem' | 'estructuraProducto'
+>;
 
 function toStructureDto(structure: {
   Id: number;
@@ -80,23 +85,29 @@ function toStructureDto(structure: {
   };
 }
 
-async function validateProductoTerminadoExists(id: number) {
-  const product = await prisma.inventarioItem.findFirst({
+async function validateRecipePermission(
+  id: number,
+  db: StructureValidationClient = prisma,
+) {
+  const product = await db.inventarioItem.findFirst({
     where: {
       Id: id,
-      Categoria: 'PRODUCTO_TERMINADO',
+      PermitirReceta: true,
       Anulado: false,
     },
     select: { Id: true },
   });
 
   if (!product) {
-    throw new Error('Producto terminado no existe o no es un producto final');
+    throw new Error('Producto no existe o no permite configurar recetas');
   }
 }
 
-async function validateMateriaPrimaExists(id: number) {
-  const product = await prisma.inventarioItem.findFirst({
+async function validateMateriaPrimaExists(
+  id: number,
+  db: StructureValidationClient = prisma,
+) {
+  const product = await db.inventarioItem.findFirst({
     where: {
       Id: id,
       Anulado: false,
@@ -112,9 +123,36 @@ async function validateMateriaPrimaExists(id: number) {
   }
 }
 
-async function validateNotCircular(idProductoTerminado: number, idMateriaPrima: number) {
+async function validateNoCircularStructure(
+  idProductoTerminado: number,
+  idMateriaPrima: number,
+  db: StructureValidationClient = prisma,
+) {
   if (idProductoTerminado === idMateriaPrima) {
     throw new Error('Un producto no puede ser componente de sí mismo');
+  }
+
+  const relations = await db.estructuraProducto.findMany({
+    where: { Anulado: false },
+    select: { IdProductoTerminado: true, IdMateriaPrima: true },
+  });
+  const componentsByProduct = new Map<number, number[]>();
+  for (const relation of relations) {
+    const components = componentsByProduct.get(relation.IdProductoTerminado) ?? [];
+    components.push(relation.IdMateriaPrima);
+    componentsByProduct.set(relation.IdProductoTerminado, components);
+  }
+
+  const pending = [idMateriaPrima];
+  const visited = new Set<number>();
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    if (current === idProductoTerminado) {
+      throw new Error('La receta generaría una dependencia circular');
+    }
+    if (visited.has(current)) continue;
+    visited.add(current);
+    pending.push(...(componentsByProduct.get(current) ?? []));
   }
 }
 
@@ -136,8 +174,9 @@ async function validateUniqueComponent(
   idProductoTerminado: number,
   idMateriaPrima: number,
   excludeId?: number,
+  db: StructureValidationClient = prisma,
 ) {
-  const existing = await prisma.estructuraProducto.findFirst({
+  const existing = await db.estructuraProducto.findFirst({
     where: {
       IdProductoTerminado: idProductoTerminado,
       IdMateriaPrima: idMateriaPrima,
@@ -160,7 +199,7 @@ async function calculateRecipeCost(
     where: { Id: idProductoTerminado, Anulado: false },
     select: {
       Id: true,
-      Categoria: true,
+      PermitirReceta: true,
       EsVendible: true,
       ActualizarCostoSegunReceta: true,
       UnidadMedida: true,
@@ -169,11 +208,11 @@ async function calculateRecipeCost(
     },
   });
 
-  if (!product || product.Categoria !== 'PRODUCTO_TERMINADO') {
-    throw new Error('Producto terminado no existe o no es un producto final');
+  if (!product || !product.PermitirReceta) {
+    throw new Error('Producto no existe o no permite configurar recetas');
   }
   if (!product.UnidadMedida?.trim()) {
-    throw new Error('El producto terminado no tiene unidad de medida configurada');
+    throw new Error('El producto no tiene unidad de medida configurada');
   }
 
   const recipe = await tx.estructuraProducto.findMany({
@@ -256,14 +295,14 @@ export async function updateRecipeCostPolicy(
     const product = await tx.inventarioItem.findFirst({
       where: {
         Id: idProductoTerminado,
-        Categoria: 'PRODUCTO_TERMINADO',
+        PermitirReceta: true,
         Anulado: false,
       },
       select: { Id: true },
     });
 
     if (!product) {
-      throw new Error('Producto terminado no existe o no es un producto final');
+      throw new Error('Producto no existe o no permite configurar recetas');
     }
     if (input.idUsuarioModificador !== undefined) {
       const user = await tx.usuario.findFirst({
@@ -340,7 +379,7 @@ export async function applyRecipeCost(
 }
 
 export async function listStructureByProduct(input: ListStructureByProductInput) {
-  await validateProductoTerminadoExists(input.idProducto);
+  await validateRecipePermission(input.idProducto);
 
   const structures = await prisma.estructuraProducto.findMany({
     where: {
@@ -368,7 +407,7 @@ export async function listStructureByProduct(input: ListStructureByProductInput)
 }
 
 export async function listAnulatedStructureByProduct(idProducto: number) {
-  await validateProductoTerminadoExists(idProducto);
+  await validateRecipePermission(idProducto);
 
   const structures = await prisma.estructuraProducto.findMany({
     where: {
@@ -422,32 +461,39 @@ export async function getStructureById(id: number) {
 }
 
 export async function createProductStructure(input: CreateProductStructureInput) {
-  await validateProductoTerminadoExists(input.idProductoTerminado);
-  await validateMateriaPrimaExists(input.idMateriaPrima);
-  await validateNotCircular(input.idProductoTerminado, input.idMateriaPrima);
-  await validateUniqueComponent(input.idProductoTerminado, input.idMateriaPrima);
+  const created = await runSerializableTransaction(async (tx) => {
+    await validateRecipePermission(input.idProductoTerminado, tx);
+    await validateMateriaPrimaExists(input.idMateriaPrima, tx);
+    await validateNoCircularStructure(input.idProductoTerminado, input.idMateriaPrima, tx);
+    await validateUniqueComponent(
+      input.idProductoTerminado,
+      input.idMateriaPrima,
+      undefined,
+      tx,
+    );
 
-  const created = await prisma.estructuraProducto.create({
-    data: {
-      IdProductoTerminado: input.idProductoTerminado,
-      IdMateriaPrima: input.idMateriaPrima,
-      CantidadRequerida: input.cantidadRequerida,
-      Anulado: false,
-    },
-    include: {
-      InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
-        select: {
-          Id: true,
-          Nombre: true,
-          Categoria: true,
-          Existencia: true,
-          CostoPromedio: true,
-          PrecioVenta: true,
-          RutaImagen: true,
-          Anulado: true,
+    return tx.estructuraProducto.create({
+      data: {
+        IdProductoTerminado: input.idProductoTerminado,
+        IdMateriaPrima: input.idMateriaPrima,
+        CantidadRequerida: input.cantidadRequerida,
+        Anulado: false,
+      },
+      include: {
+        InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
+          select: {
+            Id: true,
+            Nombre: true,
+            Categoria: true,
+            Existencia: true,
+            CostoPromedio: true,
+            PrecioVenta: true,
+            RutaImagen: true,
+            Anulado: true,
+          },
         },
       },
-    },
+    });
   });
 
   return toStructureDto(created);
@@ -456,12 +502,19 @@ export async function createProductStructure(input: CreateProductStructureInput)
 export async function updateProductStructure(id: number, input: UpdateProductStructureInput) {
   const existing = await prisma.estructuraProducto.findFirst({
     where: { Id: id, Anulado: false },
-    select: { Id: true },
+    select: {
+      Id: true,
+      IdProductoTerminado: true,
+      IdMateriaPrima: true,
+    },
   });
 
   if (!existing) {
     throw new Error('Componente de estructura no existe');
   }
+
+  await validateRecipePermission(existing.IdProductoTerminado);
+  await validateMateriaPrimaExists(existing.IdMateriaPrima);
 
   if (input.idUsuarioModificador !== undefined) {
     await validateUsuarioExists(input.idUsuarioModificador);
@@ -522,50 +575,58 @@ export async function deleteProductStructure(id: number, idUsuarioAnulador?: num
 }
 
 export async function restoreProductStructure(id: number, idUsuarioModificador?: number) {
-  const existing = await prisma.estructuraProducto.findFirst({
-    where: { Id: id, Anulado: true },
-    select: {
-      Id: true,
-      IdProductoTerminado: true,
-      IdMateriaPrima: true,
-    },
-  });
-
-  if (!existing) {
-    throw new Error('Componente anulado no existe');
-  }
-
   if (idUsuarioModificador !== undefined) {
     await validateUsuarioExists(idUsuarioModificador);
   }
 
-  await validateProductoTerminadoExists(existing.IdProductoTerminado);
-  await validateMateriaPrimaExists(existing.IdMateriaPrima);
-  await validateUniqueComponent(existing.IdProductoTerminado, existing.IdMateriaPrima, id);
+  const restored = await runSerializableTransaction(async (tx) => {
+    const existing = await tx.estructuraProducto.findFirst({
+      where: { Id: id, Anulado: true },
+      select: {
+        Id: true,
+        IdProductoTerminado: true,
+        IdMateriaPrima: true,
+      },
+    });
 
-  const restored = await prisma.estructuraProducto.update({
-    where: { Id: id },
-    data: {
-      Anulado: false,
-      IdUsuarioAnulador: null,
-      FechaAnulacion: null,
-      ...(idUsuarioModificador !== undefined ? { IdUsuarioModificador: idUsuarioModificador } : {}),
-      FechaModificacion: new Date(),
-    },
-    include: {
-      InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
-        select: {
-          Id: true,
-          Nombre: true,
-          Categoria: true,
-          Existencia: true,
-          CostoPromedio: true,
-          PrecioVenta: true,
-          RutaImagen: true,
-          Anulado: true,
+    if (!existing) {
+      throw new Error('Componente anulado no existe');
+    }
+
+    await validateRecipePermission(existing.IdProductoTerminado, tx);
+    await validateMateriaPrimaExists(existing.IdMateriaPrima, tx);
+    await validateNoCircularStructure(existing.IdProductoTerminado, existing.IdMateriaPrima, tx);
+    await validateUniqueComponent(
+      existing.IdProductoTerminado,
+      existing.IdMateriaPrima,
+      id,
+      tx,
+    );
+
+    return tx.estructuraProducto.update({
+      where: { Id: id },
+      data: {
+        Anulado: false,
+        IdUsuarioAnulador: null,
+        FechaAnulacion: null,
+        ...(idUsuarioModificador !== undefined ? { IdUsuarioModificador: idUsuarioModificador } : {}),
+        FechaModificacion: new Date(),
+      },
+      include: {
+        InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
+          select: {
+            Id: true,
+            Nombre: true,
+            Categoria: true,
+            Existencia: true,
+            CostoPromedio: true,
+            PrecioVenta: true,
+            RutaImagen: true,
+            Anulado: true,
+          },
         },
       },
-    },
+    });
   });
 
   return toStructureDto(restored);

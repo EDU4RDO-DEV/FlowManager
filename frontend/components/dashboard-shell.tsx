@@ -120,6 +120,7 @@ export function DashboardShell({ title, description, printContentOnly = false, c
         clientes: allowedModules.includes("clientes"),
         ventas: allowedModules.includes("ventas"),
         logistica: allowedModules.includes("logistica"),
+        despacho: allowedModules.includes("despacho"),
         inventario: allowedModules.includes("inventario"),
         proveedores: allowedModules.includes("proveedores"),
         compras: allowedModules.includes("compras"),
@@ -220,6 +221,14 @@ export function DashboardShell({ title, description, printContentOnly = false, c
                   icon: Route,
                   available: has.logistica,
                   isActive: (currentPath: string) => isPathActive(currentPath, "/logistics/routes"),
+                },
+                {
+                  id: "logistica-despacho",
+                  name: "Despacho a Camiones",
+                  path: "/logistics/routes/operations",
+                  icon: Truck,
+                  available: has.despacho,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/logistics/routes/operations"),
                 },
                 {
                   id: "logistica-vehiculos",

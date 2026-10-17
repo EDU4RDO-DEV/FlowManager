@@ -35,6 +35,8 @@ export const listProductsQuerySchema = z.object({
   anulado: optionalBooleanFromQuery,
   idProveedor: optionalPositiveIntFromQuery,
   esVendible: optionalBooleanFromQuery,
+  esFabricable: optionalBooleanFromQuery,
+  permitirReceta: optionalBooleanFromQuery,
 });
 
 export const createProductSchema = z
@@ -48,6 +50,8 @@ export const createProductSchema = z
     precioVenta: finitePositiveNumber.optional(),
     esVendible: z.boolean().default(false),
     esEnvaseRetornable: z.boolean().default(false),
+    esFabricable: z.boolean().default(false),
+    permitirReceta: z.boolean().default(false),
     capacidadEnvaseGalones: finitePositiveNumber.optional(),
     rutaImagen: z.string().trim().max(255, 'rutaImagen demasiado larga').optional(),
     idCategoriaComision: positiveInt.nullable().optional(),
@@ -89,6 +93,8 @@ export const updateProductSchema = z
     precioVenta: finitePositiveNumber.optional(),
     esVendible: z.boolean().optional(),
     esEnvaseRetornable: z.boolean().optional(),
+    esFabricable: z.boolean().optional(),
+    permitirReceta: z.boolean().optional(),
     capacidadEnvaseGalones: finitePositiveNumber.nullable().optional(),
     rutaImagen: z.string().trim().max(255, 'rutaImagen demasiado larga').optional(),
     idCategoriaComision: positiveInt.nullable().optional(),

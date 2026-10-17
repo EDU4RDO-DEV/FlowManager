@@ -59,6 +59,8 @@ export async function listProductsController(req: Request, res: Response) {
       anulado: query.anulado,
       idProveedor: query.idProveedor,
       esVendible: query.esVendible,
+      esFabricable: query.esFabricable,
+      permitirReceta: query.permitirReceta,
     });
 
     return res.status(200).json({ ok: true, data });
@@ -127,7 +129,6 @@ export async function createProductController(req: Request, res: Response) {
       message === 'Proveedor no existe' ||
       message === 'Categoría de comisión no existe' ||
       message === 'Ya existe un producto activo con el mismo nombre y categoría' ||
-      message === 'No se puede cambiar la categoría: el producto es padre de una receta activa' ||
       message === 'No se puede cambiar la categoría: el producto es componente de una receta activa'
     ) {
       return res.status(409).json({ ok: false, message });
@@ -179,8 +180,9 @@ export async function updateProductController(req: Request, res: Response) {
       message === 'Proveedor no existe' ||
       message === 'Categoría de comisión no existe' ||
       message === 'Ya existe un producto activo con el mismo nombre y categoría' ||
-      message === 'No se puede cambiar la categoría: el producto es padre de una receta activa' ||
-      message === 'No se puede cambiar la categoría: el producto es componente de una receta activa'
+      message === 'No se puede cambiar la categoría: el producto es componente de una receta activa' ||
+      message === 'No se puede deshabilitar fabricación mientras el producto tenga una receta activa' ||
+      message === 'No se puede deshabilitar fabricación mientras existan órdenes pendientes'
     ) {
       return res.status(409).json({ ok: false, message });
     }

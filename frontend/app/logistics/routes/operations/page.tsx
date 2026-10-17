@@ -24,16 +24,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { getApiErrorMessage } from "@/lib/api";
 import { hasModulePermission } from "@/lib/rbac";
 import {
+  closeRouteSession,
   createRouteAdjustment,
   createRouteDispatch,
   createRouteReturn,
   getRouteSettlement,
-  listRutaSesiones,
-  updateRutaSesion,
+  listDispatchProducts,
+  listDispatchRutaSesiones,
 } from "@/services/logistics.service";
-import { listProducts } from "@/services/products.service";
-import type { RouteInventoryDto, RutaSesionDto } from "@/types/logistics";
-import type { ProductDto } from "@/types/products";
+import type { DispatchProductDto, RouteInventoryDto, RutaSesionDto } from "@/types/logistics";
 
 type DispatchDraft = {
   idInventarioItem: number;
@@ -56,12 +55,27 @@ function formatDate(value: string | null) {
   return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
 }
 
+async function loadAllDispatchProducts() {
+  const products: DispatchProductDto[] = [];
+  let page = 1;
+  let totalPages = 1;
+
+  while (page <= totalPages) {
+    const result = await listDispatchProducts({ page, limit: 100 });
+    products.push(...result.items);
+    totalPages = result.pagination.totalPages;
+    page += 1;
+  }
+
+  return products;
+}
+
 export default function RouteOperationsPage() {
   const { user } = useAuth();
-  const canCreate = hasModulePermission(user, "logistica", "create");
-  const canUpdate = hasModulePermission(user, "logistica", "update");
+  const canCreate = hasModulePermission(user, "despacho", "create");
+  const canUpdate = hasModulePermission(user, "despacho", "update");
   const [sessions, setSessions] = useState<RutaSesionDto[]>([]);
-  const [products, setProducts] = useState<ProductDto[]>([]);
+  const [products, setProducts] = useState<DispatchProductDto[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [sessionSearch, setSessionSearch] = useState("");
   const [inventory, setInventory] = useState<RouteInventoryDto | null>(null);
@@ -103,11 +117,11 @@ export default function RouteOperationsPage() {
   const loadSessionsAndProducts = useCallback(async () => {
     try {
       const [loadedSessions, productResult] = await Promise.all([
-        listRutaSesiones({ anulado: false }),
-        listProducts({ page: 1, limit: 100, anulado: false }),
+        listDispatchRutaSesiones({ anulado: false }),
+        loadAllDispatchProducts(),
       ]);
       setSessions(loadedSessions);
-      setProducts(productResult.items);
+      setProducts(productResult);
       setSelectedSessionId((previous) =>
         previous && loadedSessions.some((session) => String(session.id) === previous)
           ? previous
@@ -151,6 +165,7 @@ export default function RouteOperationsPage() {
   const dispatchProductOptions = useMemo(() => {
     const query = dispatchSearch.trim().toLocaleLowerCase();
     return products.filter((product) => {
+      if (!product.esVendible) return false;
       const notAdded = !dispatchDraft.some((line) => line.idInventarioItem === product.id);
       const searchable = `${product.nombre} ${product.unidadMedida ?? ""} ${product.categoria}`.toLocaleLowerCase();
       return notAdded && (!query || searchable.includes(query));
@@ -190,14 +205,44 @@ export default function RouteOperationsPage() {
       cantidad: Number(line.cantidad),
       ...(line.estadoEnvase ? { estadoEnvase: line.estadoEnvase } : {}),
     }));
-    if (
-      detail.some((line) => !Number.isFinite(line.cantidad) || line.cantidad <= 0) ||
-      dispatchDraft.some((line) =>
-        productById.get(line.idInventarioItem)?.esEnvaseRetornable && !line.estadoEnvase,
-      )
-    ) {
+    if (dispatchDraft.some((line) => productById.get(line.idInventarioItem)?.esVendible !== true)) {
+      toast.error("Solo puedes despachar productos habilitados para la venta. Actualiza el catálogo e inténtalo de nuevo.");
+      return;
+    }
+    if (detail.some((line) => !Number.isFinite(line.cantidad) || line.cantidad <= 0)) {
       toast.error("Ingresa una cantidad mayor que cero para cada producto");
       return;
+    }
+    if (dispatchDraft.some((line) =>
+      productById.get(line.idInventarioItem)?.esEnvaseRetornable && !line.estadoEnvase,
+    )) {
+      toast.error("Selecciona si cada envase retornable se despacha vacío o lleno");
+      return;
+    }
+    for (const line of dispatchDraft) {
+      const product = productById.get(line.idInventarioItem);
+      const quantity = Number(line.cantidad);
+      if (!product) continue;
+      if (quantity > product.existencia) {
+        toast.error(`Stock de catálogo insuficiente para ${product.nombre}: disponible ${product.existencia}, solicitado ${quantity}`);
+        return;
+      }
+      if (product.esEnvaseRetornable) {
+        if (!Number.isInteger(quantity)) {
+          toast.error(`La cantidad de envases debe ser entera (${product.nombre})`);
+          return;
+        }
+        const available = line.estadoEnvase === "VACIO"
+          ? product.stockEnvasePlanta?.vacio ?? 0
+          : product.stockEnvasePlanta?.lleno ?? 0;
+        if (quantity > available) {
+          const pending = product.stockEnvasePlanta?.pendienteClasificacion ?? 0;
+          toast.error(
+            `Stock físico insuficiente para ${product.nombre} (${line.estadoEnvase}): disponible ${available}, solicitado ${quantity}.${pending > 0 ? ` Hay ${pending} pendiente(s) de clasificación en Envases.` : ""}`,
+          );
+          return;
+        }
+      }
     }
 
     setIsSaving(true);
@@ -221,7 +266,8 @@ export default function RouteOperationsPage() {
       const damaged = Number(line.cantidadDanada || 0);
       const empty = Number(line.cantidadEnvaseVacio || 0);
       const full = Number(line.cantidadEnvaseLleno || 0);
-      const product = productById.get(Number(id));
+      const routeLine = inventory?.productos.find((item) => item.idInventarioItem === Number(id));
+      const isReturnableContainer = routeLine?.estadoEnvaseDespachado != null;
       return (
         !Number.isFinite(received) ||
         !Number.isFinite(damaged) ||
@@ -231,14 +277,14 @@ export default function RouteOperationsPage() {
         damaged < 0 ||
         damaged > received ||
         (damaged > 0 && !line.ubicacionDanada.trim()) ||
-        (received > 0 && product?.esEnvaseRetornable &&
+        (received > 0 && isReturnableContainer &&
           (!Number.isInteger(received) ||
             !Number.isInteger(damaged) ||
             !Number.isInteger(empty) ||
             !Number.isInteger(full) ||
             empty + full + damaged !== received ||
             (damaged > 0 && !line.estadoEnvaseDanado))) ||
-        (product?.esEnvaseRetornable === false && (empty > 0 || full > 0 || line.estadoEnvaseDanado))
+        (!isReturnableContainer && (empty > 0 || full > 0 || line.estadoEnvaseDanado))
       );
     });
     if (invalidQuantities) {
@@ -311,10 +357,7 @@ export default function RouteOperationsPage() {
 
     setIsSaving(true);
     try {
-      await updateRutaSesion(selectedSession.idRuta, selectedSession.id, {
-        estado: "CERRADA",
-        kmFinal,
-      });
+      await closeRouteSession(selectedSession.id, { kmFinal });
       toast.success("Ruta cerrada y liquidada");
       await loadSessionsAndProducts();
       await loadInventory(selectedSession.id);
@@ -333,7 +376,7 @@ export default function RouteOperationsPage() {
     visibleInventory?.diferenciasPendientes?.[0];
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="despacho" action="read">
       <DashboardShell
         title="Despacho y liquidación de rutas"
         description="Control transaccional de carga, ventas, devoluciones, diferencias y cierre de cada vehículo."
@@ -393,6 +436,13 @@ export default function RouteOperationsPage() {
 
           {selectedSession && visibleInventory ? (
             <>
+              {selectedSession.estado === "PROGRAMADA" ? (
+                <Card className="rounded-xl border-amber-500/50">
+                  <CardContent className="p-4 text-sm">
+                    El despacho, la devolución y el cierre están disponibles únicamente cuando la sesión está EN_CURSO.
+                  </CardContent>
+                </Card>
+              ) : null}
               <section className="grid gap-4 md:grid-cols-3">
                 <Card className="rounded-xl">
                   <CardContent className="space-y-1 p-4">
@@ -436,7 +486,10 @@ export default function RouteOperationsPage() {
                   <CardContent className="space-y-4 p-4">
                     <div>
                       <h2 className="text-lg font-semibold">Despacho inicial</h2>
-                      <p className="text-sm text-muted-foreground">Confirma una sola carga por sesión. El servidor valida y descuenta la existencia de planta en una transacción.</p>
+                      <p className="text-sm text-muted-foreground">
+                        Confirma una sola carga por sesión. El servidor valida y descuenta la existencia de planta en una transacción.
+                        {!canCreate ? " Tu rol no tiene permiso para crear despachos." : ""}
+                      </p>
                     </div>
                     <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
                       <Input
@@ -450,7 +503,10 @@ export default function RouteOperationsPage() {
                         <SelectContent>
                           {dispatchProductOptions.map((product) => (
                             <SelectItem key={product.id} value={String(product.id)}>
-                              {product.nombre} · {product.unidadMedida ?? "sin unidad"} · Planta: {product.existencia}
+                              {product.nombre} · {product.unidadMedida ?? "sin unidad"} · Catálogo: {product.existencia}
+                              {product.esEnvaseRetornable
+                                ? ` · Físico planta: vacío ${product.stockEnvasePlanta?.vacio ?? 0}, lleno ${product.stockEnvasePlanta?.lleno ?? 0}, pendiente ${product.stockEnvasePlanta?.pendienteClasificacion ?? 0}`
+                                : ""}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -466,7 +522,22 @@ export default function RouteOperationsPage() {
                             return (
                               <TableRow key={line.idInventarioItem}>
                                 <TableCell>{product?.nombre ?? `Producto ${line.idInventarioItem}`}</TableCell>
-                                <TableCell>{product?.existencia ?? "-"}</TableCell>
+                                <TableCell>
+                                  {product?.existencia ?? "-"}
+                                  {product?.esEnvaseRetornable ? (
+                                    <>
+                                      <p className="text-xs text-muted-foreground">
+                                        Físico verificado: vacío {product.stockEnvasePlanta?.vacio ?? 0}, lleno {product.stockEnvasePlanta?.lleno ?? 0}, pendiente de clasificar {product.stockEnvasePlanta?.pendienteClasificacion ?? 0}
+                                      </p>
+                                      {product.stockEnvasePlanta?.diferenciaCatalogo !== undefined &&
+                                      product.stockEnvasePlanta.diferenciaCatalogo < -0.009 ? (
+                                        <p className="text-xs text-destructive">
+                                          El saldo físico supera el catálogo por {Math.abs(product.stockEnvasePlanta.diferenciaCatalogo)}.
+                                        </p>
+                                      ) : null}
+                                    </>
+                                  ) : null}
+                                </TableCell>
                                 <TableCell>
                                   <Input
                                     type="number"
@@ -481,20 +552,29 @@ export default function RouteOperationsPage() {
                                 </TableCell>
                                 <TableCell>
                                   {product?.esEnvaseRetornable ? (
-                                    <Select
-                                      value={line.estadoEnvase}
-                                      onValueChange={(value) => setDispatchDraft((previous) => previous.map((item) =>
-                                        item.idInventarioItem === line.idInventarioItem
-                                          ? { ...item, estadoEnvase: value as "VACIO" | "LLENO" }
-                                          : item,
-                                      ))}
-                                    >
-                                      <SelectTrigger className="min-w-28"><SelectValue placeholder="Estado" /></SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="VACIO">Vacío</SelectItem>
-                                        <SelectItem value="LLENO">Lleno</SelectItem>
-                                      </SelectContent>
-                                    </Select>
+                                    <>
+                                      <Select
+                                        value={line.estadoEnvase}
+                                        onValueChange={(value) => setDispatchDraft((previous) => previous.map((item) =>
+                                          item.idInventarioItem === line.idInventarioItem
+                                            ? { ...item, estadoEnvase: value as "VACIO" | "LLENO" }
+                                            : item,
+                                        ))}
+                                      >
+                                        <SelectTrigger className="min-w-28"><SelectValue placeholder="Estado" /></SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="VACIO">Vacío</SelectItem>
+                                          <SelectItem value="LLENO">Lleno</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                      {line.estadoEnvase ? (
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                          Disponible verificado: {line.estadoEnvase === "VACIO"
+                                            ? product.stockEnvasePlanta?.vacio ?? 0
+                                            : product.stockEnvasePlanta?.lleno ?? 0}
+                                        </p>
+                                      ) : null}
+                                    </>
                                   ) : "—"}
                                 </TableCell>
                                 <TableCell>
@@ -553,26 +633,33 @@ export default function RouteOperationsPage() {
                   <CardContent className="space-y-4 p-4">
                     <div>
                       <h2 className="text-lg font-semibold">Recepción de devolución</h2>
-                      <p className="text-sm text-muted-foreground">Registra lo recibido físicamente, incluidos los productos devueltos por clientes que permanecen en el vehículo. Solo lo vendible se traslada a planta al cerrar.</p>
+                      <p className="text-sm text-muted-foreground">
+                        Registra lo recibido físicamente, incluidos los productos devueltos por clientes que permanecen en el vehículo. Solo lo vendible se traslada a planta al cerrar.
+                        {!canCreate ? " Tu rol no tiene permiso para registrar devoluciones." : ""}
+                      </p>
                     </div>
                     <Table>
                       <TableHeader><TableRow><TableHead>Producto / saldo físico</TableHead><TableHead>Recibido</TableHead><TableHead>Vacíos</TableHead><TableHead>Llenos</TableHead><TableHead>Dañado</TableHead><TableHead>Estado antes de daño</TableHead><TableHead>Ubicación no vendible</TableHead><TableHead>Observaciones</TableHead></TableRow></TableHeader>
                       <TableBody>
-                        {visibleInventory.productos.filter((line) => line.pendienteConciliacion - line.reservado > 0.009).map((line) => (
+                        {visibleInventory.productos.filter((line) => line.pendienteConciliacion - line.reservado > 0.009).map((line) => {
+                          const isReturnableContainer = line.estadoEnvaseDespachado != null;
+                          return (
                           <TableRow key={line.idInventarioItem}>
                             <TableCell>{line.nombre}<span className="block text-xs text-muted-foreground">Saldo físico: {Number(Math.max(0, line.pendienteConciliacion - line.reservado).toFixed(2))}</span></TableCell>
                             <TableCell><Input type="number" min="0" step="0.01" value={returnDraft[line.idInventarioItem]?.cantidadRecibida ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadRecibida: event.target.value } }))} className="max-w-28" /></TableCell>
-                            <TableCell>{productById.get(line.idInventarioItem)?.esEnvaseRetornable ? <Input type="number" min="0" step="1" value={returnDraft[line.idInventarioItem]?.cantidadEnvaseVacio ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadEnvaseVacio: event.target.value } }))} className="max-w-24" /> : "—"}</TableCell>
-                            <TableCell>{productById.get(line.idInventarioItem)?.esEnvaseRetornable ? <Input type="number" min="0" step="1" value={returnDraft[line.idInventarioItem]?.cantidadEnvaseLleno ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadEnvaseLleno: event.target.value } }))} className="max-w-24" /> : "—"}</TableCell>
-                            <TableCell><Input type="number" min="0" step={productById.get(line.idInventarioItem)?.esEnvaseRetornable ? "1" : "0.01"} value={returnDraft[line.idInventarioItem]?.cantidadDanada ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadDanada: event.target.value } }))} className="max-w-28" /></TableCell>
-                            <TableCell>{productById.get(line.idInventarioItem)?.esEnvaseRetornable ? <Select value={returnDraft[line.idInventarioItem]?.estadoEnvaseDanado ?? ""} onValueChange={(value) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], estadoEnvaseDanado: value as "VACIO" | "LLENO" } }))}><SelectTrigger className="min-w-28"><SelectValue placeholder="Estado" /></SelectTrigger><SelectContent><SelectItem value="VACIO">Vacío</SelectItem><SelectItem value="LLENO">Lleno</SelectItem></SelectContent></Select> : "—"}</TableCell>
+                            <TableCell>{isReturnableContainer ? <Input type="number" min="0" step="1" value={returnDraft[line.idInventarioItem]?.cantidadEnvaseVacio ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadEnvaseVacio: event.target.value } }))} className="max-w-24" /> : "—"}</TableCell>
+                            <TableCell>{isReturnableContainer ? <Input type="number" min="0" step="1" value={returnDraft[line.idInventarioItem]?.cantidadEnvaseLleno ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadEnvaseLleno: event.target.value } }))} className="max-w-24" /> : "—"}</TableCell>
+                            <TableCell><Input type="number" min="0" step={isReturnableContainer ? "1" : "0.01"} value={returnDraft[line.idInventarioItem]?.cantidadDanada ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadDanada: event.target.value } }))} className="max-w-28" /></TableCell>
+                            <TableCell>{isReturnableContainer ? <Select value={returnDraft[line.idInventarioItem]?.estadoEnvaseDanado ?? ""} onValueChange={(value) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], estadoEnvaseDanado: value as "VACIO" | "LLENO" } }))}><SelectTrigger className="min-w-28"><SelectValue placeholder="Estado" /></SelectTrigger><SelectContent><SelectItem value="VACIO">Vacío</SelectItem><SelectItem value="LLENO">Lleno</SelectItem></SelectContent></Select> : "—"}</TableCell>
                             <TableCell><Input value={returnDraft[line.idInventarioItem]?.ubicacionDanada ?? ""} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], ubicacionDanada: event.target.value } }))} maxLength={255} placeholder="Obligatorio si hay unidades dañadas" /></TableCell>
                             <TableCell><Input value={returnDraft[line.idInventarioItem]?.observaciones ?? ""} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], observaciones: event.target.value } }))} maxLength={255} /></TableCell>
                           </TableRow>
-                        ))}
+                          );
+                        })}
                       </TableBody>
                     </Table>
                     <Textarea value={returnNotes} onChange={(event) => setReturnNotes(event.target.value)} maxLength={255} placeholder="Observaciones de recepción" />
+                    {!canCreate ? <p className="text-sm text-muted-foreground">Tu rol no tiene permiso para registrar devoluciones.</p> : null}
                     <Button onClick={() => void submitReturn()} disabled={!canCreate || isSaving || visibleInventory.productos.every((line) => line.pendienteConciliacion - line.reservado <= 0.009)}>
                       Confirmar recepción
                     </Button>
@@ -585,7 +672,10 @@ export default function RouteOperationsPage() {
                   <CardContent className="space-y-4 p-4">
                     <div>
                       <h2 className="text-lg font-semibold">Autorizar diferencias</h2>
-                      <p className="text-sm text-muted-foreground">La clasificación y el motivo quedan auditados con el usuario autenticado que autoriza.</p>
+                      <p className="text-sm text-muted-foreground">
+                        La clasificación y el motivo quedan auditados con el usuario autenticado que autoriza.
+                        {!canUpdate ? " Tu rol no tiene permiso para autorizar diferencias." : ""}
+                      </p>
                     </div>
                     <div className="grid gap-3 md:grid-cols-2">
                       <div className="space-y-1.5">
@@ -645,6 +735,7 @@ export default function RouteOperationsPage() {
                       <Label htmlFor="closing-km">Kilometraje final</Label>
                       <Input id="closing-km" type="number" min={selectedSession.kmInicial ?? 0} value={closingKilometers} onChange={(event) => setClosingKilometers(event.target.value)} />
                       <p className="text-xs text-muted-foreground">El backend rechazará el cierre si quedan cantidades sin conciliar.</p>
+                      {!canUpdate ? <p className="text-xs text-muted-foreground">Tu rol no tiene permiso para cerrar rutas.</p> : null}
                     </div>
                     <Button onClick={() => void closeRoute()} disabled={!canUpdate || !visibleInventory.conciliada || isSaving}>
                       Cerrar y liquidar ruta
