@@ -4,10 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { UserDto } from "@/types/users";
 
 export type EmployeeFormValues = {
-  idUsuarioVinculado: string;
   idConfiguracionComision: string;
   idTipoTrabajador: string;
   nombreCompleto: string;
@@ -29,7 +27,6 @@ export type EmployeeFormValues = {
 
 type EmployeeFormCardProps = {
   title: string;
-  users: UserDto[];
   commissionConfigs: Array<{ id: number; nombre: string }>;
   workerTypes: Array<{ id: number; clave: string; nombre: string }>;
   form: EmployeeFormValues;
@@ -64,7 +61,6 @@ function resolveImagePreviewUrl(rutaImagen: string): string {
 
 export function EmployeeFormCard({
   title,
-  users,
   commissionConfigs,
   workerTypes,
   form,
@@ -83,27 +79,8 @@ export function EmployeeFormCard({
       <CardContent className="space-y-4">
         <div className="space-y-4">
           <div className="rounded-xl border border-sky-200/70 bg-sky-50/40 p-4">
-            <p className="mb-3 text-sm font-semibold text-sky-800">Vinculo e informacion personal</p>
+            <p className="mb-3 text-sm font-semibold text-sky-800">Informacion personal</p>
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-1.5 md:col-span-2">
-                <Label htmlFor="employee-linked-user">Vincular con usuario existente (opcional)</Label>
-                <select
-                  id="employee-linked-user"
-                  className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm transition-colors hover:bg-muted/50"
-                  value={form.idUsuarioVinculado}
-                  onChange={(event) =>
-                    onChange({ ...form, idUsuarioVinculado: event.target.value })
-                  }
-                >
-                  <option value="">Sin vinculo</option>
-                  {users.map((linkedUser) => (
-                    <option key={linkedUser.id} value={String(linkedUser.id)}>
-                      {linkedUser.nombre} ({linkedUser.correo})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               <div className="space-y-1.5 md:col-span-2">
                 <Label htmlFor="nombre-completo">Nombre completo</Label>
                 <Input

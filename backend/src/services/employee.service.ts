@@ -14,7 +14,6 @@ type EntidadInput = {
 
 type CreateEmployeeInput = {
   idUsuario: number;
-  idUsuarioVinculado?: number;
   idConfiguracionComision?: number;
   idTipoTrabajador: number;
   puestoTrabajo: string;
@@ -27,7 +26,6 @@ type CreateEmployeeInput = {
 
 type UpdateEmployeeInput = {
   idUsuario?: number;
-  idUsuarioVinculado?: number | null;
   idUsuarioModificador?: number;
   idConfiguracionComision?: number | null;
   idTipoTrabajador?: number | null;
@@ -58,6 +56,12 @@ function toEmployeeDto(empleado: {
   Anulado: boolean;
   IdUsuarioAnulador: number | null;
   FechaAnulacion: Date | null;
+  UsuarioVinculado?: {
+    Id: number;
+    Nombre: string;
+    Correo: string;
+    Anulado: boolean;
+  } | null;
   TipoTrabajador?: {
     Id: number;
     Clave: string;
@@ -88,6 +92,14 @@ function toEmployeeDto(empleado: {
     idEntidad: empleado.IdEntidad,
     idUsuario: empleado.IdUsuario,
     idUsuarioVinculado: empleado.IdUsuarioVinculado,
+    usuarioVinculado: empleado.UsuarioVinculado
+      ? {
+          id: empleado.UsuarioVinculado.Id,
+          nombre: empleado.UsuarioVinculado.Nombre,
+          correo: empleado.UsuarioVinculado.Correo,
+          anulado: empleado.UsuarioVinculado.Anulado,
+        }
+      : null,
     idConfiguracionComision: empleado.IdConfiguracionComision,
     idTipoTrabajador: empleado.IdTipoTrabajador,
     tipoTrabajador: empleado.TipoTrabajador
@@ -138,50 +150,6 @@ async function validateUsuarioExists(idUsuario: number) {
 
   if (!usuario) {
     throw new Error('Usuario no existe');
-  }
-}
-
-async function getActiveUsuario(idUsuario: number) {
-  const usuario = await prisma.usuario.findFirst({
-    where: { Id: idUsuario, Anulado: false },
-    select: { Id: true, IdEntidad: true },
-  });
-
-  if (!usuario) {
-    throw new Error('Usuario no existe');
-  }
-
-  return usuario;
-}
-
-async function validateEntidadNotLinkedToOtherEmployee(idEntidad: number, exceptEmployeeId?: number) {
-  const existing = await prisma.empleado.findFirst({
-    where: {
-      IdEntidad: idEntidad,
-      Anulado: false,
-      ...(exceptEmployeeId !== undefined ? { NOT: { Id: exceptEmployeeId } } : {}),
-    },
-    select: { Id: true },
-  });
-
-  if (existing) {
-    throw new Error('La entidad ya está vinculada a otro empleado');
-  }
-}
-
-// Empleado.IdUsuarioVinculado es la única fuente de verdad de la relación laboral.
-async function validateUsuarioVinculadoDisponible(idUsuarioVinculado: number, exceptEmployeeId?: number) {
-  const existing = await prisma.empleado.findFirst({
-    where: {
-      IdUsuarioVinculado: idUsuarioVinculado,
-      Anulado: false,
-      ...(exceptEmployeeId !== undefined ? { NOT: { Id: exceptEmployeeId } } : {}),
-    },
-    select: { Id: true },
-  });
-
-  if (existing) {
-    throw new Error('El usuario ya está vinculado a otro empleado');
   }
 }
 
@@ -253,6 +221,9 @@ export async function listEmployees() {
           Anulado: true,
         },
       },
+      UsuarioVinculado: {
+        select: { Id: true, Nombre: true, Correo: true, Anulado: true },
+      },
     },
   });
 
@@ -299,6 +270,9 @@ export async function listEmployeesAvailableForUserLink(
           Dpi: true,
           Anulado: true,
         },
+      },
+      UsuarioVinculado: {
+        select: { Id: true, Nombre: true, Correo: true, Anulado: true },
       },
     },
   });
@@ -406,85 +380,27 @@ export async function createEmployee(input: CreateEmployeeInput) {
   const fechaSalida = parseOptionalDate(input.fechaSalida, 'fechaSalida');
 
   const created = await prisma.$transaction(async (tx) => {
-    let entidadId: number;
-
-    if (input.idUsuarioVinculado !== undefined) {
-      await validateUsuarioVinculadoDisponible(input.idUsuarioVinculado);
-      const usuarioVinculado = await getActiveUsuario(input.idUsuarioVinculado);
-
-      if (usuarioVinculado.IdEntidad) {
-        await validateEntidadNotLinkedToOtherEmployee(usuarioVinculado.IdEntidad);
-        entidadId = usuarioVinculado.IdEntidad;
-
-        await tx.entidad.update({
-          where: { Id: entidadId },
-          data: {
-            NombreCompleto: input.entidad.nombreCompleto,
-            Sexo: input.entidad.sexo,
-            FechaNacimiento: fechaNacimiento,
-            Telefono1: input.entidad.telefono1,
-            Telefono2: input.entidad.telefono2,
-            CorreoElectronico: input.entidad.correoElectronico,
-            RutaImagen: input.entidad.rutaImagen,
-            Nit: input.entidad.nit,
-            Dpi: input.entidad.dpi,
-            FechaModificacion: new Date(),
-          },
-        });
-      } else {
-        const entidadNueva = await tx.entidad.create({
-          data: {
-            IdUsuario: input.idUsuario,
-            NombreCompleto: input.entidad.nombreCompleto,
-            Sexo: input.entidad.sexo,
-            FechaNacimiento: fechaNacimiento,
-            Telefono1: input.entidad.telefono1,
-            Telefono2: input.entidad.telefono2,
-            CorreoElectronico: input.entidad.correoElectronico,
-            RutaImagen: input.entidad.rutaImagen,
-            Nit: input.entidad.nit,
-            Dpi: input.entidad.dpi,
-            Anulado: false,
-          },
-          select: { Id: true },
-        });
-
-        entidadId = entidadNueva.Id;
-
-        await tx.usuario.update({
-          where: { Id: usuarioVinculado.Id },
-          data: {
-            IdEntidad: entidadId,
-            FechaModificacion: new Date(),
-          },
-        });
-      }
-    } else {
-      const entidadNueva = await tx.entidad.create({
-        data: {
-          IdUsuario: input.idUsuario,
-          NombreCompleto: input.entidad.nombreCompleto,
-          Sexo: input.entidad.sexo,
-          FechaNacimiento: fechaNacimiento,
-          Telefono1: input.entidad.telefono1,
-          Telefono2: input.entidad.telefono2,
-          CorreoElectronico: input.entidad.correoElectronico,
-          RutaImagen: input.entidad.rutaImagen,
-          Nit: input.entidad.nit,
-          Dpi: input.entidad.dpi,
-          Anulado: false,
-        },
-        select: { Id: true },
-      });
-
-      entidadId = entidadNueva.Id;
-    }
+    const entidadNueva = await tx.entidad.create({
+      data: {
+        IdUsuario: input.idUsuario,
+        NombreCompleto: input.entidad.nombreCompleto,
+        Sexo: input.entidad.sexo,
+        FechaNacimiento: fechaNacimiento,
+        Telefono1: input.entidad.telefono1,
+        Telefono2: input.entidad.telefono2,
+        CorreoElectronico: input.entidad.correoElectronico,
+        RutaImagen: input.entidad.rutaImagen,
+        Nit: input.entidad.nit,
+        Dpi: input.entidad.dpi,
+        Anulado: false,
+      },
+      select: { Id: true },
+    });
 
     const employee = await tx.empleado.create({
       data: {
-        IdEntidad: entidadId,
+        IdEntidad: entidadNueva.Id,
         IdUsuario: input.idUsuario,
-        IdUsuarioVinculado: input.idUsuarioVinculado,
         IdConfiguracionComision: input.idConfiguracionComision,
         IdTipoTrabajador: input.idTipoTrabajador,
         PuestoTrabajo: input.puestoTrabajo,
@@ -515,6 +431,9 @@ export async function createEmployee(input: CreateEmployeeInput) {
             Dpi: true,
             Anulado: true,
           },
+        },
+        UsuarioVinculado: {
+          select: { Id: true, Nombre: true, Correo: true, Anulado: true },
         },
       },
     });
@@ -557,10 +476,6 @@ export async function updateEmployee(id: number, input: UpdateEmployeeInput) {
     await validateUsuarioExists(input.idUsuario);
   }
 
-  if (input.idUsuarioVinculado !== undefined && input.idUsuarioVinculado !== null) {
-    await validateUsuarioExists(input.idUsuarioVinculado);
-  }
-
   if (input.idUsuarioModificador !== undefined) {
     await validateUsuarioExists(input.idUsuarioModificador);
   }
@@ -600,22 +515,9 @@ export async function updateEmployee(id: number, input: UpdateEmployeeInput) {
     : undefined;
 
   const updated = await prisma.$transaction(async (tx) => {
-    let entidadIdObjetivo = existing.IdEntidad;
-
-    if (input.idUsuarioVinculado !== undefined && input.idUsuarioVinculado !== null) {
-      await validateUsuarioVinculadoDisponible(input.idUsuarioVinculado, id);
-      const usuarioVinculado = await getActiveUsuario(input.idUsuarioVinculado);
-      if (!usuarioVinculado.IdEntidad) {
-        throw new Error('Usuario vinculado no tiene entidad');
-      }
-
-      await validateEntidadNotLinkedToOtherEmployee(usuarioVinculado.IdEntidad, id);
-      entidadIdObjetivo = usuarioVinculado.IdEntidad;
-    }
-
     if (input.entidad) {
       await tx.entidad.update({
-        where: { Id: entidadIdObjetivo },
+        where: { Id: existing.IdEntidad },
         data: {
           ...(input.entidad.nombreCompleto !== undefined
             ? { NombreCompleto: input.entidad.nombreCompleto }
@@ -646,11 +548,7 @@ export async function updateEmployee(id: number, input: UpdateEmployeeInput) {
     const employee = await tx.empleado.update({
       where: { Id: id },
       data: {
-        ...(entidadIdObjetivo !== existing.IdEntidad ? { IdEntidad: entidadIdObjetivo } : {}),
         ...(input.idUsuario !== undefined ? { IdUsuario: input.idUsuario } : {}),
-        ...(input.idUsuarioVinculado !== undefined
-          ? { IdUsuarioVinculado: input.idUsuarioVinculado }
-          : {}),
         ...(input.idUsuarioModificador !== undefined
           ? { IdUsuarioModificador: input.idUsuarioModificador }
           : {}),
@@ -690,6 +588,9 @@ export async function updateEmployee(id: number, input: UpdateEmployeeInput) {
             Dpi: true,
             Anulado: true,
           },
+        },
+        UsuarioVinculado: {
+          select: { Id: true, Nombre: true, Correo: true, Anulado: true },
         },
       },
     });
@@ -801,6 +702,9 @@ export async function restoreEmployee(id: number, idUsuarioModificador?: number)
           Dpi: true,
           Anulado: true,
         },
+      },
+      UsuarioVinculado: {
+        select: { Id: true, Nombre: true, Correo: true, Anulado: true },
       },
     },
   });

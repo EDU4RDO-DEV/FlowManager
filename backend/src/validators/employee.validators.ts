@@ -34,7 +34,6 @@ export const employeeEntityUpdateSchema = z.object({
 
 export const createEmployeeSchema = z.object({
   idUsuario: positiveInt,
-  idUsuarioVinculado: positiveInt.optional(),
   idConfiguracionComision: positiveInt.optional(),
   idTipoTrabajador: positiveInt,
   puestoTrabajo: z.string().trim().min(1, 'puestoTrabajo es obligatorio').max(255, 'puestoTrabajo demasiado largo'),
@@ -43,12 +42,11 @@ export const createEmployeeSchema = z.object({
   fechaSalida: dateString.optional(),
   sueldoBase: finitePositiveNumber,
   entidad: employeeEntityCreateSchema,
-});
+}).strict();
 
 export const updateEmployeeSchema = z
   .object({
     idUsuario: positiveInt.optional(),
-    idUsuarioVinculado: z.union([positiveInt, z.null()]).optional(),
     idUsuarioModificador: positiveInt.optional(),
     idConfiguracionComision: z.union([positiveInt, z.null()]).optional(),
     idTipoTrabajador: z.union([positiveInt, z.null()]).optional(),
@@ -60,6 +58,7 @@ export const updateEmployeeSchema = z
     fechaInicioVigenciaSueldo: dateString.optional(),
     entidad: employeeEntityUpdateSchema.optional(),
   })
+  .strict()
   .refine((data) => Object.keys(data).length > 0, {
     message: 'Debe enviar al menos un campo para actualizar',
   });

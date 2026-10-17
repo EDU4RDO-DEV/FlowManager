@@ -283,6 +283,7 @@ export default function EmployeesPage() {
                               <TableHead>ID</TableHead>
                               <TableHead>Nombre</TableHead>
                               <TableHead>Puesto</TableHead>
+                              <TableHead>Cuenta de usuario</TableHead>
                               <TableHead>Sueldo base</TableHead>
                               <TableHead>Contratacion</TableHead>
                               <TableHead className="text-right">Acciones</TableHead>
@@ -294,6 +295,11 @@ export default function EmployeesPage() {
                                 <TableCell className="font-mono text-xs text-muted-foreground">#{employee.id}</TableCell>
                                 <TableCell className="font-medium">{employee.entidad.nombreCompleto}</TableCell>
                                 <TableCell>{employee.puestoTrabajo}</TableCell>
+                                <TableCell>
+                                  {employee.usuarioVinculado
+                                    ? `${employee.usuarioVinculado.nombre} (${employee.usuarioVinculado.correo})${employee.usuarioVinculado.anulado ? " — anulada" : ""}`
+                                    : "—"}
+                                </TableCell>
                                 <TableCell>{formatCurrency(employee.sueldoBase)}</TableCell>
                                 <TableCell>{formatDate(employee.fechaContratacion)}</TableCell>
                                 <TableCell className="text-right">

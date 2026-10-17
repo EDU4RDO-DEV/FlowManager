@@ -61,28 +61,6 @@ export default function CreateUserPage() {
     void loadCatalogs();
   }, []);
 
-  useEffect(() => {
-    if (!form.idEmpleadoVinculado) return;
-    const linkedEmployeeId = Number(form.idEmpleadoVinculado);
-    if (!Number.isInteger(linkedEmployeeId) || linkedEmployeeId <= 0) return;
-
-    const linkedEmployee = employees.find((item) => item.id === linkedEmployeeId);
-    if (!linkedEmployee) return;
-
-    setForm((prev) => ({
-      ...prev,
-      nombre: linkedEmployee.entidad.nombreCompleto,
-      entidadSexo: linkedEmployee.entidad.sexo ?? "",
-      entidadFechaNacimiento: linkedEmployee.entidad.fechaNacimiento?.slice(0, 10) ?? "",
-      entidadTelefono1: linkedEmployee.entidad.telefono1 ?? "",
-      entidadTelefono2: linkedEmployee.entidad.telefono2 ?? "",
-      entidadCorreoElectronico: linkedEmployee.entidad.correoElectronico ?? "",
-      entidadRutaImagen: linkedEmployee.entidad.rutaImagen ?? "",
-      entidadNit: linkedEmployee.entidad.nit ?? "",
-      entidadDpi: linkedEmployee.entidad.dpi ?? "",
-    }));
-  }, [form.idEmpleadoVinculado, employees]);
-
   async function handleSubmit() {
     if (!form.nombre.trim() || !form.correo.trim()) {
       toast.error("Nombre y correo son obligatorios.");
@@ -108,17 +86,20 @@ export default function CreateUserPage() {
         ...(selectedLinkedEmployeeId
           ? { idEmpleadoVinculado: selectedLinkedEmployeeId }
           : {}),
-        entidad: {
-          nombreCompleto: form.nombre.trim(),
-          sexo: emptyToUndefined(form.entidadSexo),
-          fechaNacimiento: emptyToUndefined(form.entidadFechaNacimiento),
-          telefono1: emptyToUndefined(form.entidadTelefono1),
-          telefono2: emptyToUndefined(form.entidadTelefono2),
-          correoElectronico: emptyToUndefined(form.entidadCorreoElectronico),
-          rutaImagen: emptyToUndefined(form.entidadRutaImagen),
-          nit: emptyToUndefined(form.entidadNit),
-          dpi: emptyToUndefined(form.entidadDpi),
-        },
+        ...(!selectedLinkedEmployeeId
+          ? {
+              entidad: {
+                nombreCompleto: form.nombre.trim(),
+                sexo: emptyToUndefined(form.entidadSexo),
+                fechaNacimiento: emptyToUndefined(form.entidadFechaNacimiento),
+                telefono1: emptyToUndefined(form.entidadTelefono1),
+                telefono2: emptyToUndefined(form.entidadTelefono2),
+                correoElectronico: emptyToUndefined(form.entidadCorreoElectronico),
+                nit: emptyToUndefined(form.entidadNit),
+                dpi: emptyToUndefined(form.entidadDpi),
+              },
+            }
+          : {}),
       });
 
       toast.success("Usuario creado correctamente.");

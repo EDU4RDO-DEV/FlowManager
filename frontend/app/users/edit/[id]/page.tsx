@@ -62,22 +62,23 @@ export default function EditUserPage() {
         setRoles(rolesData);
         setEmployees(employeesData);
         const linkedEmployee = employeesData.find(
-          (employee) => employee.idEntidad === userData.idEntidad,
+          (employee) => employee.idUsuarioVinculado === userId,
         );
+        const entity = linkedEmployee?.entidad ?? userData.entidad;
         setForm({
-          nombre: userData.nombre,
+          nombre: linkedEmployee?.entidad.nombreCompleto ?? userData.nombre,
           correo: userData.correo,
           clave: "",
           idRol: userData.idRol ? String(userData.idRol) : "",
           idEmpleadoVinculado: linkedEmployee ? String(linkedEmployee.id) : "",
-          entidadSexo: userData.entidad?.sexo ?? "",
-          entidadFechaNacimiento: userData.entidad?.fechaNacimiento?.slice(0, 10) ?? "",
-          entidadTelefono1: userData.entidad?.telefono1 ?? "",
-          entidadTelefono2: userData.entidad?.telefono2 ?? "",
-          entidadCorreoElectronico: userData.entidad?.correoElectronico ?? "",
-          entidadRutaImagen: userData.entidad?.rutaImagen ?? "",
-          entidadNit: userData.entidad?.nit ?? "",
-          entidadDpi: userData.entidad?.dpi ?? "",
+          entidadSexo: entity?.sexo ?? "",
+          entidadFechaNacimiento: entity?.fechaNacimiento?.slice(0, 10) ?? "",
+          entidadTelefono1: entity?.telefono1 ?? "",
+          entidadTelefono2: entity?.telefono2 ?? "",
+          entidadCorreoElectronico: entity?.correoElectronico ?? "",
+          entidadRutaImagen: entity?.rutaImagen ?? "",
+          entidadNit: entity?.nit ?? "",
+          entidadDpi: entity?.dpi ?? "",
         });
       } catch (error) {
         toast.error(getApiErrorMessage(error, "No se pudo cargar el usuario."));
@@ -89,28 +90,6 @@ export default function EditUserPage() {
 
     void loadData();
   }, [params.id, router]);
-
-  useEffect(() => {
-    if (!form.idEmpleadoVinculado) return;
-    const linkedEmployeeId = Number(form.idEmpleadoVinculado);
-    if (!Number.isInteger(linkedEmployeeId) || linkedEmployeeId <= 0) return;
-
-    const linkedEmployee = employees.find((item) => item.id === linkedEmployeeId);
-    if (!linkedEmployee) return;
-
-    setForm((prev) => ({
-      ...prev,
-      nombre: linkedEmployee.entidad.nombreCompleto,
-      entidadSexo: linkedEmployee.entidad.sexo ?? "",
-      entidadFechaNacimiento: linkedEmployee.entidad.fechaNacimiento?.slice(0, 10) ?? "",
-      entidadTelefono1: linkedEmployee.entidad.telefono1 ?? "",
-      entidadTelefono2: linkedEmployee.entidad.telefono2 ?? "",
-      entidadCorreoElectronico: linkedEmployee.entidad.correoElectronico ?? "",
-      entidadRutaImagen: linkedEmployee.entidad.rutaImagen ?? "",
-      entidadNit: linkedEmployee.entidad.nit ?? "",
-      entidadDpi: linkedEmployee.entidad.dpi ?? "",
-    }));
-  }, [form.idEmpleadoVinculado, employees]);
 
   async function handleSubmit() {
     const userId = Number(params.id);
@@ -136,17 +115,20 @@ export default function EditUserPage() {
         idRol: selectedRoleId,
         idEmpleadoVinculado: selectedLinkedEmployeeId,
         ...(user?.id ? { idUsuarioModificador: user.id } : {}),
-        entidad: {
-          nombreCompleto: form.nombre.trim(),
-          sexo: form.entidadSexo.trim() || undefined,
-          fechaNacimiento: form.entidadFechaNacimiento.trim() || undefined,
-          telefono1: form.entidadTelefono1.trim() || undefined,
-          telefono2: form.entidadTelefono2.trim() || undefined,
-          correoElectronico: form.entidadCorreoElectronico.trim() || undefined,
-          rutaImagen: form.entidadRutaImagen.trim() || undefined,
-          nit: form.entidadNit.trim() || undefined,
-          dpi: form.entidadDpi.trim() || undefined,
-        },
+        ...(!selectedLinkedEmployeeId
+          ? {
+              entidad: {
+                nombreCompleto: form.nombre.trim(),
+                sexo: form.entidadSexo.trim() || undefined,
+                fechaNacimiento: form.entidadFechaNacimiento.trim() || undefined,
+                telefono1: form.entidadTelefono1.trim() || undefined,
+                telefono2: form.entidadTelefono2.trim() || undefined,
+                correoElectronico: form.entidadCorreoElectronico.trim() || undefined,
+                nit: form.entidadNit.trim() || undefined,
+                dpi: form.entidadDpi.trim() || undefined,
+              },
+            }
+          : {}),
       });
 
       toast.success("Usuario actualizado correctamente.");

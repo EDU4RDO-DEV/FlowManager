@@ -5,7 +5,6 @@ import {
   createUserController,
   deleteUserController,
   getUserByIdController,
-  listAvailableUsersController,
   listAnulatedUsersController,
   listUsersController,
   resetUserPasswordController,
@@ -20,7 +19,6 @@ import {
 const userRouter = Router();
 
 userRouter.get('/', requireModulePermission('usuarios', 'read'), listUsersController);
-userRouter.get('/disponibles', requireModulePermission('usuarios', 'read'), listAvailableUsersController);
 userRouter.get('/anulados', requireModulePermission('usuarios', 'read'), listAnulatedUsersController);
 userRouter.get('/:id', requireModulePermission('usuarios', 'read'), getUserByIdController);
 userRouter.post('/', requireModulePermission('usuarios', 'create'), createUserController);

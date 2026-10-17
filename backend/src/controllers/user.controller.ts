@@ -6,7 +6,6 @@ import {
   deleteUser,
   getUserById,
   listAnulatedUsers,
-  listUsersAvailableForEmployeeLink,
   listUsers,
   resetUserPassword,
   restoreUser,
@@ -49,41 +48,6 @@ export async function listUsersController(_req: Request, res: Response) {
   }
 }
 
-export async function listAvailableUsersController(req: Request, res: Response) {
-  try {
-    const includeEmployeeIdRaw = req.query.includeEmployeeId;
-    const includeEmployeeId =
-      includeEmployeeIdRaw !== undefined ? parseId(includeEmployeeIdRaw) : undefined;
-
-    if (
-      includeEmployeeIdRaw !== undefined &&
-      (
-        typeof includeEmployeeId !== 'number' ||
-        !Number.isInteger(includeEmployeeId) ||
-        includeEmployeeId <= 0
-      )
-    ) {
-      return res.status(400).json({
-        ok: false,
-        message: 'includeEmployeeId debe ser un entero positivo cuando se envía',
-      });
-    }
-
-    const data = await listUsersAvailableForEmployeeLink(
-      includeEmployeeId !== undefined ? { includeEmployeeId } : {},
-    );
-    return res.status(200).json({ ok: true, data });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Error interno';
-
-    if (message === 'Empleado no existe') {
-      return res.status(404).json({ ok: false, message });
-    }
-
-    return res.status(500).json({ ok: false, message });
-  }
-}
-
 export async function getUserByIdController(req: Request, res: Response) {
   try {
     const id = parseId(req.params.id);
@@ -120,7 +84,6 @@ export async function createUserController(req: Request, res: Response) {
         telefono1?: string;
         telefono2?: string;
         correoElectronico?: string;
-        rutaImagen?: string;
         nit?: string;
         dpi?: string;
       };
@@ -177,6 +140,7 @@ export async function createUserController(req: Request, res: Response) {
       correo: correo.trim(),
       clave,
       idUsuario,
+      idUsuarioModificador: req.auth?.userId,
       idRol,
       idEmpleadoVinculado,
       entidad,
@@ -235,7 +199,6 @@ export async function updateUserController(req: Request, res: Response) {
           telefono1?: string;
           telefono2?: string;
           correoElectronico?: string;
-          rutaImagen?: string;
           nit?: string;
           dpi?: string;
         };

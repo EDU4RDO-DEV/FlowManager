@@ -55,7 +55,10 @@ describe('Fase 1 - relación Usuario-Empleado', () => {
   it('al vincular usuario-empleado, escribe Empleado.IdUsuarioVinculado como fuente autoritativa', async () => {
     prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 5 }); // existing user
     prismaMock.empleado.findFirst.mockResolvedValueOnce({ IdUsuarioVinculado: null }); // disponible
-    prismaMock.empleado.findFirst.mockResolvedValueOnce({ IdEntidad: 40 }); // getEmployeeEntidadId
+    prismaMock.empleado.findFirst.mockResolvedValueOnce({
+      IdEntidad: 40,
+      Entidad: { NombreCompleto: 'Ana' },
+    });
     prismaMock.entidad.findFirst.mockResolvedValueOnce({ Id: 40 }); // validateEntidadExists
     prismaMock.usuario.findFirst.mockResolvedValueOnce(null); // validateEntidadNotLinkedToOtherUser -> nadie más
 
@@ -106,7 +109,10 @@ describe('Fase 1 - relación Usuario-Empleado', () => {
 
     expect(tx.empleado.update).toHaveBeenCalledWith({
       where: { Id: 3 },
-      data: { IdUsuarioVinculado: 5 },
+      data: expect.objectContaining({
+        IdUsuarioVinculado: 5,
+        FechaModificacion: expect.any(Date),
+      }),
     });
   });
 
@@ -131,8 +137,25 @@ describe('Fase 1 - relación Usuario-Empleado', () => {
         }),
       },
       empleado: {
-        findFirst: vi.fn().mockResolvedValueOnce({ Id: 3 }), // empleado previamente vinculado
+        findFirst: vi.fn().mockResolvedValueOnce({
+          Id: 3,
+          IdEntidad: 40,
+          Entidad: {
+            NombreCompleto: 'Ana',
+            Sexo: null,
+            FechaNacimiento: null,
+            Telefono1: null,
+            Telefono2: null,
+            CorreoElectronico: null,
+            RutaImagen: null,
+            Nit: null,
+            Dpi: null,
+          },
+        }), // empleado previamente vinculado
         update: vi.fn().mockResolvedValue({ Id: 3 }),
+      },
+      entidad: {
+        create: vi.fn().mockResolvedValue({ Id: 50 }),
       },
     };
 
@@ -160,8 +183,24 @@ describe('Fase 1 - relación Usuario-Empleado', () => {
 
     expect(tx.empleado.update).toHaveBeenCalledWith({
       where: { Id: 3 },
-      data: { IdUsuarioVinculado: null },
+      data: expect.objectContaining({
+        IdUsuarioVinculado: null,
+        FechaModificacion: expect.any(Date),
+      }),
     });
+    expect(tx.usuario.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ IdEntidad: 50 }),
+      }),
+    );
+    expect(tx.entidad.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          IdUsuario: 5,
+          NombreCompleto: 'Ana',
+        }),
+      }),
+    );
   });
 
   it('logística ya no resuelve empleado por IdUsuario de registro, solo por IdUsuarioVinculado', async () => {

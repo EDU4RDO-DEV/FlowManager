@@ -14,11 +14,8 @@ import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
 import { listCommissionConfigs } from "@/services/commissions.service";
 import { createEmployee, listWorkerTypes, uploadEmployeeImage } from "@/services/employees.service";
-import { listAvailableUsers } from "@/services/users.service";
-import type { UserDto } from "@/types/users";
 
 const EMPTY_FORM: EmployeeFormValues = {
-  idUsuarioVinculado: "",
   idConfiguracionComision: "",
   idTipoTrabajador: "",
   nombreCompleto: "",
@@ -44,7 +41,6 @@ export default function CreateEmployeePage() {
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [form, setForm] = useState<EmployeeFormValues>(EMPTY_FORM);
-  const [users, setUsers] = useState<UserDto[]>([]);
   const [commissionConfigs, setCommissionConfigs] = useState<Array<{ id: number; nombre: string }>>([]);
   const [workerTypes, setWorkerTypes] = useState<Array<{ id: number; clave: string; nombre: string }>>([]);
 
@@ -64,12 +60,10 @@ export default function CreateEmployeePage() {
   useEffect(() => {
     async function loadUsers() {
       try {
-        const [usersData, configsData, workerTypesData] = await Promise.all([
-          listAvailableUsers(),
+        const [configsData, workerTypesData] = await Promise.all([
           listCommissionConfigs(),
           listWorkerTypes(),
         ]);
-        setUsers(usersData);
         setCommissionConfigs(configsData.map((item) => ({ id: item.id, nombre: item.nombre })));
         setWorkerTypes(workerTypesData);
       } catch (error) {
@@ -79,28 +73,6 @@ export default function CreateEmployeePage() {
 
     void loadUsers();
   }, []);
-
-  useEffect(() => {
-    if (!form.idUsuarioVinculado) return;
-    const linkedUserId = Number(form.idUsuarioVinculado);
-    if (!Number.isInteger(linkedUserId) || linkedUserId <= 0) return;
-
-    const linkedUser = users.find((item) => item.id === linkedUserId);
-    if (!linkedUser) return;
-
-    setForm((prev) => ({
-      ...prev,
-      nombreCompleto: linkedUser.entidad?.nombreCompleto ?? linkedUser.nombre,
-      sexo: linkedUser.entidad?.sexo ?? "",
-      fechaNacimiento: linkedUser.entidad?.fechaNacimiento?.slice(0, 10) ?? "",
-      correoElectronico: linkedUser.entidad?.correoElectronico ?? linkedUser.correo,
-      telefono1: linkedUser.entidad?.telefono1 ?? "",
-      telefono2: linkedUser.entidad?.telefono2 ?? "",
-      rutaImagen: linkedUser.entidad?.rutaImagen ?? prev.rutaImagen,
-      nit: linkedUser.entidad?.nit ?? "",
-      dpi: linkedUser.entidad?.dpi ?? "",
-    }));
-  }, [form.idUsuarioVinculado, users]);
 
   async function handleSubmit() {
     if (!user?.id) {
@@ -135,13 +107,11 @@ export default function CreateEmployeePage() {
 
     setSaving(true);
     try {
-      const linkedUserId = form.idUsuarioVinculado ? Number(form.idUsuarioVinculado) : undefined;
       const commissionConfigId = form.idConfiguracionComision
         ? Number(form.idConfiguracionComision)
         : undefined;
       await createEmployee({
         idUsuario: user.id,
-        ...(linkedUserId ? { idUsuarioVinculado: linkedUserId } : {}),
         ...(commissionConfigId ? { idConfiguracionComision: commissionConfigId } : {}),
         idTipoTrabajador: Number(form.idTipoTrabajador),
         puestoTrabajo: form.puestoTrabajo.trim(),
@@ -181,7 +151,6 @@ export default function CreateEmployeePage() {
         <div className="w-full">
           <EmployeeFormCard
             title="Nuevo empleado"
-            users={users}
             commissionConfigs={commissionConfigs}
             workerTypes={workerTypes}
             form={form}

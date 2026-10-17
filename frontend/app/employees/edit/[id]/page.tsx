@@ -14,11 +14,8 @@ import { RequireAuth } from "@/components/require-auth";
 import { getApiErrorMessage } from "@/lib/api";
 import { listCommissionConfigs } from "@/services/commissions.service";
 import { getEmployeeById, listWorkerTypes, updateEmployee, uploadEmployeeImage } from "@/services/employees.service";
-import { getUserById, listAvailableUsers } from "@/services/users.service";
-import type { UserDto } from "@/types/users";
 
 const EMPTY_FORM: EmployeeFormValues = {
-  idUsuarioVinculado: "",
   idConfiguracionComision: "",
   idTipoTrabajador: "",
   nombreCompleto: "",
@@ -53,7 +50,6 @@ export default function EditEmployeePage() {
   const [loading, setLoading] = useState(true);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [form, setForm] = useState<EmployeeFormValues>(EMPTY_FORM);
-  const [users, setUsers] = useState<UserDto[]>([]);
   const [commissionConfigs, setCommissionConfigs] = useState<Array<{ id: number; nombre: string }>>([]);
   const [workerTypes, setWorkerTypes] = useState<Array<{ id: number; clave: string; nombre: string }>>([]);
   const [originalSalary, setOriginalSalary] = useState<number | null>(null);
@@ -82,30 +78,16 @@ export default function EditEmployeePage() {
 
       setLoading(true);
       try {
-        const [employeeData, usersData, configsData, workerTypesData] = await Promise.all([
+        const [employeeData, configsData, workerTypesData] = await Promise.all([
           getEmployeeById(employeeId),
-          listAvailableUsers(employeeId),
           listCommissionConfigs(),
           listWorkerTypes(),
         ]);
 
-        let usersForForm = usersData;
-        if (
-          employeeData.idUsuarioVinculado &&
-          !usersData.some((candidateUser) => candidateUser.id === employeeData.idUsuarioVinculado)
-        ) {
-          const linkedUser = await getUserById(employeeData.idUsuarioVinculado);
-          usersForForm = [linkedUser, ...usersData];
-        }
-
-        setUsers(usersForForm);
         setCommissionConfigs(configsData.map((item) => ({ id: item.id, nombre: item.nombre })));
         setWorkerTypes(workerTypesData);
         setOriginalSalary(employeeData.sueldoBase);
         setForm({
-          idUsuarioVinculado: employeeData.idUsuarioVinculado
-            ? String(employeeData.idUsuarioVinculado)
-            : "",
           idConfiguracionComision: employeeData.idConfiguracionComision
             ? String(employeeData.idConfiguracionComision)
             : "",
@@ -138,28 +120,6 @@ export default function EditEmployeePage() {
 
     void loadData();
   }, [params.id, router]);
-
-  useEffect(() => {
-    if (!form.idUsuarioVinculado) return;
-    const linkedUserId = Number(form.idUsuarioVinculado);
-    if (!Number.isInteger(linkedUserId) || linkedUserId <= 0) return;
-
-    const linkedUser = users.find((item) => item.id === linkedUserId);
-    if (!linkedUser) return;
-
-    setForm((prev) => ({
-      ...prev,
-      nombreCompleto: linkedUser.entidad?.nombreCompleto ?? linkedUser.nombre,
-      sexo: linkedUser.entidad?.sexo ?? "",
-      fechaNacimiento: linkedUser.entidad?.fechaNacimiento?.slice(0, 10) ?? "",
-      correoElectronico: linkedUser.entidad?.correoElectronico ?? linkedUser.correo,
-      telefono1: linkedUser.entidad?.telefono1 ?? "",
-      telefono2: linkedUser.entidad?.telefono2 ?? "",
-      rutaImagen: linkedUser.entidad?.rutaImagen ?? prev.rutaImagen,
-      nit: linkedUser.entidad?.nit ?? "",
-      dpi: linkedUser.entidad?.dpi ?? "",
-    }));
-  }, [form.idUsuarioVinculado, users]);
 
   async function handleSubmit() {
     const employeeId = Number(params.id);
@@ -204,13 +164,11 @@ export default function EditEmployeePage() {
 
     setSaving(true);
     try {
-      const linkedUserId = form.idUsuarioVinculado ? Number(form.idUsuarioVinculado) : null;
       const commissionConfigId = form.idConfiguracionComision
         ? Number(form.idConfiguracionComision)
         : null;
       await updateEmployee(employeeId, {
         idUsuarioModificador: user.id,
-        idUsuarioVinculado: linkedUserId,
         idConfiguracionComision: commissionConfigId,
         idTipoTrabajador: Number(form.idTipoTrabajador),
         puestoTrabajo: form.puestoTrabajo.trim(),
@@ -258,7 +216,6 @@ export default function EditEmployeePage() {
           ) : (
             <EmployeeFormCard
               title={`Editar empleado #${params.id}`}
-              users={users}
               commissionConfigs={commissionConfigs}
               workerTypes={workerTypes}
               form={form}

@@ -7,6 +7,34 @@ import { Label } from "@/components/ui/label";
 import type { EmployeeDto } from "@/types/employees";
 import type { RoleDto } from "@/types/users";
 
+function createEmployeeAccountEmail(name: string, employeeId: number): string {
+  const localPart = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "");
+
+  return `${localPart || `empleado${employeeId}`}@flowmanager.com`;
+}
+
+function resolveImagePreviewUrl(imagePath: string): string {
+  if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
+    return imagePath;
+  }
+
+  const configuredBase = process.env.NEXT_PUBLIC_API_URL;
+  if (configuredBase) {
+    return `${configuredBase}${imagePath}`;
+  }
+
+  if (typeof window !== "undefined") {
+    return `http://${window.location.hostname}:4000${imagePath}`;
+  }
+
+  return imagePath;
+}
+
 export type UserFormValues = {
   nombre: string;
   correo: string;
@@ -46,6 +74,8 @@ export function UserFormCard({
   onCancel,
   onSubmit,
 }: UserFormCardProps) {
+  const hasLinkedEmployee = Boolean(form.idEmpleadoVinculado);
+
   return (
     <Card className="rounded-xl border border-border bg-background">
       <CardHeader>
@@ -63,7 +93,8 @@ export function UserFormCard({
               type="email"
               value={form.correo}
               onChange={(event) => onChange({ ...form, correo: event.target.value })}
-              placeholder="correo@empresa.com"
+              readOnly={hasLinkedEmployee}
+              placeholder="correo@flowmanager.com"
               className="bg-background"
             />
           </div>
@@ -106,9 +137,31 @@ export function UserFormCard({
               id="user-linked-employee"
               className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm transition-colors hover:bg-muted/50"
               value={form.idEmpleadoVinculado}
-              onChange={(event) =>
-                onChange({ ...form, idEmpleadoVinculado: event.target.value })
-              }
+              onChange={(event) => {
+                const employeeId = event.target.value;
+                const employee = employees.find((item) => item.id === Number(employeeId));
+
+                if (!employee) {
+                  onChange({ ...form, idEmpleadoVinculado: employeeId });
+                  return;
+                }
+
+                const entity = employee.entidad;
+                onChange({
+                  ...form,
+                  idEmpleadoVinculado: employeeId,
+                  nombre: entity.nombreCompleto,
+                  correo: createEmployeeAccountEmail(entity.nombreCompleto, employee.id),
+                  entidadSexo: entity.sexo ?? "",
+                  entidadFechaNacimiento: entity.fechaNacimiento?.slice(0, 10) ?? "",
+                  entidadTelefono1: entity.telefono1 ?? "",
+                  entidadTelefono2: entity.telefono2 ?? "",
+                  entidadCorreoElectronico: entity.correoElectronico ?? "",
+                  entidadRutaImagen: entity.rutaImagen ?? "",
+                  entidadNit: entity.nit ?? "",
+                  entidadDpi: entity.dpi ?? "",
+                });
+              }}
             >
               <option value="">Sin vinculo</option>
               {employees.map((employee) => (
@@ -131,6 +184,7 @@ export function UserFormCard({
               id="user-name"
               value={form.nombre}
               onChange={(event) => onChange({ ...form, nombre: event.target.value })}
+              readOnly={hasLinkedEmployee}
               placeholder="Nombre completo"
               className="bg-background"
             />
@@ -143,6 +197,7 @@ export function UserFormCard({
                   className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm transition-colors hover:bg-muted/50"
                   value={form.entidadSexo}
                   onChange={(event) => onChange({ ...form, entidadSexo: event.target.value })}
+                  disabled={hasLinkedEmployee}
                 >
                   <option value="">Sin especificar</option>
                   <option value="M">Masculino</option>
@@ -157,6 +212,7 @@ export function UserFormCard({
                   type="date"
                   value={form.entidadFechaNacimiento}
                   onChange={(event) => onChange({ ...form, entidadFechaNacimiento: event.target.value })}
+                  readOnly={hasLinkedEmployee}
                   className="bg-background"
                 />
               </div>
@@ -168,6 +224,7 @@ export function UserFormCard({
                   type="email"
                   value={form.entidadCorreoElectronico}
                   onChange={(event) => onChange({ ...form, entidadCorreoElectronico: event.target.value })}
+                  readOnly={hasLinkedEmployee}
                   placeholder="correo.entidad@empresa.com"
                   className="bg-background"
                 />
@@ -179,6 +236,7 @@ export function UserFormCard({
                   id="entity-phone-1"
                   value={form.entidadTelefono1}
                   onChange={(event) => onChange({ ...form, entidadTelefono1: event.target.value })}
+                  readOnly={hasLinkedEmployee}
                   placeholder="50255550101"
                   className="bg-background"
                 />
@@ -190,20 +248,33 @@ export function UserFormCard({
                   id="entity-phone-2"
                   value={form.entidadTelefono2}
                   onChange={(event) => onChange({ ...form, entidadTelefono2: event.target.value })}
+                  readOnly={hasLinkedEmployee}
                   placeholder="50255550102"
                   className="bg-background"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="entity-image-path">Ruta imagen</Label>
-                <Input
-                  id="entity-image-path"
-                  value={form.entidadRutaImagen}
-                  onChange={(event) => onChange({ ...form, entidadRutaImagen: event.target.value })}
-                  placeholder="/uploads/personas/foto.jpg"
-                  className="bg-background"
-                />
+                <Label>Imagen del empleado</Label>
+                <div className="flex h-24 items-center gap-3 rounded-lg border bg-background p-2">
+                  <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-md border bg-muted/40">
+                    {form.entidadRutaImagen.trim() ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={resolveImagePreviewUrl(form.entidadRutaImagen)}
+                        alt={`Imagen de ${form.nombre || "usuario"}`}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <span className="px-2 text-center text-xs text-muted-foreground">
+                        Sin imagen
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-sm text-muted-foreground">
+                    {form.entidadRutaImagen.trim() ? "Imagen registrada en Empleados" : "Sin imagen registrada"}
+                  </span>
+                </div>
               </div>
 
               <div className="space-y-1.5">
@@ -212,6 +283,7 @@ export function UserFormCard({
                   id="entity-nit"
                   value={form.entidadNit}
                   onChange={(event) => onChange({ ...form, entidadNit: event.target.value })}
+                  readOnly={hasLinkedEmployee}
                   placeholder="1234567-8"
                   className="bg-background"
                 />
@@ -223,6 +295,7 @@ export function UserFormCard({
                   id="entity-dpi"
                   value={form.entidadDpi}
                   onChange={(event) => onChange({ ...form, entidadDpi: event.target.value })}
+                  readOnly={hasLinkedEmployee}
                   placeholder="1234567890101"
                   className="bg-background"
                 />

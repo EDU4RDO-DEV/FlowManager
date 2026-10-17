@@ -127,6 +127,23 @@ sin sobrescribir la factura original.
 - Matriz de permisos centralizada por grupos de rol.
 - `produccion:allow-negative-stock` habilita saldos negativos sólo al confirmar fabricación; el seed lo concede al Administrador y no a los demás roles.
 
+## Relacion Usuario-Empleado
+
+La asociacion laboral es opcional y su unica fuente de verdad es
+`Empleado.IdUsuarioVinculado`, una FK nullable a `Usuario`. `Empleado.IdUsuario` identifica
+al usuario que registra el empleado; no implica que el empleado necesite una cuenta de acceso.
+La vinculacion, el cambio y la desvinculacion se administran desde `POST/PATCH /api/users`;
+estas operaciones actualizan usuario, empleado y datos personales relacionados dentro de una
+transaccion y registran el modificador en el empleado. Las restricciones existentes
+`UQ_Empleado_UsuarioVinculado_Activo` y `FK_Empleado_UsuarioVinculado` impiden duplicados
+activos y referencias inexistentes. No se requiere una migracion para esta centralizacion.
+
+El modulo Empleados conserva unicamente la lectura del estado y de los datos basicos de la
+cuenta vinculada. Sus esquemas de creacion y actualizacion rechazan `idUsuarioVinculado`.
+`GET /api/employees/disponibles` permanece como consulta de empleados para los formularios de
+Usuarios; no permite modificar la relacion. La anulacion de una cuenta conserva la relacion y
+revoca sus sesiones como parte del flujo transaccional existente.
+
 ### Validacion y errores
 
 - Validacion de entrada con Zod en flujos criticos (`auth`, `sessions`).

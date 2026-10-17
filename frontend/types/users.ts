@@ -57,7 +57,6 @@ export interface CreateUserPayload {
     telefono1?: string;
     telefono2?: string;
     correoElectronico?: string;
-    rutaImagen?: string;
     nit?: string;
     dpi?: string;
   };
@@ -76,7 +75,6 @@ export interface UpdateUserPayload {
     telefono1?: string;
     telefono2?: string;
     correoElectronico?: string;
-    rutaImagen?: string;
     nit?: string;
     dpi?: string;
   };
