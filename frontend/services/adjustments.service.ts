@@ -4,6 +4,10 @@ import type {
   AdjustmentDto,
   AdjustmentFilters,
   AdjustmentListResult,
+  AdjustmentOperationDetailDto,
+  AdjustmentOperationsListResponse,
+  AdjustmentOperationPayload,
+  AdjustmentOperationListResult,
   AdjustmentsListResponse,
   AnulatedAdjustmentsListResponse,
   CreateAdjustmentPayload,
@@ -46,12 +50,59 @@ export async function listAnulatedAdjustments(): Promise<AdjustmentDto[]> {
   return data.data ?? [];
 }
 
+export async function listAdjustmentOperations(
+  filters: AdjustmentFilters = {},
+): Promise<AdjustmentOperationListResult> {
+  const { data } = await api.get<AdjustmentOperationsListResponse>("/api/adjustments/operaciones", {
+    params: {
+      ...(filters.page !== undefined ? { page: filters.page } : {}),
+      ...(filters.limit !== undefined ? { limit: filters.limit } : {}),
+      ...(filters.busqueda ? { busqueda: filters.busqueda } : {}),
+      ...(filters.tipoAjuste ? { tipoAjuste: filters.tipoAjuste } : {}),
+      ...(filters.anulado !== undefined ? { anulado: String(filters.anulado) } : {}),
+      ...(filters.idInventarioItem !== undefined
+        ? { idInventarioItem: filters.idInventarioItem }
+        : {}),
+    },
+  });
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al listar operaciones de ajuste");
+  }
+  return data.data;
+}
+
+export async function getAdjustmentOperation(
+  numeroAjuste: number,
+): Promise<AdjustmentOperationDetailDto> {
+  const { data } = await api.get<ApiResponse<AdjustmentOperationDetailDto>>(
+    `/api/adjustments/operaciones/${numeroAjuste}`,
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al obtener el detalle del ajuste");
+  }
+  return data.data;
+}
+
 export async function getAdjustmentById(id: number): Promise<AdjustmentDto> {
   const { data } = await api.get<ApiResponse<AdjustmentDto>>(`/api/adjustments/${id}`);
   if (!data.data) {
     throw new Error(data.message || "Respuesta invalida al obtener ajuste");
   }
   return data.data;
+}
+
+export async function deleteAdjustmentOperation(
+  numeroAjuste: number,
+  payload?: AdjustmentOperationPayload,
+): Promise<void> {
+  await api.delete(`/api/adjustments/operaciones/${numeroAjuste}`, { data: payload });
+}
+
+export async function restoreAdjustmentOperation(
+  numeroAjuste: number,
+  payload?: AdjustmentOperationPayload,
+): Promise<void> {
+  await api.patch(`/api/adjustments/operaciones/${numeroAjuste}/restaurar`, payload);
 }
 
 export async function createAdjustment(payload: CreateAdjustmentPayload): Promise<CreateAdjustmentResult> {

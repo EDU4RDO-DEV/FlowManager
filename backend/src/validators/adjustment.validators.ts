@@ -22,6 +22,13 @@ export const adjustmentIdParamsSchema = z.object({
   id: z.coerce.number().int('id debe ser entero').positive('id debe ser mayor a 0'),
 });
 
+export const adjustmentNumberParamsSchema = z.object({
+  numeroAjuste: z.coerce
+    .number()
+    .int('numeroAjuste debe ser entero')
+    .positive('numeroAjuste debe ser mayor a 0'),
+});
+
 export const listAdjustmentsQuerySchema = z.object({
   page: optionalPageFromQuery,
   limit: optionalLimitFromQuery,

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Loader2, Plus, Search, Trash2 } from "lucide-react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { toast } from "sonner";
 
@@ -71,7 +71,6 @@ export default function CreatePurchasePage() {
   const {
     register,
     handleSubmit,
-    watch,
     setValue,
     control,
     formState: { errors, isSubmitting },
@@ -95,8 +94,12 @@ export default function CreatePurchasePage() {
     name: "detalleCompra",
   });
 
-  const selectedProviderId = watch("idProveedor");
-  const detalleCompra = watch("detalleCompra") ?? [];
+  const selectedProviderId = useWatch({ control, name: "idProveedor" });
+  const detalleCompra = useWatch({
+    control,
+    name: "detalleCompra",
+    defaultValue: [],
+  });
 
   const selectedProvider = useMemo(
     () => providers.find((item) => item.id === selectedProviderId) ?? null,

@@ -209,7 +209,9 @@ export default function CreateAdjustmentPage() {
         items: payloadItems,
       });
 
-      toast.success(`Ajuste #${result.numeroAjuste} registrado con ${result.totalItems} item(s).`);
+      toast.success(
+        `Ajuste AJU-${String(result.numeroAjuste).padStart(6, "0")} registrado con ${result.totalItems} producto(s).`,
+      );
       router.push("/inventory/adjustments");
       router.refresh();
     } catch (error) {

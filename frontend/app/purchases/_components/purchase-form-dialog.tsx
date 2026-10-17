@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Plus, Search, Trash2 } from "lucide-react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { toast } from "sonner";
 
@@ -137,6 +137,8 @@ const purchaseFormSchema = z
   });
 
 type PurchaseFormValues = z.infer<typeof purchaseFormSchema>;
+const emptyPurchaseDetails: NonNullable<PurchaseFormValues["detalleCompra"]> = [];
+const emptyExpenseDetails: NonNullable<PurchaseFormValues["detalleGasto"]> = [];
 
 interface PurchaseFormDialogProps {
   open: boolean;
@@ -160,7 +162,6 @@ export function PurchaseFormDialog({
   const {
     register,
     handleSubmit,
-    watch,
     setValue,
     reset,
     control,
@@ -196,10 +197,18 @@ export function PurchaseFormDialog({
     name: "detalleGasto",
   });
 
-  const esGasto = watch("esGasto");
-  const selectedProviderId = watch("idProveedor");
-  const detalleCompra = watch("detalleCompra") ?? [];
-  const detalleGasto = watch("detalleGasto") ?? [];
+  const esGasto = useWatch({ control, name: "esGasto" });
+  const selectedProviderId = useWatch({ control, name: "idProveedor" });
+  const detalleCompra = useWatch({
+    control,
+    name: "detalleCompra",
+    defaultValue: [],
+  }) ?? emptyPurchaseDetails;
+  const detalleGasto = useWatch({
+    control,
+    name: "detalleGasto",
+    defaultValue: [],
+  }) ?? emptyExpenseDetails;
 
   const selectedProvider = useMemo(
     () => providers.find((item) => item.id === selectedProviderId) ?? null,

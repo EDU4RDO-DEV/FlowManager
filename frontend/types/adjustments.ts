@@ -44,8 +44,47 @@ export interface AdjustmentListResult {
   pagination: AdjustmentListPagination;
 }
 
+export interface AdjustmentOperationDto {
+  numeroAjuste: number;
+  nombreAjuste: string | null;
+  observacion: string | null;
+  fechaRegistro: string | null;
+  fechaAnulacion: string | null;
+  idUsuario: number;
+  responsable: string;
+  tiposAjuste: Array<"ENTRADA" | "SALIDA">;
+  tipoAjuste: "ENTRADA" | "SALIDA" | "MIXTO";
+  estado: "ACTIVO" | "ANULADO" | "PARCIAL";
+  totalProductos: number;
+}
+
+export interface AdjustmentOperationDetailDto extends AdjustmentOperationDto {
+  items: Array<
+    AdjustmentDto & {
+      existenciaAnterior: number | null;
+      existenciaResultante: number | null;
+    }
+  >;
+}
+
+export interface AdjustmentOperationSummary {
+  total: number;
+  active: number;
+  entradas: number;
+  salidas: number;
+  mixtos: number;
+  anulados: number;
+}
+
+export interface AdjustmentOperationListResult {
+  items: AdjustmentOperationDto[];
+  pagination: AdjustmentListPagination;
+  summary: AdjustmentOperationSummary;
+}
+
 export type AdjustmentsListResponse = ApiResponse<AdjustmentListResult>;
 export type AnulatedAdjustmentsListResponse = ApiResponse<AdjustmentDto[]>;
+export type AdjustmentOperationsListResponse = ApiResponse<AdjustmentOperationListResult>;
 
 export interface AdjustmentFilters {
   page?: number;
@@ -79,5 +118,10 @@ export interface DeleteAdjustmentPayload {
 }
 
 export interface RestoreAdjustmentPayload {
+  idUsuarioModificador?: number;
+}
+
+export interface AdjustmentOperationPayload {
+  idUsuarioAnulador?: number;
   idUsuarioModificador?: number;
 }
