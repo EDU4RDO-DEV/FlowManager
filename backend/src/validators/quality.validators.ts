@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { dateString, positiveInt } from './validation';
 
 const cloroValue = z.number().finite('debe ser un número válido').min(0, 'debe ser mayor o igual a 0');
-const phValue = z.number().finite('debe ser un número válido').min(0, 'debe ser mayor o igual a 0').max(14, 'pH debe estar entre 0 y 14');
+const phValue = z
+  .number()
+  .finite('debe ser un número válido')
+  .min(1, 'pH debe estar entre 1 y 14')
+  .max(14, 'pH debe estar entre 1 y 14');
 
 export const controlCalidadIdParamsSchema = z.object({
   id: z.coerce.number().int('id debe ser entero').positive('id debe ser mayor a 0'),

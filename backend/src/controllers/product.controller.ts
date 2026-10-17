@@ -58,6 +58,7 @@ export async function listProductsController(req: Request, res: Response) {
       categoria: query.categoria,
       anulado: query.anulado,
       idProveedor: query.idProveedor,
+      esVendible: query.esVendible,
     });
 
     return res.status(200).json({ ok: true, data });
@@ -125,15 +126,18 @@ export async function createProductController(req: Request, res: Response) {
       message === 'Usuario no existe' ||
       message === 'Proveedor no existe' ||
       message === 'Categoría de comisión no existe' ||
-      message === 'Ya existe un producto activo con el mismo nombre y categoría'
+      message === 'Ya existe un producto activo con el mismo nombre y categoría' ||
+      message === 'No se puede cambiar la categoría: el producto es padre de una receta activa' ||
+      message === 'No se puede cambiar la categoría: el producto es componente de una receta activa'
     ) {
       return res.status(409).json({ ok: false, message });
     }
 
     if (
-      message === 'precioVenta es obligatorio para PRODUCTO_TERMINADO' ||
-      message === 'precioVenta debe ser mayor a 0 para PRODUCTO_TERMINADO' ||
-      message === 'precioVenta debe ser mayor o igual a costoPromedio para PRODUCTO_TERMINADO'
+      message === 'precioVenta es obligatorio para un artículo vendible' ||
+      message === 'precioVenta debe ser mayor a 0 para un artículo vendible' ||
+      message === 'precioVenta debe ser mayor o igual a costoPromedio para un artículo vendible' ||
+      message === 'La capacidad solo aplica a un envase físico retornable'
     ) {
       return res.status(400).json({ ok: false, message });
     }
@@ -174,15 +178,18 @@ export async function updateProductController(req: Request, res: Response) {
       message === 'Usuario no existe' ||
       message === 'Proveedor no existe' ||
       message === 'Categoría de comisión no existe' ||
-      message === 'Ya existe un producto activo con el mismo nombre y categoría'
+      message === 'Ya existe un producto activo con el mismo nombre y categoría' ||
+      message === 'No se puede cambiar la categoría: el producto es padre de una receta activa' ||
+      message === 'No se puede cambiar la categoría: el producto es componente de una receta activa'
     ) {
       return res.status(409).json({ ok: false, message });
     }
 
     if (
-      message === 'precioVenta es obligatorio para PRODUCTO_TERMINADO' ||
-      message === 'precioVenta debe ser mayor a 0 para PRODUCTO_TERMINADO' ||
-      message === 'precioVenta debe ser mayor o igual a costoPromedio para PRODUCTO_TERMINADO'
+      message === 'precioVenta es obligatorio para un artículo vendible' ||
+      message === 'precioVenta debe ser mayor a 0 para un artículo vendible' ||
+      message === 'precioVenta debe ser mayor o igual a costoPromedio para un artículo vendible' ||
+      message === 'La capacidad solo aplica a un envase físico retornable'
     ) {
       return res.status(400).json({ ok: false, message });
     }

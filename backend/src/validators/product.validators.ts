@@ -10,10 +10,9 @@ import {
 } from './validation';
 
 const allowedCategories = [
-  'ENVASE',
-  'INSUMO',
   'PRODUCTO_TERMINADO',
   'MATERIA_PRIMA',
+  'INSUMO',
 ] as const;
 
 const categorySchema = z
@@ -35,6 +34,7 @@ export const listProductsQuerySchema = z.object({
   categoria: categorySchema.optional(),
   anulado: optionalBooleanFromQuery,
   idProveedor: optionalPositiveIntFromQuery,
+  esVendible: optionalBooleanFromQuery,
 });
 
 export const createProductSchema = z
@@ -46,43 +46,33 @@ export const createProductSchema = z
     unidadMedida: z.string().trim().min(1).max(30).optional(),
     costoPromedio: finitePositiveNumber,
     precioVenta: finitePositiveNumber.optional(),
-    esVendible: z.boolean().optional(),
-    esEnvaseRetornable: z.boolean().optional(),
+    esVendible: z.boolean().default(false),
+    esEnvaseRetornable: z.boolean().default(false),
     capacidadEnvaseGalones: finitePositiveNumber.optional(),
-    idEnvasePresentacion: positiveInt.nullable().optional(),
-    unidadesEnvasePorUnidad: z.number().int().positive().optional(),
     rutaImagen: z.string().trim().max(255, 'rutaImagen demasiado larga').optional(),
     idCategoriaComision: positiveInt.nullable().optional(),
   })
   .superRefine((data, ctx) => {
-    const esVendible = data.esVendible ?? data.categoria === 'PRODUCTO_TERMINADO';
-    if (esVendible) {
+    if (data.esVendible) {
       if (data.precioVenta === undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'precioVenta es obligatorio para PRODUCTO_TERMINADO',
+          message: 'precioVenta es obligatorio para un artículo vendible',
           path: ['precioVenta'],
         });
       } else if (data.precioVenta < data.costoPromedio) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'precioVenta debe ser mayor o igual a costoPromedio para PRODUCTO_TERMINADO',
+          message: 'precioVenta debe ser mayor o igual a costoPromedio para un artículo vendible',
           path: ['precioVenta'],
         });
       }
     }
-    if ((data.idEnvasePresentacion == null) !== (data.unidadesEnvasePorUnidad === undefined)) {
+    if (!data.esEnvaseRetornable && data.capacidadEnvaseGalones !== undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'idEnvasePresentacion y unidadesEnvasePorUnidad deben configurarse juntos',
-        path: ['idEnvasePresentacion'],
-      });
-    }
-    if (data.idEnvasePresentacion != null && !esVendible) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'La presentación de envase solo aplica a artículos vendibles',
-        path: ['idEnvasePresentacion'],
+        message: 'La capacidad solo aplica a un envase físico retornable',
+        path: ['capacidadEnvaseGalones'],
       });
     }
   });
@@ -100,13 +90,23 @@ export const updateProductSchema = z
     esVendible: z.boolean().optional(),
     esEnvaseRetornable: z.boolean().optional(),
     capacidadEnvaseGalones: finitePositiveNumber.nullable().optional(),
-    idEnvasePresentacion: positiveInt.nullable().optional(),
-    unidadesEnvasePorUnidad: z.number().int().positive().nullable().optional(),
     rutaImagen: z.string().trim().max(255, 'rutaImagen demasiado larga').optional(),
     idCategoriaComision: positiveInt.nullable().optional(),
   })
-  .refine((data) => Object.keys(data).length > 0, {
-    message: 'Debe enviar al menos un campo para actualizar',
+  .superRefine((data, ctx) => {
+    if (data.esEnvaseRetornable === false && data.capacidadEnvaseGalones != null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'La capacidad solo aplica a un envase físico retornable',
+        path: ['capacidadEnvaseGalones'],
+      });
+    }
+    if (Object.keys(data).length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Debe enviar al menos un campo para actualizar',
+      });
+    }
   });
 
 export const deleteProductBodySchema = z.object({

@@ -55,7 +55,6 @@ const NOT_FOUND_MESSAGES = new Set([
 ]);
 
 const CONFLICT_MESSAGES = new Set([
-  'El InventarioItem indicado no es de categoría ENVASE',
   'El InventarioItem indicado no es un envase retornable',
   'La venta indicada no pertenece al cliente',
   'La cantidad devuelta no puede ser mayor al saldo prestado',

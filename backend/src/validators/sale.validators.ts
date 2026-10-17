@@ -21,11 +21,6 @@ const saleDetailItemSchema = z.object({
   precioUnitario: finitePositiveNumber.optional(),
   esBonificacion: z.boolean().optional().default(false),
   estadoEnvase: z.enum(['VACIO', 'LLENO']).optional(),
-  envases: z.array(z.object({
-    idInventarioItemEnvase: positiveInt,
-    modo: z.enum(['CLIENTE_PROPIO', 'PRESTAMO_EMPRESA']),
-    cantidad: z.number().int().positive(),
-  })).optional(),
 });
 
 const salePaymentSchema = z

@@ -23,6 +23,7 @@ export async function listProducts(filters: ProductFilters = {}): Promise<Produc
       ...(filters.categoria ? { categoria: filters.categoria } : {}),
       ...(filters.anulado !== undefined ? { anulado: String(filters.anulado) } : {}),
       ...(filters.idProveedor !== undefined ? { idProveedor: filters.idProveedor } : {}),
+      ...(filters.esVendible !== undefined ? { esVendible: String(filters.esVendible) } : {}),
     },
   });
 

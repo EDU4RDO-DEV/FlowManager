@@ -28,8 +28,6 @@ export type ProductFormValues = {
   esVendible: boolean;
   esEnvaseRetornable: boolean;
   capacidadEnvaseLitros: string;
-  idEnvasePresentacion: string;
-  unidadesEnvasePorUnidad: string;
   rutaImagen: string;
   idCategoriaComision: string;
 };
@@ -51,7 +49,6 @@ const CATEGORY_OPTIONS: ProductDto["categoria"][] = [
   "PRODUCTO_TERMINADO",
   "MATERIA_PRIMA",
   "INSUMO",
-  "ENVASE",
 ];
 
 function resolveImagePreviewUrl(rutaImagen: string): string {
@@ -141,8 +138,6 @@ export function ProductFormCard({
                 onChange({
                   ...form,
                   categoria: event.target.value as ProductDto["categoria"],
-                  esVendible: event.target.value === "PRODUCTO_TERMINADO",
-                  esEnvaseRetornable: event.target.value === "ENVASE",
                 })
               }
               className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
@@ -185,7 +180,7 @@ export function ProductFormCard({
               Envase físico retornable
             </label>
             <p className="text-xs text-muted-foreground">
-              Las capacidades son independientes de la categoría. Un envase vendible excepcionalmente no genera un préstamo.
+              La categoría, la opción vendible y el seguimiento de envases retornables son independientes.
             </p>
           </div>
 
@@ -204,37 +199,6 @@ export function ProductFormCard({
               />
               <p className="text-xs text-muted-foreground">La capacidad se convierte a galones al guardar.</p>
             </div>
-          ) : null}
-
-          {form.esVendible ? (
-            <>
-              <div className="space-y-1.5">
-                <Label htmlFor="product-container-item">ID del envase de presentación</Label>
-                <Input
-                  id="product-container-item"
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={form.idEnvasePresentacion}
-                  onChange={(event) => onChange({ ...form, idEnvasePresentacion: event.target.value })}
-                  placeholder="ID de un artículo retornable"
-                  className="bg-background"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="product-container-units">Envases por unidad vendida</Label>
-                <Input
-                  id="product-container-units"
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={form.unidadesEnvasePorUnidad}
-                  onChange={(event) => onChange({ ...form, unidadesEnvasePorUnidad: event.target.value })}
-                  placeholder="1"
-                  className="bg-background"
-                />
-              </div>
-            </>
           ) : null}
 
           <div className="space-y-1.5">

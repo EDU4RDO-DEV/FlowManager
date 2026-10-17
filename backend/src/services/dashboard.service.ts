@@ -182,7 +182,7 @@ async function getTopProducts(start: Date, endExclusive: Date): Promise<TopProdu
       AND v.FechaRegistro >= ${start}
       AND v.FechaRegistro < ${endExclusive}
     GROUP BY i.Id, i.Nombre
-    ORDER BY SUM(CAST(dv.Cantidad AS decimal(18, 4))) DESC, dv.Nombre ASC
+    ORDER BY SUM(CAST(dv.Cantidad AS decimal(18, 4))) DESC, i.Nombre ASC
   `);
 }
 

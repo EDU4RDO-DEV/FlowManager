@@ -11,12 +11,10 @@ export interface ProductDto {
   idUsuario: number;
   idProveedor: number;
   nombre: string;
-  categoria: "ENVASE" | "INSUMO" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA";
+  categoria: "INSUMO" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA";
   esVendible: boolean;
   esEnvaseRetornable: boolean;
   capacidadEnvaseGalones: number | null;
-  idEnvasePresentacion: number | null;
-  unidadesEnvasePorUnidad: number | null;
   idCategoriaComision: number | null;
   unidadMedida: string | null;
   existencia: number;
@@ -54,6 +52,7 @@ export interface ProductFilters {
   categoria?: ProductDto["categoria"];
   anulado?: boolean;
   idProveedor?: number;
+  esVendible?: boolean;
 }
 
 export interface CreateProductPayload {
@@ -67,8 +66,6 @@ export interface CreateProductPayload {
   esVendible?: boolean;
   esEnvaseRetornable?: boolean;
   capacidadEnvaseGalones?: number;
-  idEnvasePresentacion?: number | null;
-  unidadesEnvasePorUnidad?: number;
   rutaImagen?: string;
   idCategoriaComision?: number | null;
 }
@@ -85,8 +82,6 @@ export interface UpdateProductPayload {
   esVendible?: boolean;
   esEnvaseRetornable?: boolean;
   capacidadEnvaseGalones?: number | null;
-  idEnvasePresentacion?: number | null;
-  unidadesEnvasePorUnidad?: number | null;
   rutaImagen?: string;
   idCategoriaComision?: number | null;
 }

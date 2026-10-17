@@ -167,8 +167,6 @@ describe('Sale credit authorization', () => {
       PrecioVenta: 10,
       EsVendible: true,
       EsEnvaseRetornable: false,
-      IdEnvasePresentacion: null,
-      UnidadesEnvasePorUnidad: null,
     });
     prismaMock.venta.create.mockResolvedValueOnce({ Id: 7, NumeroVenta: 1 });
 

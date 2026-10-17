@@ -25,7 +25,6 @@ const sessionId = 84101;
 function mockProductionTransaction(
   componentStock: number,
   serializeTransactions = false,
-  envaseConfigured = false,
 ) {
   const order = {
     Id: 41,
@@ -81,8 +80,6 @@ function mockProductionTransaction(
             Nombre: 'Producto terminado',
             Existencia: stock.get(20) ?? 0,
             UnidadMedida: 'unidad',
-            IdEnvasePresentacion: envaseConfigured ? 30 : null,
-            UnidadesEnvasePorUnidad: envaseConfigured ? 1 : null,
           }),
       update: vi.fn(async (input: { where: { Id: number }; data: { Existencia: number } }) => {
         stock.set(input.where.Id, input.data.Existencia);
@@ -299,7 +296,7 @@ describe('Production module', () => {
   });
 
   it('keeps water production independent from the physical container ledger', async () => {
-    const { stock, movements, physicalBuckets } = mockProductionTransaction(5, false, true);
+    const { stock, movements, physicalBuckets } = mockProductionTransaction(5);
 
     await confirmProductionOrder(41, 101, false);
 

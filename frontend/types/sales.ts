@@ -46,7 +46,7 @@ export interface SaleDetailItemDto {
   inventarioItem: {
     id: number;
     nombre: string;
-    categoria: "ENVASE" | "INSUMO" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA";
+    categoria: "INSUMO" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA";
     existencia: number;
   };
 }
@@ -236,11 +236,6 @@ export interface CreateSaleDetailPayload {
   precioUnitario?: number;
   esBonificacion?: boolean;
   estadoEnvase?: "VACIO" | "LLENO";
-  envases?: Array<{
-    idInventarioItemEnvase: number;
-    modo: "CLIENTE_PROPIO" | "PRESTAMO_EMPRESA";
-    cantidad: number;
-  }>;
 }
 
 export interface SalePaymentPayload {

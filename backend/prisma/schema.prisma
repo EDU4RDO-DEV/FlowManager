@@ -559,8 +559,6 @@ model InventarioItem {
   EsVendible                                                                     Boolean                   @default(false, map: "DF_InventarioItem_EsVendible")
   EsEnvaseRetornable                                                             Boolean                   @default(false, map: "DF_InventarioItem_EsEnvaseRetornable")
   CapacidadEnvaseGalones                                                         Decimal?                  @db.Decimal(8, 3)
-  IdEnvasePresentacion                                                           Int?
-  UnidadesEnvasePorUnidad                                                        Int?
   UnidadMedida                                                                   String?                   @db.VarChar(30)
   Existencia                                                                     Float
   CostoPromedio                                                                  Decimal                   @db.Decimal(10, 2)
@@ -588,8 +586,6 @@ model InventarioItem {
   ReglaPrecioCliente                                                             ReglaPrecioCliente[]
   MovimientoEnvase                                                               MovimientoEnvase[]
   AsignacionesEnvaseVenta                                                        DetalleVentaEnvase[]
-  InventarioItem_EnvasePresentacionToInventarioItem                              InventarioItem?           @relation("InventarioItem_EnvasePresentacion", fields: [IdEnvasePresentacion], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_InventarioItem_EnvasePresentacion")
-  InventarioItem_ProductoPresentacionEnvaseToInventarioItem                      InventarioItem[]          @relation("InventarioItem_EnvasePresentacion")
   EnvaseClienteSaldo                                                             EnvaseClienteSaldo[]
   OrdenesProduccionTerminadas                                                    OrdenProduccion[]         @relation("OrdenProduccion_ProductoTerminado")
   DetallesOrdenProduccion                                                        DetalleOrdenProduccion[]
@@ -1294,9 +1290,7 @@ model ControlCalidadAgua {
   @@index([Fecha, Anulado], map: "IX_ControlCalidadAgua_Fecha_Activo")
 }
 
-// Ledger de préstamo/devolución de envases retornables. La venta/baja de un envase
-// ya se resuelve con InventarioItem (Categoria = 'ENVASE') + DetalleVenta/BitacoraInventario;
-// aquí solo se audita el ciclo de vida del préstamo al cliente.
+// Ledger de préstamo/devolución de envases físicos retornables, independiente de su categoría.
 model MovimientoEnvase {
   Id                   Int                  @id(map: "PK_MovimientoEnvase") @default(autoincrement())
   IdInventarioItem     Int
@@ -1322,7 +1316,7 @@ model MovimientoEnvase {
   IdUsuarioAnulador    Int?
   FechaAnulacion       DateTime?            @db.DateTime
   InventarioItem       InventarioItem       @relation(fields: [IdInventarioItem], references: [Id], onUpdate: NoAction, map: "FK_MovimientoEnvase_InventarioItem")
-  Cliente              Cliente?             @relation(fields: [IdCliente], references: [Id], onUpdate: NoAction, map: "FK_MovimientoEnvase_Cliente")
+  Cliente              Cliente?             @relation(fields: [IdCliente], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_MovimientoEnvase_Cliente")
   Venta                Venta?               @relation(fields: [IdVenta], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_MovimientoEnvase_Venta")
   DetalleVentaEnvase   DetalleVentaEnvase?  @relation(fields: [IdDetalleVentaEnvase], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_MovimientoEnvase_DetalleVentaEnvase")
   RutaSesion           RutaSesion?          @relation(fields: [IdRutaSesion], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_MovimientoEnvase_RutaSesion")

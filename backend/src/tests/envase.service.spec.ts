@@ -59,7 +59,7 @@ describe('Fase 5 - envases retornables (préstamo/devolución)', () => {
     prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({
       Id: 5,
       Nombre: 'Garrafón 20L',
-      Categoria: 'ENVASE',
+      Categoria: 'PRODUCTO_TERMINADO',
       Existencia: 50,
       EsEnvaseRetornable: true,
     });
@@ -115,7 +115,7 @@ describe('Fase 5 - envases retornables (préstamo/devolución)', () => {
     prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({
       Id: 5,
       Nombre: 'Garrafón 20L',
-      Categoria: 'ENVASE',
+      Categoria: 'PRODUCTO_TERMINADO',
       Existencia: 1,
       EsEnvaseRetornable: true,
     });
@@ -125,13 +125,13 @@ describe('Fase 5 - envases retornables (préstamo/devolución)', () => {
     ).rejects.toThrowError('Stock insuficiente');
   });
 
-  it('rechaza el préstamo si el InventarioItem no es de categoría ENVASE', async () => {
+  it('rechaza el préstamo si el producto no está marcado como retornable', async () => {
     prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 1 });
     prismaMock.cliente.findFirst.mockResolvedValueOnce({ Id: 2 });
     prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({
       Id: 5,
       Nombre: 'Resina',
-      Categoria: 'MATERIA_PRIMA',
+      Categoria: 'PRODUCTO_TERMINADO',
       Existencia: 100,
       EsEnvaseRetornable: false,
     });
@@ -147,7 +147,7 @@ describe('Fase 5 - envases retornables (préstamo/devolución)', () => {
     prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({
       Id: 5,
       Nombre: 'Garrafón 20L',
-      Categoria: 'ENVASE',
+      Categoria: 'PRODUCTO_TERMINADO',
       Existencia: 10,
       EsEnvaseRetornable: true,
     });

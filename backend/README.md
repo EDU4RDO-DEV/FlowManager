@@ -27,29 +27,40 @@ El unico mecanismo oficial de cambios de esquema es **Prisma Migrate** (`prisma/
 No se usa `prisma db push` en ningun flujo (dev, CI ni documentacion): toda migracion debe
 quedar registrada como archivo versionado para poder auditarla y reproducirla.
 
-Flujo estandar para un cambio de esquema:
+Flujo estandar para un cambio de esquema (sin crear bases sombra ni bases de prueba):
 
 ```bash
-pnpm run prisma:migrate:dev -- --name descripcion_del_cambio
+pnpm run prisma:migrate:create -- --name descripcion_del_cambio
+# revisar prisma/migrations/<timestamp>_descripcion_del_cambio/migration.sql
+pnpm run prisma:migrate:deploy
+pnpm run prisma:migrate:status
 ```
 
-Para reglas que Prisma no expresa en `schema.prisma` (CHECK constraints, indices unicos
-filtrados con `WHERE`), el flujo es:
+`prisma:migrate:create` compara la estructura actual de `FlowManager` con
+`schema.prisma`, bloquea la generacion si hay migraciones pendientes y guarda el diff
+como una migracion versionada. Los identificadores conservan el orden posterior a la
+migracion mas reciente, aunque la fecha local sea anterior. El comando no aplica SQL.
+Revisa siempre el archivo generado y cualquier `DROP` antes de desplegarlo.
+Para un cambio SQL que Prisma no representa (por ejemplo, un `CHECK`), proporciona un
+archivo SQL revisado:
 
 ```bash
-pnpm run prisma:migrate:dev -- --create-only --name descripcion_del_cambio
-# editar a mano prisma/migrations/<timestamp>_descripcion_del_cambio/migration.sql
-pnpm run prisma:migrate:dev
+pnpm run prisma:migrate:create -- --name agregar_check --sql-file scripts/cambio.sql
 ```
 
-Los comandos `prisma:migrate:dev`, `prisma:migrate:deploy` y `prisma:migrate:status`
-verifican que `DATABASE_URL` y la conexion efectiva apunten a `FlowManager`. No uses
-`DATABASE_URL_TEST` para migraciones ni invoques Prisma Migrate directamente; ejecuta las
-migraciones mediante los scripts protegidos del `package.json`.
+El comando copia ese SQL a una migracion versionada; no lo ejecuta. El archivo fuente debe
+contener SQL ejecutable, y el despliegue sigue bloqueado hasta que la historia existente
+este al dia.
 
-En Windows, si el backend esta corriendo (`ts-node-dev`), este bloquea
-`query_engine-windows.dll.node` y la migracion falla con `EPERM` al regenerar el cliente.
-Detener el proceso antes de migrar y volver a levantarlo despues (`pnpm run dev`).
+`prisma:migrate:deploy` aplica las migraciones pendientes de forma ordenada y vuelve a
+comprobar la conexion efectiva y el estado final. `prisma:migrate:status` es de solo
+lectura. Los comandos protegidos verifican que `DATABASE_URL` y Prisma apunten a la base
+en linea `FlowManager`; no uses otras bases ni invoques Prisma Migrate directamente.
+No se usa `prisma db push`.
+
+El despliegue regenera Prisma Client al terminar. En Windows, si el backend esta corriendo
+(`ts-node-dev`), puede bloquear `query_engine-windows.dll.node`; detenlo antes de
+`prisma:migrate:deploy` si aparece `EPERM` y vuelve a levantarlo despues.
 
 Los scripts sueltos en `backend/scripts/*.sql` son parches manuales previos a la adopcion
 de Prisma Migrate. Quedan congelados como referencia historica; no se ejecutan ni se amplian.
@@ -229,13 +240,20 @@ campos disponibles (nombre, presentación/unidad y categoría). Las bonificacion
 unidades que salieron del camión, y las anulaciones de ventas de ruta se excluyen del saldo solo
 antes de recibir o cerrar la ruta.
 
-El agua vendible y el garrafón retornable se controlan como artículos distintos; un garrafón
-puede además marcarse vendible para una venta excepcional. `DetalleVentaEnvase` distingue el
-recipiente propio del cliente del préstamo de la empresa: solo el préstamo genera un movimiento
-de custodia y afecta `EnvaseClienteSaldo`. `BitacoraInventario` lleva los saldos físicos por
-ubicación y estado. Al anular una venta, los préstamos abiertos se revierten dentro de la misma
-transacción; si el envase ya fue devuelto, dañado o declarado perdido, la anulación se rechaza.
-Una venta directa de garrafón restituye su bucket físico original, sin crear custodia.
+Las categorías de inventario válidas son `PRODUCTO_TERMINADO`, `MATERIA_PRIMA` e `INSUMO`.
+`EsVendible` y `EsEnvaseRetornable` son propiedades independientes de la categoría: ventas muestra
+solo artículos vendibles y el backend vuelve a validar esa condición. La venta directa de un
+artículo retornable registra su salida física por ubicación y estado; el préstamo y la devolución
+al cliente siguen gestionándose en `/api/envases` y actualizan `EnvaseClienteSaldo`. Al anular una
+venta, los préstamos abiertos se revierten dentro de la misma transacción; si el envase ya fue
+devuelto, dañado o declarado perdido, la anulación se rechaza. `DetalleVentaEnvase` y su vínculo
+con movimientos se conservan para consultar y auditar registros históricos; ya no se generan
+asignaciones de envases por presentación del producto.
+
+La migración de normalización elimina los campos de envase por presentación y restringe la
+categoría a los tres valores vigentes. Si encuentra productos heredados con `Categoria = ENVASE`
+u otra categoría no reconocida, se detiene sin reasignarlos: deben clasificarse explícitamente
+antes de desplegar para no inferir su uso, vendibilidad ni condición retornable.
 
 El inventario físico inicial no se infiere de la existencia del catálogo. Tras identificar el
 artículo retornable, el responsable registra el conteo verificado por ubicación y estado en

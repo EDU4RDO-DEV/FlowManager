@@ -6,10 +6,8 @@ import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
 import { anulateFelInvoice, emitFelInvoice } from './fel.service';
 import { anulateEnvaseMovementInTransaction } from './envase.service';
 import {
-  getEnvaseBucketQuantity,
   registerEnvaseBucketChange,
   registerInventoryMovement,
-  transferEnvaseBucket,
 } from './inventory-movement.service';
 import { NotificationEvents, send } from './notification.service';
 import { processExpiredProformaReservations } from './proforma-reservation.service';
@@ -38,11 +36,6 @@ type CreateSaleDetailInput = {
   precioUnitario?: number;
   esBonificacion?: boolean;
   estadoEnvase?: 'VACIO' | 'LLENO';
-  envases?: Array<{
-    idInventarioItemEnvase: number;
-    modo: 'CLIENTE_PROPIO' | 'PRESTAMO_EMPRESA';
-    cantidad: number;
-  }>;
 };
 
 type SalePaymentInput = {
@@ -986,19 +979,7 @@ export function notifyFacturaEmitida(sale: ReturnType<typeof toSaleDto>): void {
 export async function createSale(input: CreateSaleInput, claveSolicitud: string = crypto.randomUUID()) {
   const huellaSolicitud = crypto
     .createHash('sha256')
-    .update(
-      JSON.stringify({
-        ...input,
-        detalle: input.detalle.map((detail) => ({
-          ...detail,
-          envases: [...(detail.envases ?? [])].sort(
-            (left, right) =>
-              left.idInventarioItemEnvase - right.idInventarioItemEnvase ||
-              left.modo.localeCompare(right.modo),
-          ),
-        })),
-      }),
-    )
+    .update(JSON.stringify(input))
     .digest('hex');
   const existingRequest = await prisma.venta.findUnique({
     where: { ClaveSolicitud: claveSolicitud },
@@ -1097,8 +1078,6 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
           precioVenta: number;
           esVendible: boolean;
           esEnvaseRetornable: boolean;
-          idEnvasePresentacion: number | null;
-          unidadesEnvasePorUnidad: number | null;
         }
       >();
 
@@ -1116,8 +1095,6 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
               PrecioVenta: true,
               EsVendible: true,
               EsEnvaseRetornable: true,
-              IdEnvasePresentacion: true,
-              UnidadesEnvasePorUnidad: true,
             },
           });
 
@@ -1132,8 +1109,6 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
             precioVenta: toNumber(item.PrecioVenta),
             esVendible: item.EsVendible,
             esEnvaseRetornable: item.EsEnvaseRetornable,
-            idEnvasePresentacion: item.IdEnvasePresentacion,
-            unidadesEnvasePorUnidad: item.UnidadesEnvasePorUnidad,
           });
         }
       }
@@ -1153,30 +1128,6 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
           }
         } else if (detail.estadoEnvase) {
           throw new Error(`El artículo ${item.nombre} no es un envase retornable`);
-        }
-        if (item.idEnvasePresentacion !== null) {
-          const factor = item.unidadesEnvasePorUnidad;
-          if (!factor || !Number.isInteger(detail.cantidad * factor)) {
-            throw new Error(`La cantidad de ${item.nombre} no corresponde a unidades completas de envase`);
-          }
-          const envases = detail.envases ?? [];
-          const cantidadAsignada = envases.reduce((sum, envase) => sum + envase.cantidad, 0);
-          if (cantidadAsignada !== detail.cantidad * factor) {
-            throw new Error(
-              `Indica si los ${detail.cantidad * factor} envases de ${item.nombre} son propios o prestados`,
-            );
-          }
-          if (envases.some((envase) => envase.idInventarioItemEnvase !== item.idEnvasePresentacion)) {
-            throw new Error(`Los envases asignados a ${item.nombre} no corresponden a su presentación`);
-          }
-          if (
-            isRouteProforma &&
-            envases.some((envase) => envase.modo === 'PRESTAMO_EMPRESA')
-          ) {
-            throw new Error('No se pueden prestar envases hasta confirmar la proforma como venta');
-          }
-        } else if (detail.envases?.length) {
-          throw new Error(`${item.nombre} no tiene una presentación de envase configurada`);
         }
       }
 
@@ -1233,7 +1184,6 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
         precioUnitario: number;
         esBonificacion: boolean;
         estadoEnvase?: 'VACIO' | 'LLENO';
-        envases: NonNullable<CreateSaleDetailInput['envases']>;
       }> = [];
 
       for (const detail of mergedDetails) {
@@ -1254,7 +1204,6 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
           precioUnitario: Number(resolvedPrice.toFixed(2)),
           esBonificacion: Boolean(detail.esBonificacion),
           estadoEnvase: detail.estadoEnvase,
-          envases: detail.envases ?? [],
         });
       }
 
@@ -1321,150 +1270,6 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
           },
           select: { Id: true },
         });
-
-        for (const allocation of detail.envases) {
-          const envaseItem = await tx.inventarioItem.findFirst({
-            where: {
-              Id: allocation.idInventarioItemEnvase,
-              Anulado: false,
-              EsEnvaseRetornable: true,
-            },
-            select: { Id: true, Nombre: true, Existencia: true },
-          });
-          if (!envaseItem) {
-            throw new Error(`El artículo de envase ${allocation.idInventarioItemEnvase} no es retornable o está inactivo`);
-          }
-
-          const assignment = await tx.detalleVentaEnvase.create({
-            data: {
-              IdDetalleVenta: createdDetail.Id,
-              IdInventarioItemEnvase: envaseItem.Id,
-              Modo: allocation.modo,
-              Cantidad: allocation.cantidad,
-            },
-            select: { Id: true },
-          });
-
-          if (allocation.modo === 'PRESTAMO_EMPRESA') {
-            const sourceBucket = {
-              ubicacion: input.idRutaSesion ? 'RUTA' as const : 'PLANTA' as const,
-              estado: 'LLENO' as const,
-              ...(input.idRutaSesion ? { idRutaSesion: input.idRutaSesion } : {}),
-            };
-            const fullAvailable = await getEnvaseBucketQuantity(tx, envaseItem.Id, sourceBucket);
-            const quantityToFill = Math.max(0, allocation.cantidad - fullAvailable);
-            if (quantityToFill > 0) {
-              const emptyBucket = {
-                ...sourceBucket,
-                estado: 'VACIO' as const,
-              };
-              const emptyAvailable = await getEnvaseBucketQuantity(tx, envaseItem.Id, emptyBucket);
-              if (emptyAvailable < quantityToFill) {
-                throw new Error(
-                  `No hay suficientes envases vacíos en ${sourceBucket.ubicacion} para ${envaseItem.Nombre}`,
-                );
-              }
-              await transferEnvaseBucket(tx, {
-                idInventarioItem: envaseItem.Id,
-                idUsuario: input.idUsuario,
-                origen: emptyBucket,
-                destino: sourceBucket,
-                cantidad: quantityToFill,
-                nombre: `Llenado para préstamo de venta #${createdSale.NumeroVenta} - ${envaseItem.Nombre}`,
-                tipoDocumento: 'ENVLL',
-                documento: createdSale.Id.toString(),
-                idDetalleVenta: createdDetail.Id,
-              });
-            }
-
-            const fullAvailableAfterFill = await getEnvaseBucketQuantity(tx, envaseItem.Id, sourceBucket);
-            if (fullAvailableAfterFill < allocation.cantidad) {
-              throw new Error(
-                `No hay suficientes envases llenos en ${sourceBucket.ubicacion} para ${envaseItem.Nombre}`,
-              );
-            }
-
-            let saldo = await tx.envaseClienteSaldo.findFirst({
-              where: {
-                IdCliente: input.idCliente,
-                IdInventarioItem: envaseItem.Id,
-              },
-              select: { Id: true, CantidadPrestada: true },
-            });
-            const saldoAnterior = saldo?.CantidadPrestada ?? 0;
-            const saldoNuevo = Number((saldoAnterior + allocation.cantidad).toFixed(2));
-            if (saldo) {
-              saldo = await tx.envaseClienteSaldo.update({
-                where: { Id: saldo.Id },
-                data: { CantidadPrestada: saldoNuevo, FechaActualizacion: new Date() },
-              });
-            } else {
-              saldo = await tx.envaseClienteSaldo.create({
-                data: {
-                  IdCliente: input.idCliente,
-                  IdInventarioItem: envaseItem.Id,
-                  CantidadPrestada: saldoNuevo,
-                },
-              });
-            }
-
-            const movement = await tx.movimientoEnvase.create({
-              data: {
-                IdInventarioItem: envaseItem.Id,
-                IdCliente: input.idCliente,
-                IdVenta: createdSale.Id,
-                IdDetalleVentaEnvase: assignment.Id,
-                IdRutaSesion: input.idRutaSesion,
-                IdUsuario: input.idUsuario,
-                TipoMovimiento: 'PRESTAMO',
-                EstadoEnvase: 'LLENO',
-                UbicacionEnvase: sourceBucket.ubicacion,
-                Cantidad: allocation.cantidad,
-                SaldoAnterior: saldoAnterior,
-                SaldoNuevo: saldoNuevo,
-                Anulado: false,
-              },
-              select: { Id: true },
-            });
-
-            await registerEnvaseBucketChange(tx, {
-              idInventarioItem: envaseItem.Id,
-              idUsuario: input.idUsuario,
-              bucket: sourceBucket,
-              cantidad: allocation.cantidad,
-              entrada: false,
-              nombre: `Préstamo vinculado a venta #${createdSale.NumeroVenta} - ${envaseItem.Nombre}`,
-              tipoDocumento: 'ENVPR',
-              documento: createdSale.Id.toString(),
-              idRutaSesion: input.idRutaSesion,
-              idMovimientoEnvase: movement.Id,
-              idDetalleVenta: createdDetail.Id,
-            });
-
-            if (!input.idRutaSesion) {
-              const existenciaAnterior = envaseItem.Existencia;
-              const nuevaExistencia = Number((existenciaAnterior - allocation.cantidad).toFixed(2));
-              if (nuevaExistencia < 0) {
-                throw new Error(`Stock insuficiente de ${envaseItem.Nombre}`);
-              }
-              await tx.inventarioItem.update({
-                where: { Id: envaseItem.Id },
-                data: { Existencia: nuevaExistencia },
-              });
-              await registerInventoryMovement(tx, {
-                idInventarioItem: envaseItem.Id,
-                idUsuario: input.idUsuario,
-                tipoDocumento: 'ENVPR',
-                documento: createdSale.Id.toString(),
-                nombre: `Préstamo en venta #${createdSale.NumeroVenta} - ${envaseItem.Nombre}`,
-                tipoMovimiento: false,
-                existenciaAnterior,
-                cantidad: allocation.cantidad,
-                nuevaExistencia,
-              });
-            }
-          }
-        }
 
         if (isRouteProforma) {
           reservedDetailRows.push({

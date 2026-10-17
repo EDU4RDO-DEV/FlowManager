@@ -25,11 +25,9 @@ const EMPTY_FORM: ProductFormValues = {
   idProveedor: "",
   costoPromedio: "",
   precioVenta: "",
-  esVendible: true,
+  esVendible: false,
   esEnvaseRetornable: false,
   capacidadEnvaseLitros: "",
-  idEnvasePresentacion: "",
-  unidadesEnvasePorUnidad: "",
   rutaImagen: "",
   idCategoriaComision: "",
 };
@@ -76,12 +74,6 @@ export default function EditProductPage() {
           capacidadEnvaseLitros: productData.capacidadEnvaseGalones == null
             ? ""
             : String(gallonsToLiters(productData.capacidadEnvaseGalones)),
-          idEnvasePresentacion: productData.idEnvasePresentacion == null
-            ? ""
-            : String(productData.idEnvasePresentacion),
-          unidadesEnvasePorUnidad: productData.unidadesEnvasePorUnidad == null
-            ? ""
-            : String(productData.unidadesEnvasePorUnidad),
           rutaImagen: productData.rutaImagen ?? "",
           idCategoriaComision: productData.idCategoriaComision
             ? String(productData.idCategoriaComision)
@@ -131,12 +123,12 @@ export default function EditProductPage() {
 
     if (form.esVendible) {
       if (!Number.isFinite(precioVenta) || precioVenta <= 0) {
-        toast.error("El precio de venta debe ser mayor a 0 para producto terminado.");
+        toast.error("El precio de venta debe ser mayor a 0 para un artículo vendible.");
         return;
       }
 
       if (precioVenta < costoPromedio) {
-        toast.error("El precio de venta no puede ser menor al costo promedio.");
+        toast.error("El precio de venta no puede ser menor al costo promedio para un artículo vendible.");
         return;
       }
     }
@@ -153,14 +145,8 @@ export default function EditProductPage() {
         unidadMedida: form.unidadMedida.trim() || null,
         costoPromedio,
         precioVenta: form.esVendible ? precioVenta : undefined,
-        capacidadEnvaseGalones: form.capacidadEnvaseLitros
+        capacidadEnvaseGalones: form.esEnvaseRetornable && form.capacidadEnvaseLitros
           ? litersToGallons(Number(form.capacidadEnvaseLitros))
-          : null,
-        idEnvasePresentacion: form.idEnvasePresentacion
-          ? Number(form.idEnvasePresentacion)
-          : null,
-        unidadesEnvasePorUnidad: form.unidadesEnvasePorUnidad
-          ? Number(form.unidadesEnvasePorUnidad)
           : null,
         rutaImagen: form.rutaImagen.trim() || undefined,
         idCategoriaComision: form.idCategoriaComision ? Number(form.idCategoriaComision) : null,

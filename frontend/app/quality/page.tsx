@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { CheckCircle2, Info, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { QualityEmptyState } from "@/app/quality/_components/quality-empty-state";
@@ -292,7 +292,7 @@ export default function QualityPage() {
                     id="quality-ph-antes"
                     type="number"
                     step="0.01"
-                    min="0"
+                    min="1"
                     max="14"
                     value={form.phAntesFiltrado}
                     onChange={(event) => setForm((prev) => ({ ...prev, phAntesFiltrado: event.target.value }))}
@@ -304,7 +304,7 @@ export default function QualityPage() {
                     id="quality-ph-despues"
                     type="number"
                     step="0.01"
-                    min="0"
+                    min="1"
                     max="14"
                     value={form.phDespuesFiltrado}
                     onChange={(event) =>
@@ -331,6 +331,13 @@ export default function QualityPage() {
                   />
                   <Label htmlFor="quality-dia-no-laborado">Día no laborado</Label>
                 </div>
+              </div>
+
+              <div className="flex items-start gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
+                <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <p>
+                  Los valores de las columnas de pH (antes y después del filtrado) deben estar entre 1 y 14.
+                </p>
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -428,10 +435,17 @@ export default function QualityPage() {
                                     Validar
                                   </Button>
                                 ) : null}
-                                <Button variant="outline" size="sm" onClick={() => startEdit(item)} disabled={!canUpdate}>
-                                  <Pencil className="size-4" />
-                                  Editar
-                                </Button>
+                                {!item.validado ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => startEdit(item)}
+                                    disabled={!canUpdate}
+                                  >
+                                    <Pencil className="size-4" />
+                                    Editar
+                                  </Button>
+                                ) : null}
                                 <Button
                                   variant="destructive"
                                   size="sm"

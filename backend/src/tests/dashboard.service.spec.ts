@@ -99,5 +99,8 @@ describe('dashboard.service', () => {
     expect(result.summary.orderCountChangePercent).toBeNull();
     expect(result.summary.averageTicketChangePercent).toBeNull();
     expect(result.trend).toEqual([{ date: '2026-01-01', salesAmount: 0 }]);
+    expect(prismaMock.$queryRaw.mock.calls[3][0].sql).toContain(
+      'ORDER BY SUM(CAST(dv.Cantidad AS decimal(18, 4))) DESC, i.Nombre ASC',
+    );
   });
 });

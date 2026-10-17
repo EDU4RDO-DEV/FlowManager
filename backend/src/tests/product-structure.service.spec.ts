@@ -5,6 +5,7 @@ const { prismaMock } = vi.hoisted(() => ({
     usuario: { findFirst: vi.fn() },
     inventarioItem: { findFirst: vi.fn() },
     estructuraProducto: {
+      create: vi.fn(),
       findFirst: vi.fn(),
       update: vi.fn(),
     },
@@ -15,11 +16,41 @@ vi.mock('../config/prisma', () => ({
   prisma: prismaMock,
 }));
 
-import { deleteProductStructure, restoreProductStructure } from '../services/product-structure.service';
+import {
+  createProductStructure,
+  deleteProductStructure,
+  restoreProductStructure,
+} from '../services/product-structure.service';
 
 describe('Fase 11 - auditoría en estructura de producto', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('rejects a non-finished product as a recipe parent', async () => {
+    prismaMock.inventarioItem.findFirst.mockResolvedValueOnce(null);
+
+    await expect(createProductStructure({
+      idProductoTerminado: 1,
+      idMateriaPrima: 2,
+      cantidadRequerida: 1,
+    })).rejects.toThrow('Producto terminado no existe o no es un producto final');
+
+    expect(prismaMock.estructuraProducto.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects finished products as recipe components', async () => {
+    prismaMock.inventarioItem.findFirst
+      .mockResolvedValueOnce({ Id: 1 })
+      .mockResolvedValueOnce(null);
+
+    await expect(createProductStructure({
+      idProductoTerminado: 1,
+      idMateriaPrima: 2,
+      cantidadRequerida: 1,
+    })).rejects.toThrow('El componente debe ser una materia prima o insumo activo');
+
+    expect(prismaMock.estructuraProducto.create).not.toHaveBeenCalled();
   });
 
   it('deleteProductStructure registra IdUsuarioAnulador y FechaAnulacion', async () => {

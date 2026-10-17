@@ -19,7 +19,7 @@ La auditoría queda **parcialmente completa**: los flujos principales están exa
 
 ### Incluido
 
-- Catálogo de productos/insumos y categorías `ENVASE`, `INSUMO`, `PRODUCTO_TERMINADO` y `MATERIA_PRIMA`.
+- Catálogo de productos/insumos y las categorías vigentes `PRODUCTO_TERMINADO`, `MATERIA_PRIMA` e `INSUMO`; vendibilidad y seguimiento de envase retornable son propiedades independientes.
 - Existencia, costo promedio y precio de venta; entradas, salidas, ajustes y bitácora.
 - Compras de inventario, gastos registrados como compra y sus detalles.
 - Proveedores y su relación con `Entidad`.
@@ -76,7 +76,7 @@ La página dedicada de ajustes usa `frontend/services/adjustments.service.ts`. E
 
 ### Envases retornables
 
-`frontend/app/envases/page.tsx` carga clientes, productos categoría `ENVASE`, movimientos y saldos. La UI presenta préstamo/devolución y envía cliente, item, cantidad y observaciones. El servicio backend valida categoría y cliente; en préstamo descuenta existencia y aumenta `EnvaseClienteSaldo`; en devolución comprueba el saldo, aumenta existencia y lo disminuye. Ambas operaciones crean `MovimientoEnvase` y una fila de bitácora en transacciones.
+`frontend/app/envases/page.tsx` carga clientes, productos marcados como retornables, movimientos y saldos. La UI presenta préstamo/devolución y envía cliente, item, cantidad y observaciones. El servicio backend valida la propiedad retornable y el cliente; en préstamo descuenta existencia y aumenta `EnvaseClienteSaldo`; en devolución comprueba el saldo, aumenta existencia y lo disminuye. Ambas operaciones crean `MovimientoEnvase` y una fila de bitácora en transacciones.
 
 La anulación/restauración modifica el movimiento, el saldo del cliente y el stock, e inserta una nueva fila compensatoria. El modelo permite `IdVenta` opcional y el API valida que la venta corresponda al cliente, pero el formulario actual no envía `IdVenta`. El modelo no contiene un vínculo a `RutaSesion`.
 
@@ -124,7 +124,7 @@ La anulación/restauración modifica el movimiento, el saldo del cliente y el st
 
 | Campo/funcionalidad | Evidencia observada | Evaluación |
 |---|---|---|
-| Categorías de `InventarioItem` | `product.validators.ts`, formulario y consumidores validan/usan `ENVASE`, `INSUMO`, `PRODUCTO_TERMINADO` y `MATERIA_PRIMA`; reglas comerciales consumen productos y categorías. | Uso demostrado. La categoría no define unidad, trazabilidad por lote ni un flujo de fabricación. |
+| Categorías de `InventarioItem` | `product.validators.ts` y el formulario limitan la clasificación a `PRODUCTO_TERMINADO`, `MATERIA_PRIMA` e `INSUMO`; vendibilidad y seguimiento retornable se configuran aparte. | Uso demostrado. La categoría no define vendibilidad, seguimiento retornable, unidad, trazabilidad por lote ni un flujo de fabricación. |
 | `Existencia` / disponibilidad | Compras, ventas, ajustes y envases consultan o actualizan el mismo campo; no se encontró reserva ni otra cantidad “disponible”. | La disponibilidad observada equivale a existencia persistida; requisitos sobre stock reservado no están documentados. |
 | `CostoPromedio` | Se crea/edita en producto y se recalcula en alta de compra; se incluye en DTO y en validaciones de precio de producto terminado. | Uso demostrado. La anulación/restauración de compra modifica stock pero no recalcula el promedio; determinar con negocio si se exige reversar el costo ponderado, especialmente si hubo consumos posteriores. No se clasifica como defecto sin esa regla. |
 | Precisión de cantidades | `Existencia`, `Cantidad` y cantidades de detalle son `Float`. Algunas operaciones redondean a dos decimales y las de compras/ajustes no aplican el mismo redondeo en cada suma/resta. | Regla de precisión y unidades mínimas pendiente de definición. No se encontró unidad de medida ni conversión en modelos/validadores revisados. |
