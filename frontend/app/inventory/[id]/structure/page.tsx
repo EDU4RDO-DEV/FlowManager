@@ -23,6 +23,14 @@ import { ListPagination } from "@/components/ui/list-pagination";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -42,14 +50,17 @@ import { hasModulePermission } from "@/lib/rbac";
 import { getProductById, listProducts } from "@/services/products.service";
 import {
   createProductStructure,
+  getRecipeCostEstimate,
   listStructureByProduct,
   listAnulatedStructureByProduct,
   deleteProductStructure,
   restoreProductStructure,
   updateProductStructure,
+  updateRecipeCostPolicy,
+  applyRecipeCost,
 } from "@/services/product-structure.service";
 import type { ProductDto } from "@/types/products";
-import type { ProductStructureDto } from "@/types/product-structure";
+import type { ProductStructureDto, RecipeCostEstimateDto } from "@/types/product-structure";
 
 export default function ProductStructurePage() {
   const params = useParams();
@@ -79,6 +90,9 @@ export default function ProductStructurePage() {
   const [activePage, setActivePage] = useState(1);
   const [trashPage, setTrashPage] = useState(1);
   const [isSavingForm, setIsSavingForm] = useState(false);
+  const [isSavingCostPolicy, setIsSavingCostPolicy] = useState(false);
+  const [costDialogEstimate, setCostDialogEstimate] = useState<RecipeCostEstimateDto | null>(null);
+  const [isApplyingRecipeCost, setIsApplyingRecipeCost] = useState(false);
 
   const PAGE_SIZE = 10;
 
@@ -146,6 +160,15 @@ export default function ProductStructurePage() {
     return anulatedStructure.slice(start, start + PAGE_SIZE);
   }, [anulatedStructure, trashPage]);
 
+  const recipeCostReference = useMemo(
+    () =>
+      activeStructure.reduce(
+        (sum, item) => sum + item.materiaPrima.costoPromedio * item.cantidadRequerida,
+        0,
+      ),
+    [activeStructure],
+  );
+
   useEffect(() => {
     setActivePage(1);
     setTrashPage(1);
@@ -167,6 +190,9 @@ export default function ProductStructurePage() {
       toast.success("Componente agregado correctamente.");
       setIsFormOpen(false);
       await loadData();
+      if (product?.actualizarCostoSegunReceta) {
+        await openRecipeCostConfirmation();
+      }
     } catch (err) {
       toast.error(getApiErrorMessage(err, "No se pudo agregar el componente."));
       throw err;
@@ -222,6 +248,9 @@ export default function ProductStructurePage() {
       setEditCandidate(null);
       setEditCantidad("");
       await loadData();
+      if (product?.actualizarCostoSegunReceta) {
+        await openRecipeCostConfirmation();
+      }
     } catch (err) {
       toast.error(getApiErrorMessage(err, "No se pudo actualizar el componente."));
     } finally {
@@ -246,6 +275,9 @@ export default function ProductStructurePage() {
 
       toast.success("Componente restaurado correctamente.");
       await loadData();
+      if (product?.actualizarCostoSegunReceta) {
+        await openRecipeCostConfirmation();
+      }
     } catch (err) {
       toast.error(getApiErrorMessage(err, "No se pudo restaurar el componente."));
     }
@@ -277,10 +309,73 @@ export default function ProductStructurePage() {
       setAnulatedStructure((prev) => [movedToTrash, ...prev]);
       setDeleteCandidate(null);
       toast.success("Componente anulado correctamente.");
+      if (product?.actualizarCostoSegunReceta) {
+        await openRecipeCostConfirmation();
+      }
     } catch (err) {
       toast.error(getApiErrorMessage(err, "No se pudo eliminar el componente."));
     } finally {
       setIsDeleting(false);
+    }
+  }
+
+  async function openRecipeCostConfirmation() {
+    try {
+      const estimate = await getRecipeCostEstimate(productId);
+      if (estimate.costoActual === estimate.costoCalculado) {
+        toast.info("El costo actual ya coincide con el costo calculado de la receta.");
+        return;
+      }
+      setCostDialogEstimate(estimate);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "No se pudo calcular el costo de la receta."));
+    }
+  }
+
+  async function handleRecipeCostPolicyChange(enabled: boolean) {
+    if (!canUpdateStructure || !product || product.categoria !== "PRODUCTO_TERMINADO") {
+      toast.error("No tienes permiso para cambiar la actualización de costo de la receta.");
+      return;
+    }
+
+    try {
+      setIsSavingCostPolicy(true);
+      const persistedValue = await updateRecipeCostPolicy(productId, enabled);
+      setProduct((current) =>
+        current ? { ...current, actualizarCostoSegunReceta: persistedValue } : current,
+      );
+      toast.success(
+        persistedValue
+          ? "La actualización de costo según receta quedó activada."
+          : "La actualización de costo según receta quedó desactivada.",
+      );
+      if (persistedValue && activeStructure.length > 0) {
+        await openRecipeCostConfirmation();
+      }
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "No se pudo guardar la preferencia de costo."));
+    } finally {
+      setIsSavingCostPolicy(false);
+    }
+  }
+
+  async function handleApplyRecipeCost() {
+    if (!costDialogEstimate) {
+      return;
+    }
+
+    try {
+      setIsApplyingRecipeCost(true);
+      await applyRecipeCost(productId, costDialogEstimate);
+      setCostDialogEstimate(null);
+      toast.success("El costo promedio del producto se actualizó según su receta.");
+      await loadData();
+    } catch (err) {
+      setCostDialogEstimate(null);
+      toast.error(getApiErrorMessage(err, "No se pudo actualizar el costo del producto."));
+      await loadData();
+    } finally {
+      setIsApplyingRecipeCost(false);
     }
   }
 
@@ -301,8 +396,11 @@ export default function ProductStructurePage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold">
-            Componentes ({activeStructure.length + anulatedStructure.length})
+            {product?.nombre ?? `Producto #${productId}`}
           </h2>
+          <p className="text-sm text-muted-foreground">
+            Receta del producto terminado · {activeStructure.length + anulatedStructure.length} componentes
+          </p>
         </div>
         <Button
           onClick={() => {
@@ -499,6 +597,54 @@ export default function ProductStructurePage() {
       ) : isLoading && !hasLoadedOnce ? (
         <TableSkeleton rows={6} columns={7} />
       ) : (
+        <>
+        {product?.categoria === "PRODUCTO_TERMINADO" ? (
+          <Card className="module-page-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Costo según receta</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-0">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={product.actualizarCostoSegunReceta}
+                  onChange={(event) =>
+                    void handleRecipeCostPolicyChange(event.currentTarget.checked)
+                  }
+                  disabled={!canUpdateStructure || isSavingCostPolicy}
+                  className="mt-1 h-4 w-4 accent-primary"
+                />
+                <span className="space-y-1">
+                  <span className="block text-sm font-medium">
+                    Actualizar costo del producto según su receta
+                  </span>
+                  <span className="block text-sm text-muted-foreground">
+                    Costo estimado actual: Q{recipeCostReference.toFixed(2)}. El costo vigente es Q
+                    {product.costoPromedio.toFixed(2)}. El costo solo cambiará después de tu confirmación.
+                  </span>
+                </span>
+              </label>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-muted-foreground">
+                  {product.actualizarCostoSegunReceta
+                    ? "Al cambiar componentes se solicitará confirmar el nuevo costo. También puedes revisarlo ahora."
+                    : "El cálculo es referencial; con esta opción desactivada no se sobrescribirá el costo actual."}
+                </p>
+                {product.actualizarCostoSegunReceta ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!canUpdateStructure || isSavingCostPolicy || activeStructure.length === 0}
+                    onClick={() => void openRecipeCostConfirmation()}
+                  >
+                    Revisar actualización
+                  </Button>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
         <Tabs defaultValue="activos">
           <TabsList>
             <TabsTrigger value="activos">Activos ({activeStructure.length})</TabsTrigger>
@@ -648,6 +794,7 @@ export default function ProductStructurePage() {
             )}
           </TabsContent>
         </Tabs>
+        </>
       )}
 
       {activeStructure.length > 0 && (
@@ -658,16 +805,7 @@ export default function ProductStructurePage() {
           <CardContent>
             <div className="flex justify-between items-center text-lg font-semibold">
               <span>Costo Total de Componentes:</span>
-              <span>
-                Q
-                {activeStructure
-                  .reduce(
-                    (sum, item) =>
-                      sum + item.materiaPrima.costoPromedio * item.cantidadRequerida,
-                    0,
-                  )
-                  .toFixed(2)}
-              </span>
+              <span>Q{recipeCostReference.toFixed(2)}</span>
             </div>
           </CardContent>
         </Card>
@@ -686,6 +824,59 @@ export default function ProductStructurePage() {
         loading={isDeleting}
         onConfirm={handleDeleteComponent}
       />
+
+      <Dialog
+        open={costDialogEstimate !== null}
+        onOpenChange={(open) => {
+          if (!open && !isApplyingRecipeCost) {
+            setCostDialogEstimate(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar actualización de costo</DialogTitle>
+            <DialogDescription>
+              {costDialogEstimate ? (
+                <>
+                  El costo actual de este producto es Q{costDialogEstimate.costoActual.toFixed(2)}.
+                  Según los componentes y las cantidades de la receta, el costo calculado es Q
+                  {costDialogEstimate.costoCalculado.toFixed(2)}. Diferencia:{" "}
+                  {costDialogEstimate.diferencia >= 0 ? "+" : "-"}Q
+                  {Math.abs(costDialogEstimate.diferencia).toFixed(2)}. ¿Deseas actualizar el costo
+                  promedio del producto con este nuevo valor?
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          {!costDialogEstimate?.puedeActualizar ? (
+            <p className="text-sm text-destructive">
+              {costDialogEstimate?.motivoNoActualizable}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCostDialogEstimate(null)}
+              disabled={isApplyingRecipeCost}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleApplyRecipeCost()}
+              disabled={
+                isApplyingRecipeCost ||
+                !costDialogEstimate?.puedeActualizar ||
+                !canUpdateStructure
+              }
+            >
+              {isApplyingRecipeCost ? "Actualizando..." : "Confirmar actualización"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
       </DashboardShell>

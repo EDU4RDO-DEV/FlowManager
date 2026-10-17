@@ -10,6 +10,15 @@ export const productIdParamsSchema = z.object({
   idProducto: z.coerce.number().int('idProducto debe ser entero').positive('idProducto debe ser mayor a 0'),
 });
 
+export const recipeCostPolicySchema = z.object({
+  actualizarCostoSegunReceta: z.boolean(),
+});
+
+export const applyRecipeCostSchema = z.object({
+  costoActualEsperado: z.number().finite().nonnegative(),
+  costoCalculadoEsperado: z.number().finite().positive(),
+});
+
 export const listStructureByProductQuerySchema = z.object({
   anulado: z
     .enum(['true', 'false'])

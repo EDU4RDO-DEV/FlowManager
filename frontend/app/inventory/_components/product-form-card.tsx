@@ -14,6 +14,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { ProviderDto } from "@/types/providers";
 import type { ProductDto } from "@/types/products";
 import type { CommissionCategoryDto } from "@/types/commissions";
@@ -51,6 +58,26 @@ const CATEGORY_OPTIONS: ProductDto["categoria"][] = [
   "INSUMO",
 ];
 
+const UNIT_OPTIONS = [
+  "Unidad",
+  "Bolsa",
+  "Paquete",
+  "Garrafón",
+  "Botella",
+  "Caja",
+  "Litro",
+  "Mililitro",
+  "Galón",
+  "Kilogramo",
+  "Gramo",
+  "Libra",
+  "Saco",
+  "Rollo",
+];
+
+const OTHER_UNIT_VALUE = "__OTHER_UNIT__";
+const NO_UNIT_VALUE = "__NO_UNIT__";
+
 function resolveImagePreviewUrl(rutaImagen: string): string {
   if (!rutaImagen) {
     return "";
@@ -85,11 +112,16 @@ export function ProductFormCard({
   onSubmit,
 }: ProductFormCardProps) {
   const [providersOpen, setProvidersOpen] = useState(false);
+  const [customUnitSelected, setCustomUnitSelected] = useState(false);
 
   const selectedProvider = useMemo(
     () => providers.find((provider) => String(provider.id) === form.idProveedor),
     [providers, form.idProveedor],
   );
+  const formUnitIsCustom =
+    form.unidadMedida !== "" && !UNIT_OPTIONS.includes(form.unidadMedida);
+  const unitIsCustom = formUnitIsCustom || customUnitSelected;
+  const selectedUnitValue = unitIsCustom ? OTHER_UNIT_VALUE : form.unidadMedida;
 
   return (
     <Card className="rounded-xl border border-border bg-background">
@@ -152,14 +184,50 @@ export function ProductFormCard({
 
           <div className="space-y-1.5">
             <Label htmlFor="product-unit">Unidad de medida</Label>
-            <Input
-              id="product-unit"
-              value={form.unidadMedida}
-              onChange={(event) => onChange({ ...form, unidadMedida: event.target.value })}
-              maxLength={30}
-              placeholder="Ej. kg, L, unidad"
-              className="bg-background"
-            />
+            <Select
+              value={selectedUnitValue}
+              onValueChange={(value) => {
+                if (value === OTHER_UNIT_VALUE) {
+                  setCustomUnitSelected(true);
+                  if (!formUnitIsCustom) {
+                    onChange({ ...form, unidadMedida: "" });
+                  }
+                  return;
+                }
+
+                setCustomUnitSelected(false);
+                onChange({
+                  ...form,
+                  unidadMedida: value === NO_UNIT_VALUE ? "" : value,
+                });
+              }}
+            >
+              <SelectTrigger id="product-unit" className="bg-background">
+                <SelectValue placeholder="Seleccionar unidad" />
+              </SelectTrigger>
+              <SelectContent>
+                {UNIT_OPTIONS.map((unit) => (
+                  <SelectItem key={unit} value={unit}>
+                    {unit}
+                  </SelectItem>
+                ))}
+                <SelectItem value={OTHER_UNIT_VALUE}>Otra unidad</SelectItem>
+                <SelectItem value={NO_UNIT_VALUE}>Sin unidad</SelectItem>
+              </SelectContent>
+            </Select>
+            {unitIsCustom ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="product-unit-custom">Unidad personalizada</Label>
+                <Input
+                  id="product-unit-custom"
+                  value={form.unidadMedida}
+                  onChange={(event) => onChange({ ...form, unidadMedida: event.target.value })}
+                  maxLength={30}
+                  placeholder="Escribe la unidad"
+                  className="bg-background"
+                />
+              </div>
+            ) : null}
           </div>
 
           <div className="space-y-2 rounded-lg border bg-background/70 p-3 md:col-span-2">

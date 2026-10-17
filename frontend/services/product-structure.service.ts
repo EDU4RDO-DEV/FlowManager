@@ -6,9 +6,53 @@ import type {
   DeleteProductStructurePayload,
   ProductStructureDto,
   ProductStructureListResponse,
+  RecipeCostEstimateDto,
   RestoreProductStructurePayload,
   UpdateProductStructurePayload,
 } from "@/types/product-structure";
+
+export async function getRecipeCostEstimate(
+  idProductoTerminado: number,
+): Promise<RecipeCostEstimateDto> {
+  const { data } = await api.get<ApiResponse<RecipeCostEstimateDto>>(
+    `/api/product-structure/product/${idProductoTerminado}/costo-receta`,
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta inválida al calcular el costo de la receta");
+  }
+  return data.data;
+}
+
+export async function updateRecipeCostPolicy(
+  idProductoTerminado: number,
+  actualizarCostoSegunReceta: boolean,
+): Promise<boolean> {
+  const { data } = await api.patch<ApiResponse<{ actualizarCostoSegunReceta: boolean }>>(
+    `/api/product-structure/product/${idProductoTerminado}/costo-receta/preferencia`,
+    { actualizarCostoSegunReceta },
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta inválida al actualizar la preferencia de costo");
+  }
+  return data.data.actualizarCostoSegunReceta;
+}
+
+export async function applyRecipeCost(
+  idProductoTerminado: number,
+  estimate: RecipeCostEstimateDto,
+): Promise<RecipeCostEstimateDto> {
+  const { data } = await api.post<ApiResponse<RecipeCostEstimateDto>>(
+    `/api/product-structure/product/${idProductoTerminado}/costo-receta/confirmar`,
+    {
+      costoActualEsperado: estimate.costoActual,
+      costoCalculadoEsperado: estimate.costoCalculado,
+    },
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta inválida al actualizar el costo");
+  }
+  return data.data;
+}
 
 export async function listStructureByProduct(
   idProducto: number,

@@ -21,6 +21,16 @@ export interface ProductStructureDto {
   materiaPrima: ProductStructureMateriaPrimaDto;
 }
 
+export interface RecipeCostEstimateDto {
+  idProductoTerminado: number;
+  actualizarCostoSegunReceta: boolean;
+  costoActual: number;
+  costoCalculado: number;
+  diferencia: number;
+  puedeActualizar: boolean;
+  motivoNoActualizable: string | null;
+}
+
 export type ProductStructureListResponse = ApiResponse<ProductStructureDto[]>;
 export type AnulatedProductStructureListResponse = ApiResponse<ProductStructureDto[]>;
 

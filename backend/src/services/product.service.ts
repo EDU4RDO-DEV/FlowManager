@@ -79,6 +79,7 @@ function toProductDto(product: {
   Categoria: string;
   EsVendible: boolean;
   EsEnvaseRetornable: boolean;
+  ActualizarCostoSegunReceta: boolean;
   CapacidadEnvaseGalones: unknown;
   IdCategoriaComision: number | null;
   UnidadMedida: string | null;
@@ -109,6 +110,7 @@ function toProductDto(product: {
     categoria: product.Categoria,
     esVendible: product.EsVendible,
     esEnvaseRetornable: product.EsEnvaseRetornable,
+    actualizarCostoSegunReceta: product.ActualizarCostoSegunReceta,
     capacidadEnvaseGalones: product.CapacidadEnvaseGalones == null
       ? null
       : Number(product.CapacidadEnvaseGalones),

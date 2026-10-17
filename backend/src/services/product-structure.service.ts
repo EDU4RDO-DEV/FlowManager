@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma';
+import { Prisma } from '@prisma/client';
 
 type ListStructureByProductInput = {
   idProducto: number;
@@ -15,6 +16,23 @@ type UpdateProductStructureInput = {
   cantidadRequerida?: number;
   idUsuarioModificador?: number;
 };
+
+type RecipeCostEstimate = {
+  idProductoTerminado: number;
+  actualizarCostoSegunReceta: boolean;
+  costoActual: number;
+  costoCalculado: number;
+  diferencia: number;
+  puedeActualizar: boolean;
+  motivoNoActualizable: string | null;
+};
+
+type RecipeCostPolicyInput = {
+  actualizarCostoSegunReceta: boolean;
+  idUsuarioModificador?: number;
+};
+
+type RecipeCostTransaction = Prisma.TransactionClient;
 
 function toStructureDto(structure: {
   Id: number;
@@ -132,6 +150,193 @@ async function validateUniqueComponent(
   if (existing) {
     throw new Error('Este componente ya existe en la estructura del producto');
   }
+}
+
+async function calculateRecipeCost(
+  tx: RecipeCostTransaction,
+  idProductoTerminado: number,
+): Promise<RecipeCostEstimate> {
+  const product = await tx.inventarioItem.findFirst({
+    where: { Id: idProductoTerminado, Anulado: false },
+    select: {
+      Id: true,
+      Categoria: true,
+      EsVendible: true,
+      ActualizarCostoSegunReceta: true,
+      UnidadMedida: true,
+      CostoPromedio: true,
+      PrecioVenta: true,
+    },
+  });
+
+  if (!product || product.Categoria !== 'PRODUCTO_TERMINADO') {
+    throw new Error('Producto terminado no existe o no es un producto final');
+  }
+  if (!product.UnidadMedida?.trim()) {
+    throw new Error('El producto terminado no tiene unidad de medida configurada');
+  }
+
+  const recipe = await tx.estructuraProducto.findMany({
+    where: { IdProductoTerminado: idProductoTerminado, Anulado: false },
+    orderBy: { Id: 'asc' },
+    include: {
+      InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
+        select: {
+          Id: true,
+          Nombre: true,
+          Categoria: true,
+          UnidadMedida: true,
+          CostoPromedio: true,
+          Anulado: true,
+        },
+      },
+    },
+  });
+
+  if (recipe.length === 0) {
+    throw new Error('La receta no tiene componentes activos');
+  }
+
+  let calculatedCost = new Prisma.Decimal(0);
+  for (const entry of recipe) {
+    const component = entry.InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem;
+    const quantity = Number(entry.CantidadRequerida);
+    const unitCost = new Prisma.Decimal(component.CostoPromedio);
+
+    if (component.Anulado || !['MATERIA_PRIMA', 'INSUMO'].includes(component.Categoria)) {
+      throw new Error(`${component.Nombre} no es una materia prima o insumo activo`);
+    }
+    if (!component.UnidadMedida?.trim()) {
+      throw new Error(`Falta definir la unidad de medida de ${component.Nombre}`);
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      throw new Error(`La cantidad requerida de ${component.Nombre} no es válida`);
+    }
+    if (!unitCost.isFinite() || unitCost.lte(0)) {
+      throw new Error(`${component.Nombre} no tiene un costo promedio válido`);
+    }
+
+    calculatedCost = calculatedCost.add(unitCost.mul(quantity));
+  }
+
+  calculatedCost = calculatedCost.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+  if (!calculatedCost.isFinite() || calculatedCost.lte(0)) {
+    throw new Error('El costo calculado de la receta no es válido');
+  }
+
+  const currentCost = new Prisma.Decimal(product.CostoPromedio).toDecimalPlaces(2);
+  const canUpdate =
+    !product.EsVendible || new Prisma.Decimal(product.PrecioVenta).gte(calculatedCost);
+
+  return {
+    idProductoTerminado: product.Id,
+    actualizarCostoSegunReceta: product.ActualizarCostoSegunReceta,
+    costoActual: currentCost.toNumber(),
+    costoCalculado: calculatedCost.toNumber(),
+    diferencia: calculatedCost.sub(currentCost).toNumber(),
+    puedeActualizar: canUpdate,
+    motivoNoActualizable: canUpdate
+      ? null
+      : 'El costo calculado supera el precio de venta; actualice el precio manualmente antes de cambiar el costo.',
+  };
+}
+
+export async function getRecipeCostEstimate(idProductoTerminado: number) {
+  return prisma.$transaction(
+    (tx) => calculateRecipeCost(tx, idProductoTerminado),
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+  );
+}
+
+export async function updateRecipeCostPolicy(
+  idProductoTerminado: number,
+  input: RecipeCostPolicyInput,
+) {
+  return prisma.$transaction(async (tx) => {
+    const product = await tx.inventarioItem.findFirst({
+      where: {
+        Id: idProductoTerminado,
+        Categoria: 'PRODUCTO_TERMINADO',
+        Anulado: false,
+      },
+      select: { Id: true },
+    });
+
+    if (!product) {
+      throw new Error('Producto terminado no existe o no es un producto final');
+    }
+    if (input.idUsuarioModificador !== undefined) {
+      const user = await tx.usuario.findFirst({
+        where: { Id: input.idUsuarioModificador, Anulado: false },
+        select: { Id: true },
+      });
+      if (!user) {
+        throw new Error('Usuario no existe');
+      }
+    }
+
+    const updated = await tx.inventarioItem.update({
+      where: { Id: product.Id },
+      data: {
+        ActualizarCostoSegunReceta: input.actualizarCostoSegunReceta,
+        ...(input.idUsuarioModificador !== undefined
+          ? { IdUsuarioModificador: input.idUsuarioModificador }
+          : {}),
+        FechaModificacion: new Date(),
+      },
+      select: { ActualizarCostoSegunReceta: true },
+    });
+
+    return { actualizarCostoSegunReceta: updated.ActualizarCostoSegunReceta };
+  });
+}
+
+export async function applyRecipeCost(
+  idProductoTerminado: number,
+  expectedCurrentCost: number,
+  expectedCalculatedCost: number,
+  idUsuarioModificador?: number,
+) {
+  return prisma.$transaction(async (tx) => {
+    const estimate = await calculateRecipeCost(tx, idProductoTerminado);
+
+    if (!estimate.actualizarCostoSegunReceta) {
+      throw new Error('La actualización del costo según receta está desactivada');
+    }
+    if (
+      Math.round(estimate.costoActual * 100) !== Math.round(expectedCurrentCost * 100) ||
+      Math.round(estimate.costoCalculado * 100) !== Math.round(expectedCalculatedCost * 100)
+    ) {
+      throw new Error('El costo o la receta cambiaron; vuelva a revisar los valores antes de confirmar');
+    }
+    if (!estimate.puedeActualizar) {
+      throw new Error(estimate.motivoNoActualizable ?? 'No se puede actualizar el costo');
+    }
+    if (idUsuarioModificador !== undefined) {
+      const user = await tx.usuario.findFirst({
+        where: { Id: idUsuarioModificador, Anulado: false },
+        select: { Id: true },
+      });
+      if (!user) {
+        throw new Error('Usuario no existe');
+      }
+    }
+
+    await tx.inventarioItem.update({
+      where: { Id: idProductoTerminado },
+      data: {
+        CostoPromedio: estimate.costoCalculado,
+        ...(idUsuarioModificador !== undefined ? { IdUsuarioModificador: idUsuarioModificador } : {}),
+        FechaModificacion: new Date(),
+      },
+    });
+
+    return {
+      ...estimate,
+      costoActual: estimate.costoCalculado,
+      diferencia: 0,
+    };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
 export async function listStructureByProduct(input: ListStructureByProductInput) {

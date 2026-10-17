@@ -4,22 +4,100 @@ import { ZodError } from 'zod';
 import {
   createProductStructure,
   deleteProductStructure,
+  getRecipeCostEstimate,
   getStructureById,
   listAnulatedStructureByProduct,
   listStructureByProduct,
   restoreProductStructure,
+  updateRecipeCostPolicy,
+  applyRecipeCost,
   updateProductStructure,
 } from '../services/product-structure.service';
 import {
+  applyRecipeCostSchema,
   createProductStructureSchema,
   deleteProductStructureBodySchema,
   listStructureByProductQuerySchema,
   productIdParamsSchema,
+  recipeCostPolicySchema,
   restoreProductStructureBodySchema,
   structureIdParamsSchema,
   updateProductStructureSchema,
 } from '../validators/product-structure.validators';
 import { getZodErrorMessage } from '../validators/validation';
+
+const recipeCostConflictMessages = new Set([
+  'Producto terminado no existe o no es un producto final',
+  'El producto terminado no tiene unidad de medida configurada',
+  'La receta no tiene componentes activos',
+  'La cantidad requerida de',
+  'no tiene un costo promedio válido',
+  'El costo calculado de la receta no es válido',
+  'La actualización del costo según receta está desactivada',
+  'El costo o la receta cambiaron; vuelva a revisar los valores antes de confirmar',
+  'El costo calculado supera el precio de venta; actualice el precio manualmente antes de cambiar el costo.',
+  'Usuario no existe',
+]);
+
+function isRecipeCostConflict(message: string) {
+  return [...recipeCostConflictMessages].some((knownMessage) =>
+    message === knownMessage || message.startsWith(knownMessage),
+  ) ||
+    message.startsWith('Falta definir la unidad de medida de ') ||
+    message.endsWith(' no es una materia prima o insumo activo');
+}
+
+export async function getRecipeCostEstimateController(req: Request, res: Response) {
+  try {
+    const { idProducto } = productIdParamsSchema.parse(req.params);
+    const data = await getRecipeCostEstimate(idProducto);
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(isRecipeCostConflict(message) ? 409 : 500).json({ ok: false, message });
+  }
+}
+
+export async function updateRecipeCostPolicyController(req: Request, res: Response) {
+  try {
+    const { idProducto } = productIdParamsSchema.parse(req.params);
+    const input = recipeCostPolicySchema.parse(req.body);
+    const data = await updateRecipeCostPolicy(idProducto, {
+      ...input,
+      idUsuarioModificador: req.auth?.userId,
+    });
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(isRecipeCostConflict(message) ? 409 : 500).json({ ok: false, message });
+  }
+}
+
+export async function applyRecipeCostController(req: Request, res: Response) {
+  try {
+    const { idProducto } = productIdParamsSchema.parse(req.params);
+    const input = applyRecipeCostSchema.parse(req.body);
+    const data = await applyRecipeCost(
+      idProducto,
+      input.costoActualEsperado,
+      input.costoCalculadoEsperado,
+      req.auth?.userId,
+    );
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(isRecipeCostConflict(message) ? 409 : 500).json({ ok: false, message });
+  }
+}
 
 export async function listStructureByProductController(req: Request, res: Response) {
   try {

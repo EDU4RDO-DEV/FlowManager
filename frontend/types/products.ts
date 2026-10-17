@@ -14,6 +14,7 @@ export interface ProductDto {
   categoria: "INSUMO" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA";
   esVendible: boolean;
   esEnvaseRetornable: boolean;
+  actualizarCostoSegunReceta: boolean;
   capacidadEnvaseGalones: number | null;
   idCategoriaComision: number | null;
   unidadMedida: string | null;
