@@ -367,8 +367,16 @@ export default function SaleDetailPage() {
     }
     setIsAnulatingSale(true);
     try {
-      await anulateSale(sale.id, { idUsuarioAnulador: user.id });
-      toast.success("Venta anulada correctamente");
+      const result = await anulateSale(sale.id, { idUsuarioAnulador: user.id });
+      if (result.felAnulacion?.confirmada && result.felAnulacion.fechaAnulacionFel) {
+        toast.success(
+          `Venta y factura anuladas por Ecofacturas el ${formatDate(result.felAnulacion.fechaAnulacionFel)}`,
+        );
+      } else if (result.felAnulacion) {
+        toast.warning("Venta anulada en modo de prueba; Ecofacturas no confirmó una anulación real");
+      } else {
+        toast.success("Venta anulada correctamente");
+      }
       setIsAnulateSaleDialogOpen(false);
       await loadData();
     } catch (error) {
@@ -521,6 +529,14 @@ export default function SaleDetailPage() {
                       <p className="text-xs text-muted-foreground">Fecha de emisión</p>
                       <p className="font-medium">{formatDate(sale.fechaEmisionFel)}</p>
                     </div>
+                    {sale.fechaAnulacionFel ? (
+                      <div>
+                        <p className="text-xs text-muted-foreground">
+                          {sale.anulado ? "Anulación confirmada por FEL" : "FEL anulada; sincronización local pendiente"}
+                        </p>
+                        <p className="font-medium">{formatDate(sale.fechaAnulacionFel)}</p>
+                      </div>
+                    ) : null}
                     <div className="md:col-span-2">
                       <p className="text-xs text-muted-foreground">Autorización (UUID)</p>
                       <p className="break-all font-medium">{sale.autorizacionFel ?? "-"}</p>
@@ -541,6 +557,13 @@ export default function SaleDetailPage() {
                         <Button asChild variant="outline" size="sm">
                           <a href={sale.qrFel} target="_blank" rel="noreferrer">
                             Verificar en SAT
+                          </a>
+                        </Button>
+                      ) : null}
+                      {sale.anulado && sale.rutaPdfFelAnulacion ? (
+                        <Button asChild variant="outline" size="sm">
+                          <a href={resolveUploadUrl(sale.rutaPdfFelAnulacion)} target="_blank" rel="noreferrer">
+                            Ver constancia de anulación
                           </a>
                         </Button>
                       ) : null}

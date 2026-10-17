@@ -114,6 +114,8 @@ export interface SaleDto {
   qrFel: string | null;
   rutaPdfFel: string | null;
   fechaEmisionFel: string | null;
+  rutaPdfFelAnulacion?: string | null;
+  fechaAnulacionFel?: string | null;
   nitFacturado: string | null;
   nombreClienteFacturado: string | null;
   direccionClienteFacturado: string | null;
@@ -380,4 +382,13 @@ export type RouteSessionOptionsResponse = ApiResponse<RouteSessionOptionDto[]>;
 
 export interface AnulateSalePayload {
   idUsuarioAnulador?: number;
+}
+
+export interface AnulateSaleResult {
+  anulada: boolean;
+  felAnulacion: {
+    confirmada: boolean;
+    fechaAnulacionFel: string | null;
+    rutaPdfFel: string | null;
+  } | null;
 }

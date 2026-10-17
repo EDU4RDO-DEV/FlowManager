@@ -369,9 +369,9 @@ export async function anulateSaleController(req: Request, res: Response) {
     const { id } = saleIdParamsSchema.parse(req.params);
     const { idUsuarioAnulador } = anulateSaleBodySchema.parse(req.body ?? {});
 
-    await anulateSale(id, req.auth?.userId ?? idUsuarioAnulador);
+    const data = await anulateSale(id, req.auth?.userId ?? idUsuarioAnulador);
 
-    return res.status(200).json({ ok: true, message: 'Venta anulada correctamente' });
+    return res.status(200).json({ ok: true, data, message: 'Venta anulada correctamente' });
   } catch (error) {
     if (error instanceof ZodError) {
       return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });

@@ -9,7 +9,7 @@ const { prismaMock } = vi.hoisted(() => ({
     devolucionComercial: { findFirst: vi.fn() },
     movimientoEnvase: { findMany: vi.fn(), findFirst: vi.fn() },
     inventarioItem: { findFirst: vi.fn(), update: vi.fn() },
-    venta: { findFirst: vi.fn(), update: vi.fn() },
+    venta: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     detalleVenta: { updateMany: vi.fn() },
     pagoVenta: { updateMany: vi.fn() },
     cuentaPorCobrar: { updateMany: vi.fn() },
@@ -26,6 +26,10 @@ const { anulateEnvaseMovementInTransactionMock, registerEnvaseBucketChangeMock }
   registerEnvaseBucketChangeMock: vi.fn(),
 }));
 
+const { anulateFelInvoiceMock } = vi.hoisted(() => ({
+  anulateFelInvoiceMock: vi.fn(),
+}));
+
 vi.mock('../config/prisma', () => ({
   prisma: prismaMock,
 }));
@@ -37,7 +41,7 @@ vi.mock('../services/notification.service', () => ({
 
 vi.mock('../services/fel.service', () => ({
   emitFelInvoice: vi.fn(),
-  anulateFelInvoice: vi.fn(),
+  anulateFelInvoice: anulateFelInvoiceMock,
 }));
 
 vi.mock('../services/inventory-movement.service', () => ({
@@ -77,6 +81,7 @@ describe('Fase 23 - VENTA_ANULADA (anulateSale)', () => {
     );
     prismaMock.movimientoEnvase.findMany.mockResolvedValue([]);
     prismaMock.movimientoEnvase.findFirst.mockResolvedValue(null);
+    prismaMock.venta.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.inventarioItem.findFirst.mockResolvedValue({
       Id: 5,
       Existencia: 10,
@@ -132,7 +137,7 @@ describe('Fase 23 - VENTA_ANULADA (anulateSale)', () => {
     prismaMock.cuentaPorCobrar.updateMany.mockResolvedValueOnce({});
     sendMock.mockRejectedValueOnce(new Error('fallo inesperado de red'));
 
-    await expect(anulateSale(7, 9)).resolves.toBeUndefined();
+    await expect(anulateSale(7, 9)).resolves.toEqual({ anulada: true, felAnulacion: null });
   });
 
   it('does not restore route sales into plant stock when cancelling before route receipt', async () => {
@@ -156,8 +161,113 @@ describe('Fase 23 - VENTA_ANULADA (anulateSale)', () => {
     prismaMock.venta.update.mockResolvedValueOnce({});
     prismaMock.cuentaPorCobrar.updateMany.mockResolvedValueOnce({});
 
-    await expect(anulateSale(7, 9)).resolves.toBeUndefined();
+    await expect(anulateSale(7, 9)).resolves.toEqual({ anulada: true, felAnulacion: null });
     expect(prismaMock.despachoRuta.findUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects cancelling a sale that requires FEL when certification identifiers are missing', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
+    prismaMock.venta.findFirst.mockResolvedValueOnce(buildAnulateSaleRow({ RequiereFactura: true }));
+
+    await expect(anulateSale(7, 9)).rejects.toThrow(
+      'FEL: No se puede anular la venta porque faltan los identificadores de la factura certificada',
+    );
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('persists the provider annulment confirmation without replacing the original invoice PDF', async () => {
+    const sale = buildAnulateSaleRow({
+      RequiereFactura: true,
+      AutorizacionFel: '123e4567-e89b-12d3-a456-426614174000',
+      SerieFel: 'FEL',
+      NumeroFel: '42',
+      RutaPdfFel: '/uploads/sales/fel/original.pdf',
+    });
+    const providerDate = new Date('2026-10-15T18:34:56.000Z');
+    anulateFelInvoiceMock.mockResolvedValueOnce({
+      confirmada: true,
+      fechaAnulacionFel: providerDate,
+      rutaPdfFel: '/uploads/sales/fel/annulment.pdf',
+    });
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
+    prismaMock.venta.findFirst.mockResolvedValueOnce(sale).mockResolvedValueOnce(sale);
+    prismaMock.detalleVenta.updateMany.mockResolvedValueOnce({});
+    prismaMock.pagoVenta.updateMany.mockResolvedValueOnce({});
+    prismaMock.venta.update.mockResolvedValueOnce({});
+    prismaMock.cuentaPorCobrar.updateMany.mockResolvedValueOnce({});
+
+    const result = await anulateSale(7, 9);
+
+    expect(result.felAnulacion).toEqual({
+      confirmada: true,
+      fechaAnulacionFel: providerDate,
+      rutaPdfFel: '/uploads/sales/fel/annulment.pdf',
+    });
+    expect(prismaMock.venta.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        Anulado: true,
+      }),
+    }));
+    expect(prismaMock.venta.updateMany).toHaveBeenCalledWith({
+      where: { Id: 7, Anulado: false, FechaAnulacionFel: null },
+      data: {
+        FechaAnulacionFel: providerDate,
+        RutaPdfFelAnulacion: '/uploads/sales/fel/annulment.pdf',
+      },
+    });
+    expect(prismaMock.venta.update.mock.calls[0]?.[0].data).not.toHaveProperty('RutaPdfFel');
+  });
+
+  it('does not change local sale state when the provider rejects the annulment', async () => {
+    anulateFelInvoiceMock.mockRejectedValueOnce(new Error('FEL: proveedor rechazó la anulación'));
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
+    prismaMock.venta.findFirst.mockResolvedValueOnce(buildAnulateSaleRow({
+      RequiereFactura: true,
+      AutorizacionFel: '123e4567-e89b-12d3-a456-426614174000',
+      SerieFel: 'FEL',
+      NumeroFel: '42',
+    }));
+
+    await expect(anulateSale(7, 9)).rejects.toThrow('FEL: proveedor rechazó la anulación');
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('reuses a stored provider confirmation after a local transaction failure', async () => {
+    const providerDate = new Date('2026-10-15T18:34:56.000Z');
+    const sale = buildAnulateSaleRow({
+      RequiereFactura: true,
+      AutorizacionFel: '123e4567-e89b-12d3-a456-426614174000',
+      SerieFel: 'FEL',
+      NumeroFel: '42',
+      FechaAnulacionFel: null,
+      RutaPdfFelAnulacion: null,
+    });
+    const confirmedSale = {
+      ...sale,
+      FechaAnulacionFel: providerDate,
+      RutaPdfFelAnulacion: '/uploads/sales/fel/annulment.pdf',
+    };
+    anulateFelInvoiceMock.mockResolvedValueOnce({
+      confirmada: true,
+      fechaAnulacionFel: providerDate,
+      rutaPdfFel: '/uploads/sales/fel/annulment.pdf',
+    });
+    prismaMock.usuario.findFirst.mockResolvedValue({ Id: 9 });
+    prismaMock.venta.findFirst
+      .mockResolvedValueOnce(sale)
+      .mockResolvedValueOnce(confirmedSale)
+      .mockResolvedValueOnce(confirmedSale);
+    prismaMock.$transaction.mockRejectedValueOnce(new Error('falló la transacción local'));
+    prismaMock.detalleVenta.updateMany.mockResolvedValue({});
+    prismaMock.pagoVenta.updateMany.mockResolvedValue({});
+    prismaMock.venta.update.mockResolvedValue({});
+    prismaMock.cuentaPorCobrar.updateMany.mockResolvedValue({});
+
+    await expect(anulateSale(7, 9)).rejects.toThrow('falló la transacción local');
+    const retryResult = await anulateSale(7, 9);
+
+    expect(retryResult.felAnulacion?.confirmada).toBe(true);
+    expect(anulateFelInvoiceMock).toHaveBeenCalledTimes(1);
   });
 
   it('reverses open container loans within the sale cancellation transaction', async () => {

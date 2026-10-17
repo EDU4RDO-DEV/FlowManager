@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import type { ApiResponse } from "@/types/auth";
 import type {
   AnulateSalePayload,
   AnulateTalonarioPayload,
@@ -13,6 +14,7 @@ import type {
   CreateSalePayload,
   CreateSaleResponse,
   CreateSaleResult,
+  AnulateSaleResult,
   CreateTalonarioPayload,
   FelPingRequest,
   FelPingResponse,
@@ -239,8 +241,13 @@ export async function listAvailableRouteSessions(idUsuarioVendedor?: number): Pr
   return data.data ?? [];
 }
 
-export async function anulateSale(id: number, payload?: AnulateSalePayload): Promise<void> {
-  await api.patch(`/api/ventas/${id}/anular`, payload ?? {});
+export async function anulateSale(id: number, payload?: AnulateSalePayload): Promise<AnulateSaleResult> {
+  const { data } = await api.patch<ApiResponse<AnulateSaleResult>>(`/api/ventas/${id}/anular`, payload ?? {});
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta inválida al anular venta");
+  }
+
+  return data.data;
 }
 
 export async function confirmRouteProforma(id: number): Promise<void> {

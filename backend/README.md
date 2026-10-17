@@ -73,7 +73,7 @@ BCRYPT_SALT_ROUNDS="12"
 ## Integración FEL de producción
 
 La emisión se ejecuta desde el flujo normal de venta únicamente cuando `requiereFactura` es
-`true`. El servicio FEL usa `FEL_ENVIRONMENT=production` para seleccionar exclusivamente las
+`true`. `FEL_ENVIRONMENT` es obligatorio: `production` selecciona exclusivamente las
 variables con sufijo `_PROD`; el entorno de pruebas conserva las variables legadas sin sufijo
 o puede usar `_SANDBOX`.
 
@@ -86,6 +86,16 @@ repositorio; los formatos `.pfx` y `.p12` están ignorados por Git.
 El servicio falla antes de contactar al proveedor si faltan el certificado, su contraseña o la
 configuración TLS requerida. En producción no genera respuestas simuladas ante fallos. No use
 el endpoint de emisión para una prueba técnica: cada emisión puede tener efecto fiscal real.
+Las credenciales con caracteres especiales deben definirse usando el mecanismo de secretos del
+despliegue; las contraseñas se envían escapadas como XML sin recortar espacios significativos.
+No se deben copiar variables de producción a un entorno local ni confiar en los valores de
+`backend/.env` como evidencia de la configuración de systemd.
+
+Una emisión solo se confirma si la respuesta del proveedor contiene UUID, serie, número y una
+fecha de certificación válida. Los errores de Ecofacturas ya no se convierten en resultados
+simulados mediante fallback. La anulación exige identificadores de certificación y una fecha
+válida devuelta por el proveedor; el PDF y la fecha de anulación FEL se guardan por separado,
+sin sobrescribir la factura original.
 
 ## Seguridad implementada
 

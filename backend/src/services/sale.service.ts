@@ -650,6 +650,8 @@ function toSaleDto(sale: NonNullable<Awaited<ReturnType<typeof getSaleByIdIntern
     qrFel: sale.QrFel,
     rutaPdfFel: sale.RutaPdfFel,
     fechaEmisionFel: sale.FechaEmisionFel,
+    rutaPdfFelAnulacion: sale.RutaPdfFelAnulacion,
+    fechaAnulacionFel: sale.FechaAnulacionFel,
     nitFacturado: sale.NitFacturado,
     nombreClienteFacturado: sale.NombreClienteFacturado,
     direccionClienteFacturado: sale.DireccionClienteFacturado,
@@ -1032,6 +1034,13 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
   }
 
   let created: ReturnType<typeof toSaleDto>;
+  const emittedFelResults: Array<{
+    saleId: number;
+    uuid: string;
+    serie: string;
+    numero: string;
+    fechaCertificacion: Date;
+  }> = [];
   try {
     created = await prisma.$transaction(
     async (tx) => {
@@ -1597,6 +1606,13 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
           },
           tx,
         );
+        emittedFelResults.push({
+          saleId: createdSale.Id,
+          uuid: felResult.autorizacionFel,
+          serie: felResult.serieFel,
+          numero: felResult.numeroFel,
+          fechaCertificacion: felResult.fechaEmisionFel,
+        });
 
         await tx.venta.update({
           where: { Id: createdSale.Id },
@@ -1623,6 +1639,22 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
     },
     );
   } catch (error) {
+    const emittedFel = emittedFelResults[0];
+    if (emittedFel) {
+      console.error(JSON.stringify({
+        event: 'fel.persistence',
+        operation: 'emission',
+        saleId: emittedFel.saleId,
+        outcome: 'transaction_failed_after_provider_confirmation',
+        uuid: emittedFel.uuid,
+        serie: emittedFel.serie,
+        numero: emittedFel.numero,
+        providerDate: emittedFel.fechaCertificacion.toISOString(),
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        prismaCode: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null,
+      }));
+    }
+
     const racedRequest = await prisma.venta.findUnique({
       where: { ClaveSolicitud: claveSolicitud },
       select: { Id: true, IdUsuario: true, HuellaSolicitud: true },
@@ -1637,6 +1669,20 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
       return getSaleById(racedRequest.Id);
     }
     throw error;
+  }
+
+  const emittedFel = emittedFelResults[0];
+  if (emittedFel) {
+    console.info(JSON.stringify({
+      event: 'fel.persistence',
+      operation: 'emission',
+      saleId: emittedFel.saleId,
+      outcome: 'persisted',
+      uuid: emittedFel.uuid,
+      serie: emittedFel.serie,
+      numero: emittedFel.numero,
+      providerDate: emittedFel.fechaCertificacion.toISOString(),
+    }));
   }
 
   // Efecto secundario: la venta ya quedó confirmada en la transacción anterior.
@@ -1938,20 +1984,84 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
     }
   }
 
-  let rutaPdfFelAnulacion: string | null = null;
+  let felAnulacion: Awaited<ReturnType<typeof anulateFelInvoice>> | null = null;
 
-  if (sale.RequiereFactura && sale.AutorizacionFel && sale.SerieFel && sale.NumeroFel) {
-    const anulacionResult = await anulateFelInvoice({
-      idVenta: sale.Id,
-      numeroVenta: sale.NumeroVenta,
-      autorizacionFel: sale.AutorizacionFel,
-      serieFel: sale.SerieFel,
-      numeroFel: sale.NumeroFel,
-      motivo: `ANULACION VENTA ${sale.NumeroVenta}`,
-      fechaAnulacion: new Date(),
-    });
+  if (sale.RequiereFactura) {
+    if (!sale.AutorizacionFel || !sale.SerieFel || !sale.NumeroFel) {
+      throw new Error('FEL: No se puede anular la venta porque faltan los identificadores de la factura certificada');
+    }
 
-    rutaPdfFelAnulacion = anulacionResult.rutaPdfFel;
+    if (sale.FechaAnulacionFel) {
+      felAnulacion = {
+        confirmada: true,
+        fechaAnulacionFel: sale.FechaAnulacionFel,
+        rutaPdfFel: sale.RutaPdfFelAnulacion,
+      };
+    } else {
+      felAnulacion = await anulateFelInvoice({
+        idVenta: sale.Id,
+        numeroVenta: sale.NumeroVenta,
+        autorizacionFel: sale.AutorizacionFel,
+        serieFel: sale.SerieFel,
+        numeroFel: sale.NumeroFel,
+        motivo: `ANULACION VENTA ${sale.NumeroVenta}`,
+        fechaAnulacion: new Date(),
+      });
+
+      if (felAnulacion.confirmada && felAnulacion.fechaAnulacionFel) {
+        let savedConfirmation: { count: number };
+        try {
+          savedConfirmation = await prisma.venta.updateMany({
+            where: { Id: sale.Id, Anulado: false, FechaAnulacionFel: null },
+            data: {
+              FechaAnulacionFel: felAnulacion.fechaAnulacionFel,
+              RutaPdfFelAnulacion: felAnulacion.rutaPdfFel,
+            },
+          });
+        } catch (error) {
+          console.error(JSON.stringify({
+            event: 'fel.persistence',
+            operation: 'annulment',
+            saleId: sale.Id,
+            outcome: 'provider_confirmed_local_persistence_failed',
+            uuid: sale.AutorizacionFel,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+            prismaCode: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null,
+          }));
+          throw new Error('FEL: Ecofacturas confirmó la anulación, pero no se pudo guardar la confirmación local');
+        }
+
+        if (savedConfirmation.count !== 1) {
+          const currentSale = await prisma.venta.findUnique({
+            where: { Id: sale.Id },
+            select: {
+              Anulado: true,
+              FechaAnulacionFel: true,
+              RutaPdfFelAnulacion: true,
+            },
+          });
+          if (!currentSale?.FechaAnulacionFel) {
+            throw new Error('FEL: Ecofacturas confirmó la anulación, pero no se pudo guardar la confirmación local');
+          }
+          felAnulacion = {
+            confirmada: true,
+            fechaAnulacionFel: currentSale.FechaAnulacionFel,
+            rutaPdfFel: currentSale.RutaPdfFelAnulacion,
+          };
+        }
+
+        console.info(JSON.stringify({
+          event: 'fel.persistence',
+          operation: 'annulment',
+          saleId: sale.Id,
+          outcome: 'provider_confirmation_persisted',
+          uuid: sale.AutorizacionFel,
+          serie: sale.SerieFel,
+          numero: sale.NumeroFel,
+          providerDate: felAnulacion.fechaAnulacionFel?.toISOString() ?? null,
+        }));
+      }
+    }
   }
 
   await prisma.$transaction(async (tx) => {
@@ -2175,7 +2285,6 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
         Anulado: true,
         IdUsuarioAnulador: idUsuarioAnulador,
         FechaAnulacion: fechaAnulacion,
-        ...(rutaPdfFelAnulacion ? { RutaPdfFel: rutaPdfFelAnulacion } : {}),
       },
     });
 
@@ -2194,11 +2303,49 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
         IdUsuarioModificador: idUsuarioAnulador,
       },
     });
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }).catch((error: unknown) => {
+    if (felAnulacion) {
+      console.error(JSON.stringify({
+        event: 'fel.persistence',
+        operation: 'annulment',
+        saleId: sale.Id,
+        outcome: 'transaction_failed_after_provider_confirmation',
+        uuid: sale.AutorizacionFel,
+        serie: sale.SerieFel,
+        numero: sale.NumeroFel,
+        providerDate: felAnulacion.fechaAnulacionFel?.toISOString() ?? null,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        prismaCode: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null,
+      }));
+    }
+    throw error;
+  });
 
+  if (felAnulacion) {
+    console.info(JSON.stringify({
+      event: 'fel.persistence',
+      operation: 'annulment',
+      saleId: sale.Id,
+      outcome: 'persisted',
+      uuid: sale.AutorizacionFel,
+      serie: sale.SerieFel,
+      numero: sale.NumeroFel,
+      providerDate: felAnulacion.fechaAnulacionFel?.toISOString() ?? null,
+    }));
+  }
   // Se notifica solo cuando FEL (si aplicaba) y la transacción de anulación
   // ya terminaron correctamente; nunca entre ambos pasos.
   notifyVentaAnulada({ numeroVenta: sale.NumeroVenta, cliente: sale.Cliente.Entidad.NombreCompleto });
+  return {
+    anulada: true,
+    felAnulacion: felAnulacion
+      ? {
+          confirmada: felAnulacion.confirmada,
+          fechaAnulacionFel: felAnulacion.fechaAnulacionFel,
+          rutaPdfFel: felAnulacion.rutaPdfFel,
+        }
+      : null,
+  };
 }
 
 export async function listSalePayments(idVenta: number) {

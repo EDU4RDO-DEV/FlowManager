@@ -46,6 +46,12 @@ type FelIssueResult = {
   rutaPdfFel: string | null;
 };
 
+type FelAnulateResult = {
+  confirmada: boolean;
+  fechaAnulacionFel: Date | null;
+  rutaPdfFel: string | null;
+};
+
 type ActiveFelConfig = {
   environment: 'production' | 'sandbox';
   servidor: string;
@@ -70,8 +76,83 @@ type ActiveFelConfig = {
   timeoutMs: number;
 };
 
+type FelSoapResponse = {
+  body: string;
+  statusCode: number;
+  contentType: string | null;
+};
+
+function safeFelEndpoint(endpoint: string): string {
+  try {
+    const url = new URL(endpoint);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return 'invalid-endpoint';
+  }
+}
+
+function logFelOperation(details: {
+  operation: 'emission' | 'annulment';
+  input: IssueFelInput | AnulateFelInput;
+  config: ActiveFelConfig;
+  endpoint: string;
+  startedAt: number;
+  outcome: 'confirmed' | 'failed' | 'simulated';
+  response?: FelSoapResponse;
+  result?: {
+    code?: string | null;
+    message?: string;
+    uuid?: string;
+    serie?: string;
+    numero?: string;
+    date?: Date | null;
+  };
+  error?: unknown;
+}): void {
+  const errorMessage = details.error instanceof Error ? details.error.message : undefined;
+  const codeFromError = errorMessage?.match(/Codigo="(\d+)"/i)?.[1] ?? null;
+  const record = {
+    event: 'fel.operation',
+    operation: details.operation,
+    saleId: details.input.idVenta,
+    saleNumber: details.input.numeroVenta,
+    environment: details.config.environment,
+    endpoint: safeFelEndpoint(details.endpoint),
+    httpStatus: details.response?.statusCode ?? (details.error instanceof FelHttpError
+      ? details.error.statusCode
+      : null),
+    contentType: details.response?.contentType ?? (details.error instanceof FelHttpError
+      ? details.error.contentType
+      : null),
+    outcome: details.outcome,
+    providerResultCode: details.result?.code ?? codeFromError,
+    providerMessage: details.result?.message ?? errorMessage ?? null,
+    uuid: details.result?.uuid ?? null,
+    serie: details.result?.serie ?? null,
+    numero: details.result?.numero ?? null,
+    providerDate: details.result?.date?.toISOString() ?? null,
+    durationMs: Date.now() - details.startedAt,
+  };
+  const serialized = JSON.stringify(record);
+  if (details.outcome === 'failed') {
+    console.error(serialized);
+  } else {
+    console.info(serialized);
+  }
+}
+
+class FelHttpError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode: number,
+    readonly contentType: string | null,
+  ) {
+    super(message);
+  }
+}
+
 function getFelEnvironment(): ActiveFelConfig['environment'] {
-  const environment = (process.env.FEL_ENVIRONMENT ?? 'sandbox').trim().toLowerCase();
+  const environment = process.env.FEL_ENVIRONMENT?.trim().toLowerCase();
   if (environment === 'production' || environment === 'sandbox') {
     return environment;
   }
@@ -117,10 +198,6 @@ function shouldUseMockByDefault(): boolean {
   }
 
   return useMock;
-}
-
-function shouldAllowFelFallback(): boolean {
-  return getFelEnvironment() === 'sandbox' && getFelBoolean('ALLOW_FALLBACK', false);
 }
 
 function getEmitPath(): string {
@@ -287,18 +364,24 @@ function parseFelIssueResponse(rawResponse: string): ParsedFelIssueResponse {
   const fechaCertificacion = extractXmlAttributeValue(decoded, 'DTE', 'FechaCertificacion');
   const pdfBase64 = extractXmlTagValue(decoded, 'Pdf');
 
-  if (!numeroAutorizacion || !serie || !numero) {
+  if (!numeroAutorizacion || !serie || !numero || !fechaCertificacion) {
     throw new Error('FEL: Respuesta de emisión sin datos de autorización');
   }
+  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(numeroAutorizacion)) {
+    throw new Error('FEL: Respuesta de emisión con UUID de autorización inválido');
+  }
 
-  const fechaEmisionFel = fechaCertificacion ? new Date(fechaCertificacion) : new Date();
+  const fechaEmisionFel = new Date(fechaCertificacion);
+  if (Number.isNaN(fechaEmisionFel.getTime())) {
+    throw new Error('FEL: Respuesta de emisión con fecha de certificación inválida');
+  }
 
   return {
     autorizacionFel: numeroAutorizacion,
     numeroFel: numero,
     serieFel: serie,
     qrFel: buildQrUrl(numeroAutorizacion),
-    fechaEmisionFel: Number.isNaN(fechaEmisionFel.getTime()) ? new Date() : fechaEmisionFel,
+    fechaEmisionFel,
     pdfBase64,
   };
 }
@@ -379,12 +462,12 @@ function parseReceptorInfoResponse(rawResponse: string): ReceptorInfoResult {
   return { nit, nombre, direccion: direccion || null };
 }
 
-export async function postFelSoap(
+async function postFelSoapWithMetadata(
   endpoint: string,
   soapAction: string,
   envelope: string,
   config: Pick<ActiveFelConfig, 'requireSsl' | 'pfx' | 'pfxPassword' | 'timeoutMs'>,
-): Promise<string> {
+): Promise<FelSoapResponse> {
   const url = new URL(endpoint);
   if (config.requireSsl && url.protocol !== 'https:') {
     throw new Error('FEL: La configuración requiere un endpoint HTTPS');
@@ -430,12 +513,17 @@ export async function postFelSoap(
           return;
         }
         const statusCode = response.statusCode ?? 0;
+        const contentType = response.headers['content-type'] ?? null;
         if (statusCode < 200 || statusCode >= 300) {
-          fail(new Error(`HTTP ${statusCode}`));
+          fail(new FelHttpError(`HTTP ${statusCode}`, statusCode, contentType));
           return;
         }
         settled = true;
-        resolve(Buffer.concat(chunks).toString('utf8'));
+        resolve({
+          body: Buffer.concat(chunks).toString('utf8'),
+          statusCode,
+          contentType,
+        });
       });
     };
 
@@ -466,6 +554,16 @@ export async function postFelSoap(
     request.on('error', fail);
     request.end(envelope, 'utf8');
   });
+}
+
+export async function postFelSoap(
+  endpoint: string,
+  soapAction: string,
+  envelope: string,
+  config: Pick<ActiveFelConfig, 'requireSsl' | 'pfx' | 'pfxPassword' | 'timeoutMs'>,
+): Promise<string> {
+  const response = await postFelSoapWithMetadata(endpoint, soapAction, envelope, config);
+  return response.body;
 }
 
 async function fetchReceptorInfoRaw(nitReceptor: string, config: ActiveFelConfig): Promise<string> {
@@ -558,7 +656,7 @@ async function getActiveFelConfig(tx?: Prisma.TransactionClient): Promise<Active
 
   const servidor = (getFelEnvironmentValue('BASE_URL') ?? '').trim();
   const usuario = (getFelEnvironmentValue('USUARIO') ?? '').trim();
-  const clave = (getFelEnvironmentValue('CLAVE') ?? '').trim();
+  const clave = getFelEnvironmentValue('CLAVE') ?? '';
 
   const cliente = (getFelEnvironmentValue('CLIENTE') ?? (environment === 'sandbox' ? empresa.Nit : '')).trim();
   const nitEmisor = (getFelEnvironmentValue('NIT_EMISOR') ?? (environment === 'sandbox' ? empresa.Nit : '')).trim();
@@ -569,7 +667,7 @@ async function getActiveFelConfig(tx?: Prisma.TransactionClient): Promise<Active
     getFelEnvironmentValue('TIPO_DOCUMENTO') ?? resolveDefaultTipoDocumento(afiliacionIva)
   ).trim();
 
-  if (!servidor || !usuario || !clave) {
+  if (!servidor || !usuario || !clave.trim()) {
     throw new Error(`FEL: Configuración incompleta para el entorno ${environment}`);
   }
 
@@ -691,7 +789,7 @@ async function getActiveFelConfig(tx?: Prisma.TransactionClient): Promise<Active
   };
 }
 
-async function fetchDocumentoRaw(xmldoc: string, config: ActiveFelConfig): Promise<string> {
+async function fetchDocumentoRaw(xmldoc: string, config: ActiveFelConfig): Promise<FelSoapResponse> {
   const endpoint = normalizeUrl(config.servidor, config.emitPath);
 
   const envelope = `<?xml version="1.0" encoding="utf-8"?>
@@ -707,25 +805,50 @@ async function fetchDocumentoRaw(xmldoc: string, config: ActiveFelConfig): Promi
   </soap:Body>
 </soap:Envelope>`;
 
-  return postFelSoap(endpoint, config.soapActionDocument, envelope, config);
+  return postFelSoapWithMetadata(endpoint, config.soapActionDocument, envelope, config);
 }
 
 export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.TransactionClient): Promise<FelIssueResult> {
   const config = await getActiveFelConfig(tx);
+  const endpoint = normalizeUrl(config.servidor, config.emitPath);
   const shouldMock = shouldUseMockByDefault();
-
-  await validateReceiverNit(input.nitFacturado, config);
-
-  const xml = buildFacturaXml(input, config);
-
-  if (shouldMock) {
-    return buildMockIssueResult(input);
-  }
+  const startedAt = Date.now();
+  let response: FelSoapResponse | undefined;
 
   try {
-    const raw = await fetchDocumentoRaw(xml, config);
-    const parsed = parseFelIssueResponse(raw);
+    await validateReceiverNit(input.nitFacturado, config);
+    const xml = buildFacturaXml(input, config);
+
+    if (shouldMock) {
+      logFelOperation({
+        operation: 'emission',
+        input,
+        config,
+        endpoint,
+        startedAt,
+        outcome: 'simulated',
+      });
+      return buildMockIssueResult(input);
+    }
+
+    response = await fetchDocumentoRaw(xml, config);
+    const parsed = parseFelIssueResponse(response.body);
     const rutaPdfFel = savePdfFile(parsed.pdfBase64, `venta-${input.idVenta}-${parsed.serieFel}-${parsed.numeroFel}.pdf`);
+    logFelOperation({
+      operation: 'emission',
+      input,
+      config,
+      endpoint,
+      startedAt,
+      outcome: 'confirmed',
+      response,
+      result: {
+        uuid: parsed.autorizacionFel,
+        serie: parsed.serieFel,
+        numero: parsed.numeroFel,
+        date: parsed.fechaEmisionFel,
+      },
+    });
 
     return {
       autorizacionFel: parsed.autorizacionFel,
@@ -736,19 +859,25 @@ export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.Transacti
       rutaPdfFel,
     };
   } catch (error) {
-    if (!shouldAllowFelFallback()) {
-      if (error instanceof Error && error.message.startsWith('FEL:')) {
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : 'falló conexión';
-      throw new Error(`FEL: Error al emitir documento (${message})`);
+    logFelOperation({
+      operation: 'emission',
+      input,
+      config,
+      endpoint,
+      startedAt,
+      outcome: 'failed',
+      response,
+      error,
+    });
+    if (error instanceof Error && error.message.startsWith('FEL:')) {
+      throw error;
     }
-
-    return buildMockIssueResult(input);
+    const message = error instanceof Error ? error.message : 'falló conexión';
+    throw new Error(`FEL: Error al emitir documento (${message})`);
   }
 }
 
-function parseFelAnulateResponse(rawResponse: string): { pdfBase64: string | null } {
+function parseFelAnulateResponse(rawResponse: string): { pdfBase64: string | null; fechaAnulacionFel: Date } {
   const decoded = decodeXmlEntities(rawResponse);
 
   const fatalErrorMatch = decoded.match(/<Errores>[\s\S]*?<\/Errores>/i);
@@ -763,14 +892,19 @@ function parseFelAnulateResponse(rawResponse: string): { pdfBase64: string | nul
     throw new Error('FEL: Respuesta de anulación sin confirmación');
   }
 
-  return { pdfBase64: extractXmlTagValue(decoded, 'Pdf') };
+  const fechaAnulacionFel = new Date(fechaAnulacion);
+  if (Number.isNaN(fechaAnulacionFel.getTime())) {
+    throw new Error('FEL: Respuesta de anulación con fecha inválida');
+  }
+
+  return { pdfBase64: extractXmlTagValue(decoded, 'Pdf'), fechaAnulacionFel };
 }
 
 async function fetchAnulacionRaw(
   numeroAutorizacion: string,
   motivo: string,
   config: ActiveFelConfig,
-): Promise<string> {
+): Promise<FelSoapResponse> {
   const endpoint = normalizeUrl(config.servidor, config.anulatePath);
 
   const envelope = `<?xml version="1.0" encoding="utf-8"?>
@@ -787,30 +921,71 @@ async function fetchAnulacionRaw(
   </soap:Body>
 </soap:Envelope>`;
 
-  return postFelSoap(endpoint, config.soapActionAnulate, envelope, config);
+  return postFelSoapWithMetadata(endpoint, config.soapActionAnulate, envelope, config);
 }
 
 export async function anulateFelInvoice(
   input: AnulateFelInput,
   tx?: Prisma.TransactionClient,
-): Promise<{ rutaPdfFel: string | null }> {
+): Promise<FelAnulateResult> {
+  if (!input.autorizacionFel.trim() || !input.serieFel.trim() || !input.numeroFel.trim()) {
+    throw new Error('FEL: La factura no tiene UUID, serie y número de certificación para anular');
+  }
+
   const config = await getActiveFelConfig(tx);
+  const endpoint = normalizeUrl(config.servidor, config.anulatePath);
   const shouldMock = shouldUseMockByDefault();
+  const startedAt = Date.now();
+  let response: FelSoapResponse | undefined;
 
   if (shouldMock) {
-    return { rutaPdfFel: null };
+    logFelOperation({
+      operation: 'annulment',
+      input,
+      config,
+      endpoint,
+      startedAt,
+      outcome: 'simulated',
+    });
+    return { confirmada: false, fechaAnulacionFel: null, rutaPdfFel: null };
   }
 
   try {
-    const raw = await fetchAnulacionRaw(input.autorizacionFel, input.motivo, config);
-    const { pdfBase64 } = parseFelAnulateResponse(raw);
+    response = await fetchAnulacionRaw(input.autorizacionFel, input.motivo, config);
+    const { pdfBase64, fechaAnulacionFel } = parseFelAnulateResponse(response.body);
     const rutaPdfFel = savePdfFile(
       pdfBase64,
       `venta-${input.idVenta}-${input.serieFel}-${input.numeroFel}-anulado.pdf`,
     );
 
-    return { rutaPdfFel };
+    logFelOperation({
+      operation: 'annulment',
+      input,
+      config,
+      endpoint,
+      startedAt,
+      outcome: 'confirmed',
+      response,
+      result: {
+        uuid: input.autorizacionFel,
+        serie: input.serieFel,
+        numero: input.numeroFel,
+        date: fechaAnulacionFel,
+      },
+    });
+
+    return { confirmada: true, fechaAnulacionFel, rutaPdfFel };
   } catch (error) {
+    logFelOperation({
+      operation: 'annulment',
+      input,
+      config,
+      endpoint,
+      startedAt,
+      outcome: 'failed',
+      response,
+      error,
+    });
     if (error instanceof Error && error.message.startsWith('FEL:')) {
       throw error;
     }
