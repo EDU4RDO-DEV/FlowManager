@@ -11,6 +11,7 @@
     "prisma:migrate:create": "node scripts/prisma-migrate.js create",
     "prisma:migrate:deploy": "node scripts/prisma-migrate.js deploy && prisma generate",
     "prisma:migrate:status": "node scripts/prisma-migrate.js status",
+    "db:verify-backup-restore": "node scripts/verify-backup-restore.js",
     "test": "vitest run",
     "test:integration:routes": "node scripts/run-route-integration-tests.js",
     "test:watch": "vitest"
