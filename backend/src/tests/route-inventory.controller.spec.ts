@@ -68,6 +68,7 @@ describe('dispatch products returnable stock comparison', () => {
       40,
       12,
       'Estado capturado incorrectamente',
+      undefined,
     );
     expect(response.status).toHaveBeenCalledWith(200);
     expect(response.json).toHaveBeenCalledWith({
@@ -75,6 +76,22 @@ describe('dispatch products returnable stock comparison', () => {
       data: { idDespacho: 90, anulada: true },
       message: 'Despacho anulado con reversión auditada; puede registrarse nuevamente',
     });
+  });
+
+  it('passes idDespacho through when disambiguating among several active dispatches', async () => {
+    cancelRouteDispatchMock.mockResolvedValueOnce({ idDespacho: 91, anulada: true });
+    const response = createResponse();
+
+    await cancelRouteDispatchController(
+      {
+        auth: { userId: 12 },
+        params: { id: '40' },
+        body: { motivo: 'Corrección', idDespacho: 91 },
+      } as unknown as Request,
+      response as unknown as Response,
+    );
+
+    expect(cancelRouteDispatchMock).toHaveBeenCalledWith(40, 12, 'Corrección', 91);
   });
 
   it('records a route-return cancellation with its reason and authenticated user', async () => {
@@ -90,7 +107,7 @@ describe('dispatch products returnable stock comparison', () => {
       response as unknown as Response,
     );
 
-    expect(cancelRouteReturnMock).toHaveBeenCalledWith(40, 12, 'Se clasificaron mal los envases');
+    expect(cancelRouteReturnMock).toHaveBeenCalledWith(40, 12, 'Se clasificaron mal los envases', undefined);
     expect(response.status).toHaveBeenCalledWith(200);
     expect(response.json).toHaveBeenCalledWith({
       ok: true,

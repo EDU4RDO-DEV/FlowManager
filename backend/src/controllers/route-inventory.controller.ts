@@ -159,7 +159,7 @@ export async function cancelRouteDispatchController(req: Request, res: Response)
     if (!idUsuario) return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
     const { id } = routeInventoryIdParamsSchema.parse(req.params);
     const input = cancelRouteDispatchSchema.parse(req.body);
-    const data = await cancelRouteDispatch(id, idUsuario, input.motivo);
+    const data = await cancelRouteDispatch(id, idUsuario, input.motivo, input.idDespacho);
     return res.status(200).json({
       ok: true,
       data,
@@ -176,7 +176,7 @@ export async function cancelRouteReturnController(req: Request, res: Response) {
     if (!idUsuario) return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
     const { id } = routeInventoryIdParamsSchema.parse(req.params);
     const input = cancelRouteReturnSchema.parse(req.body);
-    const data = await cancelRouteReturn(id, idUsuario, input.motivo);
+    const data = await cancelRouteReturn(id, idUsuario, input.motivo, input.idDevolucion);
     return res.status(200).json({
       ok: true,
       data,

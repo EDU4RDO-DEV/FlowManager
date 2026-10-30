@@ -47,9 +47,13 @@ export const createRouteDispatchSchema = z.object({
 
 export const cancelRouteDispatchSchema = z.object({
   motivo: z.string().trim().min(3).max(255),
+  idDespacho: positiveInt.optional(),
 });
 
-export const cancelRouteReturnSchema = cancelRouteDispatchSchema;
+export const cancelRouteReturnSchema = z.object({
+  motivo: z.string().trim().min(3).max(255),
+  idDevolucion: positiveInt.optional(),
+});
 
 export const createRouteReturnSchema = z.object({
   observaciones: z.string().trim().max(255).optional(),

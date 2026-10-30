@@ -56,7 +56,7 @@ vi.mock('../services/inventory-movement.service', () => ({
 
 import { createSale } from '../services/sale.service';
 
-function routeSession(available: number, hasReturn = false) {
+function routeSession(available: number, hasReturn = false, returnedQuantity = 0) {
   return {
     Id: 12,
     Estado: 'EN_CURSO',
@@ -69,10 +69,19 @@ function routeSession(available: number, hasReturn = false) {
         Cantidad: available,
       }],
     }],
-    DevolucionRuta: hasReturn ? [{ Id: 91, Detalles: [] }] : [],
+    DevolucionRuta: hasReturn
+      ? [{
+          Id: 91,
+          Detalles: returnedQuantity > 0
+            ? [{ IdInventarioItem: 9, CantidadRecibida: returnedQuantity, CantidadDanada: 0 }]
+            : [],
+        }]
+      : [],
     AjustesRuta: [],
     MovimientosEnvaseCliente: [],
     Venta: [],
+    TransferenciasOrigen: [],
+    TransferenciasDestino: [],
   };
 }
 
@@ -150,6 +159,7 @@ function configureRouteSale(
   esEnvaseRetornable = false,
   esVendible = true,
   existencia = 0,
+  returnedQuantity = 0,
 ) {
   prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 1 });
   prismaMock.cliente.findFirst.mockResolvedValueOnce({
@@ -159,7 +169,7 @@ function configureRouteSale(
     Entidad: { NombreCompleto: 'Cliente', Nit: null },
   });
   prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 12, Estado: 'EN_CURSO' });
-  prismaMock.rutaSesion.findFirst.mockResolvedValueOnce(routeSession(available, hasReturn));
+  prismaMock.rutaSesion.findFirst.mockResolvedValueOnce(routeSession(available, hasReturn, returnedQuantity));
   prismaMock.$transaction.mockImplementation(
     async (callback: (tx: typeof prismaMock) => Promise<unknown>) => callback(prismaMock),
   );
@@ -265,12 +275,33 @@ describe('route sales inventory source', () => {
     expect(prismaMock.venta.create).not.toHaveBeenCalled();
   });
 
-  it('rejects new route sales after the physical return was confirmed', async () => {
+  it('allows a route sale even after a devolución was registered, as long as disponible remains (D-DIST-06)', async () => {
+    // Reabastecimiento tras devolución: una devolución existe pero no afectó este producto,
+    // así que el bloqueo histórico (bloquear toda venta por la mera existencia de una
+    // devolución) ya no aplica.
     configureRouteSale(5, true);
 
-    await expect(createSale(input)).rejects.toThrow(
-      'No se pueden registrar ventas después de confirmar la devolución',
-    );
+    const result = await createSale(input);
+
+    expect(result.idRutaSesion).toBe(12);
+    expect(prismaMock.venta.create).toHaveBeenCalledOnce();
+  });
+
+  it('reduces disponible by what was actually returned, without blocking the remaining balance', async () => {
+    // Despachado 5, devueltos 2 -> disponible real 3. La venta de 2 debe seguir funcionando.
+    configureRouteSale(5, true, false, true, 0, 2);
+
+    const result = await createSale(input);
+
+    expect(result.idRutaSesion).toBe(12);
+    expect(prismaMock.venta.create).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a route sale that would exceed the balance remaining after a devolución', async () => {
+    // Despachado 5, devueltos 4 -> disponible real 1. Vender 2 debe fallar.
+    configureRouteSale(5, true, false, true, 0, 4);
+
+    await expect(createSale(input)).rejects.toThrow('Existencia insuficiente en el vehículo');
 
     expect(prismaMock.venta.create).not.toHaveBeenCalled();
   });

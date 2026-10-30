@@ -4,8 +4,8 @@ const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
     $transaction: vi.fn(),
     rutaSesion: { findFirst: vi.fn() },
-    despachoRuta: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
-    devolucionRuta: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
+    despachoRuta: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    devolucionRuta: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
     reservaProforma: {
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       findMany: vi.fn().mockResolvedValue([]),
@@ -49,6 +49,8 @@ function routeInventory(overrides: Record<string, unknown> = {}) {
     AjustesRuta: [],
     Venta: [],
     MovimientosEnvaseCliente: [],
+    TransferenciasOrigen: [],
+    TransferenciasDestino: [],
     ...overrides,
   };
 }
@@ -97,7 +99,7 @@ describe('route inventory lifecycle', () => {
   });
 
   it('confirms a dispatch, decreases plant stock, and writes an auditable movement atomically', async () => {
-    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 40, Estado: 'EN_CURSO', Venta: [] });
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 40, Estado: 'EN_CURSO', DevolucionRuta: [] });
     prismaMock.despachoRuta.findFirst.mockResolvedValueOnce(null);
     prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
       { Id: 7, Nombre: 'Agua 5 galones', UnidadMedida: 'garrafón', Existencia: 20, EsVendible: true },
@@ -135,7 +137,7 @@ describe('route inventory lifecycle', () => {
   });
 
   it('rejects dispatch beyond plant stock without creating movement records', async () => {
-    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 40, Estado: 'EN_CURSO', Venta: [] });
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 40, Estado: 'EN_CURSO', DevolucionRuta: [] });
     prismaMock.despachoRuta.findFirst.mockResolvedValueOnce(null);
     prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
       { Id: 7, Nombre: 'Agua 5 galones', UnidadMedida: 'garrafón', Existencia: 2, EsVendible: true },
@@ -150,7 +152,7 @@ describe('route inventory lifecycle', () => {
   });
 
   it('uses an explicitly selected state to classify legacy pending stock during dispatch', async () => {
-    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 40, Estado: 'EN_CURSO', Venta: [] });
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 40, Estado: 'EN_CURSO', DevolucionRuta: [] });
     prismaMock.despachoRuta.findFirst.mockResolvedValueOnce(null);
     prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
       {
@@ -183,7 +185,7 @@ describe('route inventory lifecycle', () => {
   });
 
   it('dispatching 20 full returnable products from 200 leaves 180 full at plant and 20 in route', async () => {
-    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 40, Estado: 'EN_CURSO', Venta: [] });
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 40, Estado: 'EN_CURSO', DevolucionRuta: [] });
     prismaMock.despachoRuta.findFirst.mockResolvedValueOnce(null);
     prismaMock.inventarioItem.findMany.mockResolvedValueOnce([{
       Id: 7,
@@ -212,7 +214,7 @@ describe('route inventory lifecycle', () => {
   });
 
   it('rejects non-sellable products before creating a dispatch or changing plant stock', async () => {
-    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 40, Estado: 'EN_CURSO', Venta: [] });
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 40, Estado: 'EN_CURSO', DevolucionRuta: [] });
     prismaMock.despachoRuta.findFirst.mockResolvedValueOnce(null);
     prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
       { Id: 7, Nombre: 'Materia prima', Existencia: 20, EsVendible: false },
@@ -227,17 +229,37 @@ describe('route inventory lifecycle', () => {
     expect(prismaMock.bitacoraInventario.create).not.toHaveBeenCalled();
   });
 
-  it('does not create a duplicate dispatch or repeat its inventory movement on retry', async () => {
-    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 40, Estado: 'EN_CURSO', Venta: [] });
-    prismaMock.despachoRuta.findFirst.mockResolvedValueOnce({ Id: 90 });
+  it('allows a second dispatch on the same session (reabastecimiento) when there is no active devolución', async () => {
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 40, Estado: 'EN_CURSO', DevolucionRuta: [] });
+    prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
+      { Id: 7, Nombre: 'Agua 5 galones', UnidadMedida: 'garrafón', Existencia: 20, EsVendible: true },
+    ]);
+    prismaMock.despachoRuta.create.mockResolvedValueOnce({
+      Id: 91,
+      Detalles: [{ IdInventarioItem: 7, Cantidad: 6 }],
+    });
 
-    await expect(
-      createRouteDispatch(40, 12, { detalle: [{ idInventarioItem: 7, cantidad: 6 }] }),
-    ).rejects.toThrow('ya tiene un despacho');
+    await createRouteDispatch(40, 12, { detalle: [{ idInventarioItem: 7, cantidad: 6 }] });
 
-    expect(prismaMock.despachoRuta.create).not.toHaveBeenCalled();
-    expect(prismaMock.inventarioItem.update).not.toHaveBeenCalled();
-    expect(prismaMock.bitacoraInventario.create).not.toHaveBeenCalled();
+    expect(prismaMock.despachoRuta.create).toHaveBeenCalledOnce();
+    // El bloqueo histórico por "despacho ya confirmado" ya no existe (T-F2-DIST-02):
+    // ahora se permiten varios despachos activos por sesión para soportar reabastecimiento.
+    expect(prismaMock.despachoRuta.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('allows a new dispatch after a devolución was already registered (D-DIST-06 reabastecimiento)', async () => {
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 40, Estado: 'EN_CURSO' });
+    prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
+      { Id: 7, Nombre: 'Agua 5 galones', UnidadMedida: 'garrafón', Existencia: 20, EsVendible: true },
+    ]);
+    prismaMock.despachoRuta.create.mockResolvedValueOnce({
+      Id: 92,
+      Detalles: [{ IdInventarioItem: 7, Cantidad: 6 }],
+    });
+
+    await createRouteDispatch(40, 12, { detalle: [{ idInventarioItem: 7, cantidad: 6 }] });
+
+    expect(prismaMock.despachoRuta.create).toHaveBeenCalledOnce();
   });
 
   it('reverses and audits a dispatch cancellation before any downstream route operation', async () => {
@@ -248,15 +270,17 @@ describe('route inventory lifecycle', () => {
       DevolucionRuta: [],
       AjustesRuta: [],
       MovimientosEnvaseCliente: [],
+      TransferenciasOrigen: [],
+      TransferenciasDestino: [],
     });
-    prismaMock.despachoRuta.findFirst.mockResolvedValueOnce({
+    prismaMock.despachoRuta.findMany.mockResolvedValueOnce([{
       Id: 90,
       Detalles: [{
         IdInventarioItem: 7,
         Cantidad: 20,
         EstadoEnvase: 'LLENO',
       }],
-    });
+    }]);
     prismaMock.inventarioItem.findMany.mockResolvedValueOnce([{
       Id: 7,
       Nombre: 'Garrafón',
@@ -309,6 +333,8 @@ describe('route inventory lifecycle', () => {
       DevolucionRuta: [],
       AjustesRuta: [],
       MovimientosEnvaseCliente: [],
+      TransferenciasOrigen: [],
+      TransferenciasDestino: [],
     });
 
     await expect(cancelRouteDispatch(40, 12, 'Corrección solicitada')).rejects.toThrow(
@@ -326,7 +352,7 @@ describe('route inventory lifecycle', () => {
       Estado: 'EN_CURSO',
       AjustesRuta: [],
     });
-    prismaMock.devolucionRuta.findFirst.mockResolvedValueOnce({ Id: 92 });
+    prismaMock.devolucionRuta.findMany.mockResolvedValueOnce([{ Id: 92 }]);
     prismaMock.devolucionRuta.update.mockResolvedValueOnce({});
 
     await expect(cancelRouteReturn(40, 12, 'Se clasificaron mal los envases')).resolves.toEqual({
@@ -364,6 +390,58 @@ describe('route inventory lifecycle', () => {
       'No se puede anular la devolución después de autorizar diferencias',
     );
     expect(prismaMock.devolucionRuta.update).not.toHaveBeenCalled();
+  });
+
+  it('requires idDevolucion to disambiguate cancellation when several returns are active (D-DIST-06)', async () => {
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({
+      Id: 40,
+      Estado: 'EN_CURSO',
+      AjustesRuta: [],
+    });
+    prismaMock.devolucionRuta.findMany.mockResolvedValueOnce([{ Id: 92 }, { Id: 95 }]);
+
+    await expect(cancelRouteReturn(40, 12, 'Corrección')).rejects.toThrow(
+      'especifique idDevolucion a anular',
+    );
+    expect(prismaMock.devolucionRuta.update).not.toHaveBeenCalled();
+  });
+
+  it('cancels the explicitly selected devolución when several are active', async () => {
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({
+      Id: 40,
+      Estado: 'EN_CURSO',
+      AjustesRuta: [],
+    });
+    prismaMock.devolucionRuta.findMany.mockResolvedValueOnce([{ Id: 92 }, { Id: 95 }]);
+    prismaMock.devolucionRuta.update.mockResolvedValueOnce({});
+
+    await expect(cancelRouteReturn(40, 12, 'Corrección', 95)).resolves.toEqual({
+      idDevolucion: 95,
+      anulada: true,
+    });
+    expect(prismaMock.devolucionRuta.update).toHaveBeenCalledWith({
+      where: { Id: 95 },
+      data: expect.objectContaining({ Anulado: true }),
+    });
+  });
+
+  it('allows registering a new devolución after a prior one, as long as the request fits the remaining pending balance (D-DIST-06)', async () => {
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce(routeInventory({
+      DespachoRuta: [
+        { Id: 90, Detalles: [{ IdInventarioItem: 7, NombreSnapshot: 'Agua', UnidadMedidaSnapshot: 'u', Cantidad: 10 }] },
+        { Id: 96, Detalles: [{ IdInventarioItem: 7, NombreSnapshot: 'Agua', UnidadMedidaSnapshot: 'u', Cantidad: 5 }] },
+      ],
+      DevolucionRuta: [{ Id: 92, Anulado: false, Detalles: [{ IdInventarioItem: 7, CantidadRecibida: 4, CantidadDanada: 0 }] }],
+    }));
+    prismaMock.inventarioItem.findMany.mockResolvedValueOnce([{ Id: 7, EsEnvaseRetornable: false }]);
+    prismaMock.devolucionRuta.create.mockResolvedValueOnce({ Id: 97, Detalles: [] });
+
+    // Pendiente real = 10 (desp1) + 5 (desp2 - reabastecimiento) - 4 (devolución previa) = 11.
+    await createRouteReturn(40, 12, {
+      detalle: [{ idInventarioItem: 7, cantidadRecibida: 11, cantidadDanada: 0, cantidadEnvaseVacio: 0, cantidadEnvaseLleno: 0 }],
+    });
+
+    expect(prismaMock.devolucionRuta.create).toHaveBeenCalledOnce();
   });
 
   it('excludes annulled receipts from truck balances and returns their audit history', async () => {
@@ -425,14 +503,14 @@ describe('route inventory lifecycle', () => {
   });
 
   it('transfers only verified sellable return quantities to plant at route closure', async () => {
-    prismaMock.devolucionRuta.findFirst.mockResolvedValue({
+    prismaMock.devolucionRuta.findMany.mockResolvedValue([{
       Id: 92,
       Detalles: [{
         IdInventarioItem: 7,
         CantidadRecibida: 5,
         CantidadDanada: 1,
       }],
-    });
+    }]);
     prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
       { Id: 7, Nombre: 'Agua 5 galones', Existencia: 72 },
     ]);
@@ -455,6 +533,38 @@ describe('route inventory lifecycle', () => {
         ExistenciaAnterior: 72,
         NuevaExistencia: 76,
       }),
+    });
+  });
+
+  it('accumulates sellable quantities from several active devoluciones for the same item at closure (D-DIST-06)', async () => {
+    prismaMock.devolucionRuta.findMany.mockResolvedValue([
+      { Id: 92, Detalles: [{ IdInventarioItem: 7, CantidadRecibida: 4, CantidadDanada: 0 }] },
+      { Id: 97, Detalles: [{ IdInventarioItem: 7, CantidadRecibida: 3, CantidadDanada: 1 }] },
+    ]);
+    prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
+      { Id: 7, Nombre: 'Agua 5 galones', Existencia: 70 },
+    ]);
+    prismaMock.inventarioItem.update
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({});
+    prismaMock.bitacoraInventario.create.mockResolvedValue({});
+
+    await transferVerifiedRouteReturnToPlant(prismaMock as never, 40, 15);
+
+    // Primera devolución: +4 (70 -> 74). Segunda: +2 vendible de 3 recibidos con 1 dañado (74 -> 76).
+    expect(prismaMock.inventarioItem.update).toHaveBeenNthCalledWith(1, {
+      where: { Id: 7 },
+      data: { Existencia: 74 },
+    });
+    expect(prismaMock.inventarioItem.update).toHaveBeenNthCalledWith(2, {
+      where: { Id: 7 },
+      data: { Existencia: 76 },
+    });
+    expect(prismaMock.bitacoraInventario.create).toHaveBeenNthCalledWith(1, {
+      data: expect.objectContaining({ Documento: '92', Cantidad: 4, ExistenciaAnterior: 70, NuevaExistencia: 74 }),
+    });
+    expect(prismaMock.bitacoraInventario.create).toHaveBeenNthCalledWith(2, {
+      data: expect.objectContaining({ Documento: '97', Cantidad: 2, ExistenciaAnterior: 74, NuevaExistencia: 76 }),
     });
   });
 

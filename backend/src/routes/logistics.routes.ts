@@ -40,6 +40,20 @@ import {
   getRouteSettlementController,
   listDispatchProductsController,
 } from '../controllers/route-inventory.controller';
+import {
+  closeJornadaController,
+  createJornadaController,
+  getJornadaByIdController,
+  listJornadasController,
+} from '../controllers/jornada.controller';
+import {
+  cancelVehicleTransferController,
+  confirmVehicleTransferController,
+  createVehicleHandoffController,
+  createVehicleTransferController,
+  listVehicleTransfersController,
+  rejectVehicleTransferController,
+} from '../controllers/route-distribution.controller';
 
 const logisticsRouter = Router();
 
@@ -94,6 +108,11 @@ logisticsRouter.post(
   requireModulePermission('despacho', 'update'),
   createRouteAdjustmentController,
 );
+logisticsRouter.post(
+  '/rutas/sesiones/:id/relevo',
+  requireModulePermission('despacho', 'create'),
+  createVehicleHandoffController,
+);
 logisticsRouter.get('/rutas/:id/sesiones/:idSesion', requireModulePermission('logistica', 'read'), getRutaSesionByIdController);
 logisticsRouter.post('/rutas/sesiones', requireModulePermission('logistica', 'create'), createRutaSesionController);
 logisticsRouter.patch('/rutas/:id/sesiones/:idSesion', requireModulePermission('logistica', 'update'), updateRutaSesionController);
@@ -117,5 +136,34 @@ logisticsRouter.post('/gastos', requireModulePermission('logistica', 'create'), 
 logisticsRouter.patch('/gastos/:id', requireModulePermission('logistica', 'update'), updateGastoVehiculoController);
 logisticsRouter.delete('/gastos/:id', requireModulePermission('logistica', 'delete'), deleteGastoVehiculoController);
 logisticsRouter.patch('/gastos/:id/restaurar', requireModulePermission('logistica', 'update'), restoreGastoVehiculoController);
+
+// Fase 2 - Distribución: Jornada (D-DIST-01)
+logisticsRouter.get('/jornadas', requireModulePermission('logistica', 'read'), listJornadasController);
+logisticsRouter.get('/jornadas/:id', requireModulePermission('logistica', 'read'), getJornadaByIdController);
+logisticsRouter.post('/jornadas', requireModulePermission('logistica', 'create'), createJornadaController);
+logisticsRouter.patch(
+  '/jornadas/:id/cerrar',
+  requireModulePermission('logistica', 'update'),
+  closeJornadaController,
+);
+
+// Fase 2 - Distribución: transferencias entre vehículos (D-DIST-04, pendiente de ratificación)
+logisticsRouter.get('/transferencias', requireModulePermission('despacho', 'read'), listVehicleTransfersController);
+logisticsRouter.post('/transferencias', requireModulePermission('despacho', 'create'), createVehicleTransferController);
+logisticsRouter.patch(
+  '/transferencias/:id/confirmar',
+  requireModulePermission('despacho', 'update'),
+  confirmVehicleTransferController,
+);
+logisticsRouter.patch(
+  '/transferencias/:id/rechazar',
+  requireModulePermission('despacho', 'update'),
+  rejectVehicleTransferController,
+);
+logisticsRouter.patch(
+  '/transferencias/:id/anular',
+  requireModulePermission('despacho', 'update'),
+  cancelVehicleTransferController,
+);
 
 export default logisticsRouter;

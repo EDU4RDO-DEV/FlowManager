@@ -33,7 +33,7 @@ function roundQuantity(value: number) {
   return Number(value.toFixed(2));
 }
 
-async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number) {
+export async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number) {
   await expireProformaReservations(tx, idRutaSesion);
 
   const session = await tx.rutaSesion.findFirst({
@@ -43,8 +43,7 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
       Estado: true,
       DespachoRuta: {
         where: { Anulado: false },
-        orderBy: { FechaRegistro: 'desc' },
-        take: 1,
+        orderBy: { FechaRegistro: 'asc' },
         include: { Detalles: true },
       },
       DevolucionRuta: {
@@ -75,6 +74,14 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
           Cantidad: true,
           IdDetalleVentaEnvase: true,
         },
+      },
+      TransferenciasOrigen: {
+        where: { Anulado: false, EstadoConfirmacion: { in: ['PENDIENTE', 'CONFIRMADA'] } },
+        select: { Detalles: true },
+      },
+      TransferenciasDestino: {
+        where: { Anulado: false, EstadoConfirmacion: 'CONFIRMADA' },
+        select: { Detalles: true },
       },
     },
   });
@@ -160,12 +167,18 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
   }
 
   const returnedByItem = new Map<number, { cantidad: number; danada: number }>();
-  const activeReturn = session.DevolucionRuta.find((routeReturn) => !routeReturn.Anulado) ?? null;
-  for (const detail of activeReturn?.Detalles ?? []) {
-    returnedByItem.set(detail.IdInventarioItem, {
-      cantidad: detail.CantidadRecibida,
-      danada: detail.CantidadDanada,
-    });
+  // Varias devoluciones activas por sesión (T-F2-DIST reabastecimiento tras devolución):
+  // se agregan todas, no solo la más reciente, para no perder reconciliaciones previas.
+  const activeReturns = session.DevolucionRuta.filter((routeReturn) => !routeReturn.Anulado);
+  const mostRecentReturn = activeReturns[0] ?? null;
+  for (const routeReturn of activeReturns) {
+    for (const detail of routeReturn.Detalles) {
+      const existing = returnedByItem.get(detail.IdInventarioItem) ?? { cantidad: 0, danada: 0 };
+      returnedByItem.set(detail.IdInventarioItem, {
+        cantidad: roundQuantity(existing.cantidad + detail.CantidadRecibida),
+        danada: roundQuantity(existing.danada + detail.CantidadDanada),
+      });
+    }
   }
 
   const adjustedByItem = new Map<number, number>();
@@ -198,29 +211,84 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
     );
   }
 
-  const activeDispatch = session.DespachoRuta[0] ?? null;
-  const lines = (activeDispatch?.Detalles ?? []).map((detail) => {
-    const sold = soldByItem.get(detail.IdInventarioItem) ?? 0;
-    const commercialReturn = commercialReturnByItem.get(detail.IdInventarioItem);
+  const activeDispatch = session.DespachoRuta.length > 0
+    ? session.DespachoRuta[session.DespachoRuta.length - 1]
+    : null;
+
+  // Varios despachos activos (reabastecimiento, T-F2-DIST-02) se agregan por
+  // item + estado de envase; de lo contrario cada despacho duplicaría el cálculo
+  // de "disponible" al compararse contra el total vendido/devuelto de la sesión completa.
+  type DispatchLine = {
+    idInventarioItem: number;
+    nombre: string;
+    unidadMedida: string | null;
+    estadoEnvase: string | null;
+    cantidad: number;
+  };
+  const dispatchByKey = new Map<string, DispatchLine>();
+  for (const dispatch of session.DespachoRuta) {
+    for (const detail of dispatch.Detalles) {
+      const key = `${detail.IdInventarioItem}|${detail.EstadoEnvase ?? ''}`;
+      const existing = dispatchByKey.get(key);
+      dispatchByKey.set(key, {
+        idInventarioItem: detail.IdInventarioItem,
+        nombre: detail.NombreSnapshot,
+        unidadMedida: detail.UnidadMedidaSnapshot,
+        estadoEnvase: detail.EstadoEnvase,
+        cantidad: roundQuantity((existing?.cantidad ?? 0) + detail.Cantidad),
+      });
+    }
+  }
+
+  const transferOutByKey = new Map<string, number>();
+  for (const transfer of session.TransferenciasOrigen) {
+    for (const detail of transfer.Detalles) {
+      const key = `${detail.IdInventarioItem}|${detail.EstadoEnvase ?? ''}`;
+      transferOutByKey.set(key, roundQuantity((transferOutByKey.get(key) ?? 0) + detail.Cantidad));
+    }
+  }
+
+  const transferInByKey = new Map<string, number>();
+  for (const transfer of session.TransferenciasDestino) {
+    for (const detail of transfer.Detalles) {
+      const key = `${detail.IdInventarioItem}|${detail.EstadoEnvase ?? ''}`;
+      transferInByKey.set(key, roundQuantity((transferInByKey.get(key) ?? 0) + detail.Cantidad));
+    }
+  }
+
+  const lines = Array.from(dispatchByKey.entries()).map(([key, detail]) => {
+    const sold = soldByItem.get(detail.idInventarioItem) ?? 0;
+    const commercialReturn = commercialReturnByItem.get(detail.idInventarioItem);
     const commercialReturned = commercialReturn?.cantidad ?? 0;
     const commercialNonSellable = commercialReturn?.noVendible ?? 0;
-    const returned = returnedByItem.get(detail.IdInventarioItem)?.cantidad ?? 0;
-    const damaged = returnedByItem.get(detail.IdInventarioItem)?.danada ?? 0;
-    const adjusted = adjustedByItem.get(detail.IdInventarioItem) ?? 0;
-    const reserved = reservedByItem.get(detail.IdInventarioItem) ?? 0;
-    const envasePrestado = envaseLoanedByItem.get(detail.IdInventarioItem) ?? 0;
-    const envaseDevuelto = envaseReturnedByItem.get(detail.IdInventarioItem) ?? 0;
-    const envaseBaja = envaseRetiredByItem.get(detail.IdInventarioItem) ?? 0;
+    const returned = returnedByItem.get(detail.idInventarioItem)?.cantidad ?? 0;
+    const damaged = returnedByItem.get(detail.idInventarioItem)?.danada ?? 0;
+    const adjusted = adjustedByItem.get(detail.idInventarioItem) ?? 0;
+    const reserved = reservedByItem.get(detail.idInventarioItem) ?? 0;
+    const envasePrestado = envaseLoanedByItem.get(detail.idInventarioItem) ?? 0;
+    const envaseDevuelto = envaseReturnedByItem.get(detail.idInventarioItem) ?? 0;
+    const envaseBaja = envaseRetiredByItem.get(detail.idInventarioItem) ?? 0;
+    const transferidoSaliente = transferOutByKey.get(key) ?? 0;
+    const transferidoRecibido = transferInByKey.get(key) ?? 0;
     const pendingReconciliation = roundQuantity(
-      detail.Cantidad - sold + commercialReturned - returned - adjusted - envasePrestado + envaseDevuelto - envaseBaja,
+      detail.cantidad
+        - sold
+        + commercialReturned
+        - returned
+        - adjusted
+        - envasePrestado
+        + envaseDevuelto
+        - envaseBaja
+        - transferidoSaliente
+        + transferidoRecibido,
     );
 
     return {
-      idInventarioItem: detail.IdInventarioItem,
-      nombre: detail.NombreSnapshot,
-      unidadMedida: detail.UnidadMedidaSnapshot,
-      despachado: detail.Cantidad,
-      estadoEnvaseDespachado: detail.EstadoEnvase,
+      idInventarioItem: detail.idInventarioItem,
+      nombre: detail.nombre,
+      unidadMedida: detail.unidadMedida,
+      despachado: detail.cantidad,
+      estadoEnvaseDespachado: detail.estadoEnvase,
       vendido: sold,
       devolucionComercial: commercialReturned,
       noVendibleComercial: commercialNonSellable,
@@ -231,6 +299,8 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
       envasePrestado,
       envaseDevuelto,
       envaseBaja,
+      transferidoSaliente,
+      transferidoRecibido,
       pendienteConciliacion: pendingReconciliation,
       disponible: roundQuantity(pendingReconciliation - reserved - commercialNonSellable),
     };
@@ -239,7 +309,7 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
   return {
     session,
     despacho: activeDispatch,
-    devolucion: activeReturn,
+    devolucion: mostRecentReturn,
     lines,
   };
 }
@@ -252,9 +322,10 @@ export async function getRouteAvailableQuantities(tx: RouteInventoryClient, idRu
   if (!inventory.despacho) {
     throw new Error('No existe un despacho confirmado para la sesión de ruta');
   }
-  if (inventory.devolucion) {
-    throw new Error('No se pueden registrar ventas después de confirmar la devolución');
-  }
+  // D-DIST-06: una devolución (incluso parcial/intermedia) ya no bloquea ventas por sí
+  // sola. El cálculo agregado de "disponible" (que ya descuenta lo devuelto) es la única
+  // fuente de verdad: si el producto fue reabastecido con un nuevo despacho tras la
+  // devolución, su disponible vuelve a ser positivo y la venta debe permitirse.
   return new Map(inventory.lines.map((line) => [line.idInventarioItem, line.disponible]));
 }
 
@@ -313,10 +384,6 @@ export async function createRouteDispatch(
       select: {
         Id: true,
         Estado: true,
-        Venta: {
-          where: { Anulado: false, TipoRegistro: 'VENTA' },
-          select: { Id: true },
-        },
       },
     });
 
@@ -326,15 +393,10 @@ export async function createRouteDispatch(
     if (session.Estado !== 'EN_CURSO') {
       throw new Error('La sesión de ruta debe estar EN_CURSO para despachar');
     }
-    if (session.Venta.length > 0) {
-      throw new Error('No se puede despachar una sesión que ya tiene ventas registradas');
-    }
-    if (await tx.despachoRuta.findFirst({
-      where: { IdRutaSesion: idRutaSesion, Anulado: false },
-      select: { Id: true },
-    })) {
-      throw new Error('La sesión ya tiene un despacho confirmado');
-    }
+    // D-DIST-06 (aprobado): se permiten varios despachos por sesión (reabastecimiento),
+    // incluso después de una o más devoluciones. El cálculo agregado de loadRouteInventory
+    // suma todos los despachos y todas las devoluciones de la sesión, por lo que un nuevo
+    // despacho nunca duplica existencias ya reconciliadas.
 
     const products = await tx.inventarioItem.findMany({
       where: {
@@ -453,6 +515,7 @@ export async function cancelRouteDispatch(
   idRutaSesion: number,
   idUsuario: number,
   motivo: string,
+  idDespacho?: number,
 ) {
   return runSerializableTransaction(async (tx) => {
     await expireProformaReservations(tx, idRutaSesion);
@@ -476,6 +539,16 @@ export async function cancelRouteDispatch(
           select: { Id: true },
           take: 1,
         },
+        TransferenciasOrigen: {
+          where: { Anulado: false, EstadoConfirmacion: { in: ['PENDIENTE', 'CONFIRMADA'] } },
+          select: { Id: true },
+          take: 1,
+        },
+        TransferenciasDestino: {
+          where: { Anulado: false, EstadoConfirmacion: 'CONFIRMADA' },
+          select: { Id: true },
+          take: 1,
+        },
       },
     });
     if (!session) {
@@ -488,9 +561,11 @@ export async function cancelRouteDispatch(
       session.Venta.length > 0 ||
       session.DevolucionRuta.length > 0 ||
       session.AjustesRuta.length > 0 ||
-      session.MovimientosEnvaseCliente.length > 0
+      session.MovimientosEnvaseCliente.length > 0 ||
+      session.TransferenciasOrigen.length > 0 ||
+      session.TransferenciasDestino.length > 0
     ) {
-      throw new Error('No se puede anular el despacho después de registrar ventas, devoluciones, ajustes o movimientos de envases');
+      throw new Error('No se puede anular el despacho después de registrar ventas, devoluciones, ajustes, movimientos de envases o transferencias');
     }
 
     const activeReservations = await tx.reservaProforma.count({
@@ -509,12 +584,23 @@ export async function cancelRouteDispatch(
       throw new Error('No se puede anular el despacho mientras existan proformas reservadas');
     }
 
-    const dispatch = await tx.despachoRuta.findFirst({
+    const activeDispatches = await tx.despachoRuta.findMany({
       where: { IdRutaSesion: idRutaSesion, Anulado: false },
       include: { Detalles: true },
+      orderBy: { FechaRegistro: 'asc' },
     });
-    if (!dispatch) {
+    if (activeDispatches.length === 0) {
       throw new Error('La sesión no tiene un despacho activo para anular');
+    }
+    let dispatch = activeDispatches[0];
+    if (idDespacho !== undefined) {
+      const match = activeDispatches.find((item) => item.Id === idDespacho);
+      if (!match) {
+        throw new Error('El despacho indicado no existe o está anulado');
+      }
+      dispatch = match;
+    } else if (activeDispatches.length > 1) {
+      throw new Error('La sesión tiene varios despachos activos; especifique idDespacho a anular');
     }
 
     const products = await tx.inventarioItem.findMany({
@@ -598,9 +684,10 @@ export async function createRouteReturn(
     if (!inventory.despacho) {
       throw new Error('La sesión no tiene un despacho confirmado');
     }
-    if (inventory.devolucion) {
-      throw new Error('La sesión ya tiene una devolución registrada');
-    }
+    // D-DIST-06 (aprobado): se permiten varias devoluciones por sesión (p. ej. un conteo
+    // físico intermedio seguido de reabastecimiento y venta, con la devolución final del
+    // día). El saldo pendiente ya refleja todas las devoluciones previas, por lo que una
+    // nueva devolución nunca puede exceder lo que realmente quede físicamente pendiente.
 
     const receivableByItem = new Map(
       inventory.lines.map((line) => [
@@ -684,6 +771,7 @@ export async function cancelRouteReturn(
   idRutaSesion: number,
   idUsuario: number,
   motivo: string,
+  idDevolucion?: number,
 ) {
   return runSerializableTransaction(async (tx) => {
     const session = await tx.rutaSesion.findFirst({
@@ -704,12 +792,23 @@ export async function cancelRouteReturn(
       throw new Error('No se puede anular la devolución después de autorizar diferencias');
     }
 
-    const routeReturn = await tx.devolucionRuta.findFirst({
+    const activeReturns = await tx.devolucionRuta.findMany({
       where: { IdRutaSesion: idRutaSesion, Anulado: false },
       select: { Id: true },
+      orderBy: { FechaRegistro: 'asc' },
     });
-    if (!routeReturn) {
+    if (activeReturns.length === 0) {
       throw new Error('La sesión no tiene una devolución activa para anular');
+    }
+    let routeReturn = activeReturns[0];
+    if (idDevolucion !== undefined) {
+      const match = activeReturns.find((item) => item.Id === idDevolucion);
+      if (!match) {
+        throw new Error('La devolución indicada no existe o está anulado');
+      }
+      routeReturn = match;
+    } else if (activeReturns.length > 1) {
+      throw new Error('La sesión tiene varias devoluciones activas; especifique idDevolucion a anular');
     }
 
     await tx.devolucionRuta.update({
@@ -731,8 +830,12 @@ export async function transferVerifiedRouteReturnToPlant(
   idRutaSesion: number,
   idUsuario: number,
 ) {
-  const routeReturn = await tx.devolucionRuta.findFirst({
+  // D-DIST-06: una sesión puede acumular varias devoluciones activas (reabastecimiento
+  // intermedio). Al cerrar la sesión se trasladan a planta TODAS las devoluciones activas
+  // pendientes de traslado, no solo la primera, para no perder existencia física recibida.
+  const activeReturns = await tx.devolucionRuta.findMany({
     where: { IdRutaSesion: idRutaSesion, Anulado: false },
+    orderBy: { FechaRegistro: 'asc' },
     select: {
       Id: true,
       Detalles: {
@@ -747,112 +850,117 @@ export async function transferVerifiedRouteReturnToPlant(
       },
     },
   });
-  if (!routeReturn) {
+  if (activeReturns.length === 0) {
     return;
   }
 
-  if (routeReturn.Detalles.length === 0) {
+  const allItemIds = activeReturns.flatMap((routeReturn) => routeReturn.Detalles.map((detail) => detail.IdInventarioItem));
+  if (allItemIds.length === 0) {
     return;
   }
 
   const products = await tx.inventarioItem.findMany({
-    where: { Id: { in: routeReturn.Detalles.map((detail) => detail.IdInventarioItem) }, Anulado: false },
+    where: { Id: { in: allItemIds }, Anulado: false },
     select: { Id: true, Nombre: true, Existencia: true, EsEnvaseRetornable: true },
   });
   const productsById = new Map(products.map((product) => [product.Id, product]));
 
-  for (const line of routeReturn.Detalles) {
-    const idInventarioItem = line.IdInventarioItem;
-    const product = productsById.get(idInventarioItem);
-    if (!product) {
-      throw new Error(`InventarioItem ${idInventarioItem} no existe o está anulado`);
-    }
-
-    const sellableQuantity = product.EsEnvaseRetornable
-      ? line.CantidadEnvaseLleno
-      : roundQuantity(line.CantidadRecibida - line.CantidadDanada);
-    if (sellableQuantity > 0) {
-      const newExistence = roundQuantity(product.Existencia + sellableQuantity);
-      await tx.inventarioItem.update({
-        where: { Id: idInventarioItem },
-        data: { Existencia: newExistence },
-      });
-      await registerInventoryMovement(tx, {
-        idInventarioItem,
-        idUsuario,
-        tipoDocumento: 'DEV',
-        documento: routeReturn.Id.toString(),
-        nombre: `Traslado de devolución ruta #${idRutaSesion} a planta - ${product.Nombre}`,
-        tipoMovimiento: true,
-        existenciaAnterior: product.Existencia,
-        cantidad: sellableQuantity,
-        nuevaExistencia: newExistence,
-      });
-    }
-
-    if (product.EsEnvaseRetornable) {
-      if (line.CantidadEnvaseVacio + line.CantidadEnvaseLleno + line.CantidadDanada !== line.CantidadRecibida) {
-        throw new Error(`Falta clasificar la devolución física del envase ${product.Nombre}`);
+  for (const routeReturn of activeReturns) {
+    for (const line of routeReturn.Detalles) {
+      const idInventarioItem = line.IdInventarioItem;
+      const product = productsById.get(idInventarioItem);
+      if (!product) {
+        throw new Error(`InventarioItem ${idInventarioItem} no existe o está anulado`);
       }
-      if (line.CantidadEnvaseVacio > 0) {
-        await transferEnvaseBucket(tx, {
+
+      const sellableQuantity = product.EsEnvaseRetornable
+        ? line.CantidadEnvaseLleno
+        : roundQuantity(line.CantidadRecibida - line.CantidadDanada);
+      if (sellableQuantity > 0) {
+        const existenciaAnterior = product.Existencia;
+        const newExistence = roundQuantity(product.Existencia + sellableQuantity);
+        await tx.inventarioItem.update({
+          where: { Id: idInventarioItem },
+          data: { Existencia: newExistence },
+        });
+        await registerInventoryMovement(tx, {
           idInventarioItem,
           idUsuario,
-          origen: { ubicacion: 'RUTA', estado: 'VACIO', idRutaSesion },
-          destino: { ubicacion: 'PLANTA', estado: 'VACIO' },
-          cantidad: line.CantidadEnvaseVacio,
-          nombre: `Devolución ruta #${idRutaSesion} a planta - ${product.Nombre}`,
           tipoDocumento: 'DEV',
           documento: routeReturn.Id.toString(),
+          nombre: `Traslado de devolución ruta #${idRutaSesion} a planta - ${product.Nombre}`,
+          tipoMovimiento: true,
+          existenciaAnterior,
+          cantidad: sellableQuantity,
+          nuevaExistencia: newExistence,
         });
+        product.Existencia = newExistence;
       }
-      if (line.CantidadEnvaseLleno > 0) {
-        await transferEnvaseBucket(tx, {
-          idInventarioItem,
-          idUsuario,
-          origen: { ubicacion: 'RUTA', estado: 'LLENO', idRutaSesion },
-          destino: { ubicacion: 'PLANTA', estado: 'LLENO' },
-          cantidad: line.CantidadEnvaseLleno,
-          nombre: `Devolución ruta #${idRutaSesion} a planta - ${product.Nombre}`,
-          tipoDocumento: 'DEV',
-          documento: routeReturn.Id.toString(),
-        });
-      }
-      if (line.CantidadDanada > 0) {
-        const alreadyDamaged = await getEnvaseBucketQuantity(tx, idInventarioItem, {
-          ubicacion: 'RUTA',
-          estado: 'DANADO',
-          idRutaSesion,
-        });
-        const damagedFromCustomerReturns = Math.min(alreadyDamaged, line.CantidadDanada);
-        if (damagedFromCustomerReturns > 0) {
+
+      if (product.EsEnvaseRetornable) {
+        if (line.CantidadEnvaseVacio + line.CantidadEnvaseLleno + line.CantidadDanada !== line.CantidadRecibida) {
+          throw new Error(`Falta clasificar la devolución física del envase ${product.Nombre}`);
+        }
+        if (line.CantidadEnvaseVacio > 0) {
           await transferEnvaseBucket(tx, {
             idInventarioItem,
             idUsuario,
-            origen: { ubicacion: 'RUTA', estado: 'DANADO', idRutaSesion },
-            destino: { ubicacion: 'CUARENTENA', estado: 'DANADO' },
-            cantidad: damagedFromCustomerReturns,
-            nombre: `Envase dañado segregado al cierre ruta #${idRutaSesion} - ${product.Nombre}`,
+            origen: { ubicacion: 'RUTA', estado: 'VACIO', idRutaSesion },
+            destino: { ubicacion: 'PLANTA', estado: 'VACIO' },
+            cantidad: line.CantidadEnvaseVacio,
+            nombre: `Devolución ruta #${idRutaSesion} a planta - ${product.Nombre}`,
             tipoDocumento: 'DEV',
             documento: routeReturn.Id.toString(),
           });
         }
-        const damagedFromRouteStock = line.CantidadDanada - damagedFromCustomerReturns;
-        if (damagedFromRouteStock > 0) {
-          const damagedState = line.EstadoEnvaseDanado;
-          if (!damagedState) {
-            throw new Error(`Falta estado de origen de los envases dañados de ${product.Nombre}`);
-          }
+        if (line.CantidadEnvaseLleno > 0) {
           await transferEnvaseBucket(tx, {
             idInventarioItem,
             idUsuario,
-            origen: { ubicacion: 'RUTA', estado: damagedState as 'VACIO' | 'LLENO', idRutaSesion },
-            destino: { ubicacion: 'CUARENTENA', estado: 'DANADO' },
-            cantidad: damagedFromRouteStock,
-            nombre: `Envase dañado segregado al cierre ruta #${idRutaSesion} - ${product.Nombre}`,
+            origen: { ubicacion: 'RUTA', estado: 'LLENO', idRutaSesion },
+            destino: { ubicacion: 'PLANTA', estado: 'LLENO' },
+            cantidad: line.CantidadEnvaseLleno,
+            nombre: `Devolución ruta #${idRutaSesion} a planta - ${product.Nombre}`,
             tipoDocumento: 'DEV',
             documento: routeReturn.Id.toString(),
           });
+        }
+        if (line.CantidadDanada > 0) {
+          const alreadyDamaged = await getEnvaseBucketQuantity(tx, idInventarioItem, {
+            ubicacion: 'RUTA',
+            estado: 'DANADO',
+            idRutaSesion,
+          });
+          const damagedFromCustomerReturns = Math.min(alreadyDamaged, line.CantidadDanada);
+          if (damagedFromCustomerReturns > 0) {
+            await transferEnvaseBucket(tx, {
+              idInventarioItem,
+              idUsuario,
+              origen: { ubicacion: 'RUTA', estado: 'DANADO', idRutaSesion },
+              destino: { ubicacion: 'CUARENTENA', estado: 'DANADO' },
+              cantidad: damagedFromCustomerReturns,
+              nombre: `Envase dañado segregado al cierre ruta #${idRutaSesion} - ${product.Nombre}`,
+              tipoDocumento: 'DEV',
+              documento: routeReturn.Id.toString(),
+            });
+          }
+          const damagedFromRouteStock = line.CantidadDanada - damagedFromCustomerReturns;
+          if (damagedFromRouteStock > 0) {
+            const damagedState = line.EstadoEnvaseDanado;
+            if (!damagedState) {
+              throw new Error(`Falta estado de origen de los envases dañados de ${product.Nombre}`);
+            }
+            await transferEnvaseBucket(tx, {
+              idInventarioItem,
+              idUsuario,
+              origen: { ubicacion: 'RUTA', estado: damagedState as 'VACIO' | 'LLENO', idRutaSesion },
+              destino: { ubicacion: 'CUARENTENA', estado: 'DANADO' },
+              cantidad: damagedFromRouteStock,
+              nombre: `Envase dañado segregado al cierre ruta #${idRutaSesion} - ${product.Nombre}`,
+              tipoDocumento: 'DEV',
+              documento: routeReturn.Id.toString(),
+            });
+          }
         }
       }
     }

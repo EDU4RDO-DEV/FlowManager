@@ -4,11 +4,11 @@ import { assertRouteCanClose, transferVerifiedRouteReturnToPlant } from './route
 import { runSerializableTransaction } from '../utils/serializable-transaction';
 import { NotificationEvents, send } from './notification.service';
 
-type VehiculoEstado = 'DISPONIBLE' | 'EN_RUTA' | 'MANTENIMIENTO' | 'NO_DISPONIBLE';
-type RutaSesionEstado = 'PROGRAMADA' | 'EN_CURSO' | 'CERRADA';
+export type VehiculoEstado = 'DISPONIBLE' | 'EN_RUTA' | 'MANTENIMIENTO' | 'NO_DISPONIBLE';
+export type RutaSesionEstado = 'PROGRAMADA' | 'EN_CURSO' | 'CERRADA';
 type GastoEstadoPago = 'PENDIENTE' | 'PAGADO';
 type GastoMetodoPago = 'EFECTIVO' | 'TRANSFERENCIA' | 'CHEQUE' | 'POS';
-type LogisticsDatabaseClient = Prisma.TransactionClient | typeof prisma;
+export type LogisticsDatabaseClient = Prisma.TransactionClient | typeof prisma;
 
 type CreateVehiculoInput = {
   idUsuario: number;
@@ -43,6 +43,7 @@ type CreateRutaSesionInput = {
   idVehiculo: number;
   idUsuarioChofer: number;
   idUsuarioVendedor: number;
+  idJornada?: number;
   fechaSesion: string;
   kmInicial?: number;
   kmFinal?: number;
@@ -54,6 +55,7 @@ type UpdateRutaSesionInput = {
   idVehiculo?: number;
   idUsuarioChofer?: number;
   idUsuarioVendedor?: number;
+  idJornada?: number | null;
   fechaSesion?: string;
   kmInicial?: number | null;
   kmFinal?: number | null;
@@ -138,12 +140,13 @@ function toRutaDto(ruta: {
   };
 }
 
-function toRutaSesionDto(sesion: {
+export function toRutaSesionDto(sesion: {
   Id: number;
   IdRuta: number;
   IdVehiculo: number;
   IdUsuarioChofer: number;
   IdUsuarioVendedor: number;
+  IdJornada?: number | null;
   FechaSesion: Date;
   KmInicial: number | null;
   KmFinal: number | null;
@@ -183,6 +186,7 @@ function toRutaSesionDto(sesion: {
     idVehiculo: sesion.IdVehiculo,
     idUsuarioChofer: sesion.IdUsuarioChofer,
     idUsuarioVendedor: sesion.IdUsuarioVendedor,
+    idJornada: sesion.IdJornada ?? null,
     fechaSesion: sesion.FechaSesion,
     kmInicial: sesion.KmInicial,
     kmFinal: sesion.KmFinal,
@@ -300,7 +304,7 @@ function toGastoVehiculoDto(gasto: {
   };
 }
 
-async function validateUsuarioExists(
+export async function validateUsuarioExists(
   idUsuario: number,
   client: LogisticsDatabaseClient = prisma,
 ) {
@@ -314,7 +318,7 @@ async function validateUsuarioExists(
   }
 }
 
-async function validateRutaExists(
+export async function validateRutaExists(
   idRuta: number,
   allowAnulated = false,
   client: LogisticsDatabaseClient = prisma,
@@ -359,7 +363,7 @@ async function validateProveedorExists(idProveedor: number) {
   }
 }
 
-async function validateEmpleadoVinculado(
+export async function validateEmpleadoVinculado(
   idUsuario: number,
   roleName: 'Chofer' | 'Vendedor',
   client: LogisticsDatabaseClient = prisma,
@@ -380,11 +384,28 @@ async function validateEmpleadoVinculado(
   }
 }
 
-function normalizePlate(placa: string) {
+export async function assertJornadaAbierta(
+  idJornada: number,
+  client: LogisticsDatabaseClient = prisma,
+) {
+  const jornada = await client.jornada.findFirst({
+    where: { Id: idJornada, Anulado: false },
+    select: { Id: true, Estado: true },
+  });
+
+  if (!jornada) {
+    throw new Error('Jornada no existe');
+  }
+  if (jornada.Estado !== 'ABIERTA') {
+    throw new Error('La jornada debe estar ABIERTA para asignar sesiones de ruta');
+  }
+}
+
+export function normalizePlate(placa: string) {
   return placa.trim().toUpperCase();
 }
 
-function parseDateOnlyUtc(value: string): Date {
+export function parseDateOnlyUtc(value: string): Date {
   const parsed = new Date(`${value}T00:00:00.000Z`);
   if (Number.isNaN(parsed.getTime())) {
     throw new Error('Fecha de sesión inválida');
@@ -423,7 +444,7 @@ async function assertUniqueRouteName(nombre: string, currentId?: number) {
   }
 }
 
-async function assertVehicleAvailableForSession(
+export async function assertVehicleAvailableForSession(
   tx: Prisma.TransactionClient,
   params: {
   idVehiculo: number;
@@ -469,7 +490,7 @@ async function assertVehicleAvailableForSession(
   }
 }
 
-async function syncVehicleStateBySessions(tx: Prisma.TransactionClient, idVehiculo: number) {
+export async function syncVehicleStateBySessions(tx: Prisma.TransactionClient, idVehiculo: number) {
   const vehiculo = await tx.vehiculo.findFirst({
     where: { Id: idVehiculo },
     select: { Estado: true },
@@ -503,7 +524,7 @@ async function syncVehicleStateBySessions(tx: Prisma.TransactionClient, idVehicu
   });
 }
 
-function ensureSessionKilometers(input: {
+export function ensureSessionKilometers(input: {
   estado: RutaSesionEstado;
   kmInicial?: number | null;
   kmFinal?: number | null;
@@ -917,6 +938,9 @@ export async function createRutaSesion(input: CreateRutaSesionInput) {
   await validateRutaExists(input.idRuta);
   await validateEmpleadoVinculado(input.idUsuarioChofer, 'Chofer');
   await validateEmpleadoVinculado(input.idUsuarioVendedor, 'Vendedor');
+  if (input.idJornada !== undefined) {
+    await assertJornadaAbierta(input.idJornada);
+  }
 
   ensureSessionKilometers({
     estado: input.estado,
@@ -937,6 +961,7 @@ export async function createRutaSesion(input: CreateRutaSesionInput) {
         IdVehiculo: input.idVehiculo,
         IdUsuarioChofer: input.idUsuarioChofer,
         IdUsuarioVendedor: input.idUsuarioVendedor,
+        IdJornada: input.idJornada,
         FechaSesion: fechaSesion,
         KmInicial: input.kmInicial,
         KmFinal: input.kmFinal,
@@ -980,6 +1005,7 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
         IdVehiculo: true,
         IdUsuarioChofer: true,
         IdUsuarioVendedor: true,
+        IdJornada: true,
         FechaSesion: true,
         KmInicial: true,
         KmFinal: true,
@@ -1017,6 +1043,7 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
     const nextVehiculo = input.idVehiculo ?? existing.IdVehiculo;
     const nextChofer = input.idUsuarioChofer ?? existing.IdUsuarioChofer;
     const nextVendedor = input.idUsuarioVendedor ?? existing.IdUsuarioVendedor;
+    const nextJornada = input.idJornada === undefined ? existing.IdJornada : input.idJornada;
     const nextFecha = input.fechaSesion
       ? parseDateOnlyUtc(input.fechaSesion)
       : existing.FechaSesion;
@@ -1027,6 +1054,9 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
     await validateRutaExists(nextRuta, false, tx);
     await validateEmpleadoVinculado(nextChofer, 'Chofer', tx);
     await validateEmpleadoVinculado(nextVendedor, 'Vendedor', tx);
+    if (input.idJornada !== undefined && input.idJornada !== null) {
+      await assertJornadaAbierta(input.idJornada, tx);
+    }
 
     ensureSessionKilometers({
       estado: nextEstado,
@@ -1055,6 +1085,7 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
         IdVehiculo: nextVehiculo,
         IdUsuarioChofer: nextChofer,
         IdUsuarioVendedor: nextVendedor,
+        IdJornada: nextJornada,
         FechaSesion: nextFecha,
         KmInicial: nextKmInicial,
         KmFinal: nextKmFinal,
