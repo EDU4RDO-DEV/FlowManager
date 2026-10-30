@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 export type ClientFormValues = {
   nombreCompleto: string;
   habilitadoCredito: boolean;
+  limiteCredito: number;
   correoElectronico: string;
   telefono1: string;
   telefono2: string;
@@ -82,20 +83,39 @@ export function ClientFormCard({
           </div>
 
           <div className="rounded-xl border border-border bg-muted/40 p-4">
-            <div className="flex items-start gap-3">
-              <input
-                id="client-credit-enabled"
-                type="checkbox"
-                checked={form.habilitadoCredito}
-                disabled={saving}
-                onChange={(event) => onChange({ ...form, habilitadoCredito: event.target.checked })}
-                className="mt-1 size-4 accent-sky-600"
-              />
-              <div className="space-y-1">
-                <Label htmlFor="client-credit-enabled">Crédito habilitado</Label>
-                <p className="text-sm text-muted-foreground">
-                  Permite solicitar ventas al crédito si también cumple las condiciones vigentes.
-                  Desactivado, el cliente puede seguir comprando al contado.
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="flex items-start gap-3">
+                <input
+                  id="client-credit-enabled"
+                  type="checkbox"
+                  checked={form.habilitadoCredito}
+                  disabled={saving}
+                  onChange={(event) => onChange({ ...form, habilitadoCredito: event.target.checked })}
+                  className="mt-1 size-4 accent-sky-600"
+                />
+                <div className="space-y-1">
+                  <Label htmlFor="client-credit-enabled">Crédito habilitado</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Permite solicitar ventas al crédito si también cumple las condiciones vigentes.
+                    Desactivado, el cliente puede seguir comprando al contado.
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="client-credit-limit">Límite de crédito autorizado</Label>
+                <Input
+                  id="client-credit-limit"
+                  type="number"
+                  min={0}
+                  max={99_999_999.99}
+                  step="0.01"
+                  value={form.limiteCredito}
+                  disabled={saving}
+                  onChange={(event) => onChange({ ...form, limiteCredito: Number(event.target.value || 0) })}
+                  className="h-10 bg-background"
+                />
+                <p className="text-xs text-muted-foreground">
+                  El importe no debe superar el saldo pendiente acumulado.
                 </p>
               </div>
             </div>

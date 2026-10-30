@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Printer, RefreshCw, Truck } from "lucide-react";
+import { Loader2, Printer, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth-provider";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,10 +19,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getApiErrorMessage } from "@/lib/api";
 import { hasModulePermission } from "@/lib/rbac";
+import { DispatchTab } from "./_components/dispatch-tab";
+import { HandoffTab } from "./_components/handoff-tab";
+import { ReturnsTab } from "./_components/returns-tab";
+import { SettlementTab } from "./_components/settlement-tab";
+import type { DispatchDraft, HandoffFormState, ReturnDraft, TransferDraft } from "./_components/shared";
+import { formatDate } from "./_components/shared";
+import { SummaryTab } from "./_components/summary-tab";
+import { TransfersTab } from "./_components/transfers-tab";
 import {
   closeRouteSession,
   cancelRouteDispatch,
@@ -55,41 +62,6 @@ import type {
   VehiculoDto,
 } from "@/types/logistics";
 
-type DispatchDraft = {
-  idInventarioItem: number;
-  cantidad: string;
-  estadoEnvase: "VACIO" | "LLENO" | "";
-};
-type TransferDraft = {
-  idInventarioItem: number;
-  cantidad: string;
-  estadoEnvase: "VACIO" | "LLENO" | "";
-};
-type HandoffFormState = {
-  idRuta: string;
-  idVehiculo: string;
-  idUsuarioChofer: string;
-  idUsuarioVendedor: string;
-  kmInicialEntrante: string;
-  motivo: string;
-};
-type ReturnDraft = {
-  cantidadRecibida: string;
-  cantidadDanada: string;
-  cantidadEnvaseVacio: string;
-  cantidadEnvaseLleno: string;
-  estadoEnvaseDanado: "VACIO" | "LLENO" | "";
-  observaciones: string;
-  ubicacionDanada: "" | "CUARENTENA" | "OTRA";
-  ubicacionDanadaDetalle: string;
-};
-
-function formatDate(value: string | null) {
-  if (!value) return "-";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
-}
-
 async function loadAllDispatchProducts() {
   const products: DispatchProductDto[] = [];
   let page = 1;
@@ -115,13 +87,15 @@ export default function RouteOperationsPage() {
   const [sessionSearch, setSessionSearch] = useState("");
   const [inventory, setInventory] = useState<RouteInventoryDto | null>(null);
   const [dispatchDraft, setDispatchDraft] = useState<DispatchDraft[]>([]);
-  const [dispatchCancellationReason, setDispatchCancellationReason] = useState("");
+  const [dispatchCancelReasonById, setDispatchCancelReasonById] = useState<Record<number, string>>({});
+  const [dispatchCancelCandidate, setDispatchCancelCandidate] = useState<{ id: number; motivo: string } | null>(null);
   const [dispatchProductId, setDispatchProductId] = useState("");
   const [dispatchSearch, setDispatchSearch] = useState("");
   const [dispatchNotes, setDispatchNotes] = useState("");
   const [returnDraft, setReturnDraft] = useState<Record<number, ReturnDraft>>({});
   const [returnNotes, setReturnNotes] = useState("");
-  const [returnCancellationReason, setReturnCancellationReason] = useState("");
+  const [returnCancelReasonById, setReturnCancelReasonById] = useState<Record<number, string>>({});
+  const [returnCancelCandidate, setReturnCancelCandidate] = useState<{ id: number; motivo: string } | null>(null);
   const [adjustmentItemId, setAdjustmentItemId] = useState("");
   const [adjustmentAmount, setAdjustmentAmount] = useState("");
   const [adjustmentClass, setAdjustmentClass] = useState<"FALTANTE" | "DANADO" | "OTRO">("FALTANTE");
@@ -294,8 +268,10 @@ export default function RouteOperationsPage() {
     setInventory(null);
     setTransfers([]);
     setReturnDraft({});
-    setDispatchCancellationReason("");
-    setReturnCancellationReason("");
+    setDispatchCancelReasonById({});
+    setReturnCancelReasonById({});
+    setDispatchCancelCandidate(null);
+    setReturnCancelCandidate(null);
     setAdjustmentItemId("");
     setDispatchDraft([]);
     setDispatchNotes("");
@@ -453,45 +429,42 @@ export default function RouteOperationsPage() {
     }
   }
 
+  // Anulación individual de despacho: identificada por Id, requiere confirmación explícita
+  // (se ejecuta solo tras aceptar el ConfirmActionDialog) y motivo de al menos 3 caracteres.
   async function submitDispatchCancellation() {
-    if (!selectedSession || !inventory?.despacho) return;
-    const motivo = dispatchCancellationReason.trim();
-    if (motivo.length < 3) {
-      toast.error("Indica el motivo de anulación (mínimo 3 caracteres)");
-      return;
-    }
+    if (!selectedSession || !dispatchCancelCandidate) return;
+    const { id, motivo } = dispatchCancelCandidate;
 
     setIsSaving(true);
     try {
-      await cancelRouteDispatch(selectedSession.id, { motivo });
-      toast.success("Despacho anulado y existencias restauradas con trazabilidad; puedes capturarlo nuevamente");
-      setDispatchCancellationReason("");
+      await cancelRouteDispatch(selectedSession.id, { motivo, idDespacho: id });
+      toast.success(`Despacho #${id} anulado y existencias restauradas con trazabilidad; puedes capturarlo nuevamente`);
+      setDispatchCancelReasonById((previous) => ({ ...previous, [id]: "" }));
+      setDispatchCancelCandidate(null);
       await loadInventory(selectedSession.id);
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "No se pudo anular el despacho"));
+      toast.error(getApiErrorMessage(error, `No se pudo anular el despacho #${id}`));
     } finally {
       setIsSaving(false);
     }
   }
 
+  // Anulación individual de devolución: mismo patrón (Id + confirmación + motivo).
   async function submitReturnCancellation() {
-    if (!selectedSession || !inventory?.devolucion) return;
-    const motivo = returnCancellationReason.trim();
-    if (motivo.length < 3) {
-      toast.error("Indica el motivo de anulación (mínimo 3 caracteres)");
-      return;
-    }
+    if (!selectedSession || !returnCancelCandidate) return;
+    const { id, motivo } = returnCancelCandidate;
 
     setIsSaving(true);
     try {
-      await cancelRouteReturn(selectedSession.id, { motivo });
-      toast.success("Recepción anulada con trazabilidad; puedes volver a capturar las cantidades físicas correctas");
-      setReturnCancellationReason("");
+      await cancelRouteReturn(selectedSession.id, { motivo, idDevolucion: id });
+      toast.success(`Recepción #${id} anulada con trazabilidad; puedes volver a capturar las cantidades físicas correctas`);
+      setReturnCancelReasonById((previous) => ({ ...previous, [id]: "" }));
+      setReturnCancelCandidate(null);
       setReturnDraft({});
       setReturnNotes("");
       await loadInventory(selectedSession.id);
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "No se pudo anular la devolución"));
+      toast.error(getApiErrorMessage(error, `No se pudo anular la devolución #${id}`));
     } finally {
       setIsSaving(false);
     }
@@ -739,6 +712,10 @@ export default function RouteOperationsPage() {
   const selectedPendingLine =
     visibleInventory?.diferenciasPendientes?.find((line) => String(line.idInventarioItem) === adjustmentItemId) ??
     visibleInventory?.diferenciasPendientes?.[0];
+  // Lista de despachos/devoluciones activos identificables por Id, para anulación individual
+  // (T-F2-DIST reabastecimiento: puede haber más de uno por sesión).
+  const dispatchList = visibleInventory?.despachos ?? (visibleInventory?.despacho ? [visibleInventory.despacho] : []);
+  const returnList = visibleInventory?.devoluciones ?? (visibleInventory?.devolucion ? [visibleInventory.devolucion] : []);
 
   return (
     <RequireAuth moduleKey="despacho" action="read">
@@ -808,804 +785,179 @@ export default function RouteOperationsPage() {
                   </CardContent>
                 </Card>
               ) : null}
-              <section className="grid gap-4 md:grid-cols-3">
-                <Card className="rounded-xl">
-                  <CardContent className="space-y-1 p-4">
-                    <p className="text-sm text-muted-foreground">Vehículo / sesión</p>
-                    <p className="flex items-center gap-2 font-semibold">
-                      <Truck className="size-4" />
-                      {selectedSession.vehiculo?.placa ?? `Vehículo ${selectedSession.idVehiculo}`}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {selectedSession.ruta?.nombre ?? `Ruta ${selectedSession.idRuta}`} · {formatDate(selectedSession.fechaSesion)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Chofer: {selectedSession.chofer?.nombre ?? "-"} · Vendedor: {selectedSession.vendedor?.nombre ?? "-"}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card className="rounded-xl">
-                  <CardContent className="space-y-1 p-4">
-                    <p className="text-sm text-muted-foreground">Despacho / devolución</p>
-                    <p className="font-semibold">
-                      {visibleInventory.despacho ? `Despachado ${formatDate(visibleInventory.despacho.fechaRegistro)}` : "Pendiente de despacho"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {visibleInventory.devolucion ? `Recibido ${formatDate(visibleInventory.devolucion.fechaRegistro)}` : "Devolución aún no registrada"}
-                    </p>
-                    {visibleInventory.devolucionesAnuladas?.map((routeReturn) => (
-                      <p key={routeReturn.id} className="text-xs text-muted-foreground">
-                        Recepción anterior anulada {formatDate(routeReturn.fechaAnulacion)} · {routeReturn.motivoAnulacion}
-                        {routeReturn.usuarioAnulador ? ` · ${routeReturn.usuarioAnulador.nombre}` : ""}
-                      </p>
-                    ))}
-                    {visibleInventory.despacho && canOperate ? (
-                      <div className="space-y-2 border-t pt-3">
-                        {dispatchCanBeCancelled ? (
-                          <>
-                            <Label htmlFor="dispatch-cancellation-reason">Motivo obligatorio para anular</Label>
-                            <Input
-                              id="dispatch-cancellation-reason"
-                              value={dispatchCancellationReason}
-                              onChange={(event) => setDispatchCancellationReason(event.target.value)}
-                              maxLength={255}
-                              placeholder="Ej. Estado del envase capturado incorrectamente"
-                            />
-                            <Button
-                              variant="destructive"
-                              onClick={() => void submitDispatchCancellation()}
-                              disabled={!canUpdate || isSaving || dispatchCancellationReason.trim().length < 3}
-                            >
-                              Anular despacho y volver a capturar
-                            </Button>
-                            {!canUpdate ? (
-                              <p className="text-xs text-muted-foreground">Tu rol no tiene permiso para anular despachos.</p>
-                            ) : (
-                              <p className="text-xs text-muted-foreground">
-                                Solo se permite antes de ventas, devoluciones, ajustes o cierre. La reversión queda auditada.
-                              </p>
-                            )}
-                          </>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">
-                            El despacho ya tiene movimientos posteriores; no se puede anular para proteger ventas, devoluciones y liquidaciones.
-                          </p>
-                        )}
-                      </div>
-                    ) : null}
-                    {visibleInventory.devolucion && canOperate ? (
-                      <div className="space-y-2 border-t pt-3">
-                        {returnCanBeCancelled ? (
-                          <>
-                            <Label htmlFor="return-cancellation-reason">Motivo obligatorio para corregir la recepción</Label>
-                            <Input
-                              id="return-cancellation-reason"
-                              value={returnCancellationReason}
-                              onChange={(event) => setReturnCancellationReason(event.target.value)}
-                              maxLength={255}
-                              placeholder="Ej. Se clasificaron mal los envases vacíos y llenos"
-                            />
-                            <Button
-                              variant="destructive"
-                              onClick={() => void submitReturnCancellation()}
-                              disabled={!canUpdate || isSaving || returnCancellationReason.trim().length < 3}
-                            >
-                              Anular recepción y volver a capturar
-                            </Button>
-                            {!canUpdate ? (
-                              <p className="text-xs text-muted-foreground">Tu rol no tiene permiso para corregir recepciones.</p>
-                            ) : (
-                              <p className="text-xs text-muted-foreground">
-                                La recepción anterior queda en el historial. Solo puede corregirse antes de autorizar diferencias o cerrar la ruta.
-                              </p>
-                            )}
-                          </>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">
-                            No se puede corregir la recepción después de autorizar diferencias o cerrar la ruta.
-                          </p>
-                        )}
-                      </div>
-                    ) : null}
-                  </CardContent>
-                </Card>
-                <Card className="rounded-xl">
-                  <CardContent className="space-y-1 p-4">
-                    <p className="text-sm text-muted-foreground">Estado de conciliación</p>
-                    <Badge variant={visibleInventory.conciliada ? "default" : "destructive"}>
-                      {visibleInventory.conciliada ? "Conciliada" : `${visibleInventory.diferenciasPendientes?.length ?? 0} diferencias pendientes`}
-                    </Badge>
-                    <p className="text-xs text-muted-foreground">Las cantidades se calculan desde movimientos confirmados.</p>
-                  </CardContent>
-                </Card>
-              </section>
+              <Tabs defaultValue="resumen">
+                <TabsList className="flex flex-wrap">
+                  <TabsTrigger value="resumen">Resumen</TabsTrigger>
+                  <TabsTrigger value="despachos">Despachos ({dispatchList.length})</TabsTrigger>
+                  <TabsTrigger value="devoluciones">Devoluciones ({returnList.length})</TabsTrigger>
+                  <TabsTrigger value="transferencias">Transferencias ({transfers.length})</TabsTrigger>
+                  <TabsTrigger value="relevos">Relevos</TabsTrigger>
+                  <TabsTrigger value="liquidacion">Liquidación</TabsTrigger>
+                </TabsList>
 
-              {canOperate ? (
-                <Card className="rounded-xl">
-                  <CardContent className="space-y-4 p-4">
-                    <div>
-                      <h2 className="text-lg font-semibold">{visibleInventory.despacho ? "Nuevo despacho (reabastecimiento)" : "Despacho inicial"}</h2>
-                      <p className="text-sm text-muted-foreground">
-                        Puedes confirmar más de un despacho por sesión (reabastecimiento tras regresar a planta); se
-                        suman al disponible del vehículo. El servidor valida y descuenta la existencia de planta en
-                        una transacción.
-                        {!canCreate ? " Tu rol no tiene permiso para crear despachos." : ""}
-                      </p>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
-                      <Input
-                        value={dispatchSearch}
-                        onChange={(event) => setDispatchSearch(event.target.value)}
-                        placeholder="Filtrar por nombre o presentación"
-                        className="md:col-span-2"
-                      />
-                      <Select value={dispatchProductId} onValueChange={setDispatchProductId}>
-                        <SelectTrigger><SelectValue placeholder="Selecciona producto" /></SelectTrigger>
-                        <SelectContent>
-                          {dispatchProductOptions.map((product) => (
-                            <SelectItem key={product.id} value={String(product.id)}>
-                              {product.nombre} · {product.unidadMedida ?? "sin unidad"} · Catálogo: {product.existencia}
-                              {product.esEnvaseRetornable
-                                ? ` · Físico planta: vacío ${product.stockEnvasePlanta?.vacio ?? 0}, lleno ${product.stockEnvasePlanta?.lleno ?? 0}, pendiente ${product.stockEnvasePlanta?.pendienteClasificacion ?? 0}`
-                                : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button variant="outline" onClick={addDispatchProduct} disabled={!dispatchProductId}>Agregar producto</Button>
-                    </div>
-                    {dispatchDraft.length ? (
-                      <Table>
-                        <TableHeader><TableRow><TableHead>Producto</TableHead><TableHead>Existencia planta</TableHead><TableHead>Cantidad</TableHead><TableHead>Estado envase</TableHead><TableHead /></TableRow></TableHeader>
-                        <TableBody>
-                          {dispatchDraft.map((line) => {
-                            const product = productById.get(line.idInventarioItem);
-                            return (
-                              <TableRow key={line.idInventarioItem}>
-                                <TableCell>{product?.nombre ?? `Producto ${line.idInventarioItem}`}</TableCell>
-                                <TableCell>
-                                  {product?.existencia ?? "-"}
-                                  {product?.esEnvaseRetornable ? (
-                                    <>
-                                      <p className="text-xs text-muted-foreground">
-                                        Físico verificado: vacío {product.stockEnvasePlanta?.vacio ?? 0}, lleno {product.stockEnvasePlanta?.lleno ?? 0}, pendiente de clasificar {product.stockEnvasePlanta?.pendienteClasificacion ?? 0}
-                                      </p>
-                                      {product.stockEnvasePlanta?.diferenciaCatalogo !== undefined &&
-                                      product.stockEnvasePlanta.diferenciaCatalogo < -0.009 ? (
-                                        <p className="text-xs text-destructive">
-                                          El saldo físico supera el catálogo por {Math.abs(product.stockEnvasePlanta.diferenciaCatalogo)}.
-                                        </p>
-                                      ) : null}
-                                    </>
-                                  ) : null}
-                                </TableCell>
-                                <TableCell>
-                                  <Input
-                                    type="number"
-                                    min="0.01"
-                                    step="0.01"
-                                    value={line.cantidad}
-                                    onChange={(event) => setDispatchDraft((previous) => previous.map((item) =>
-                                      item.idInventarioItem === line.idInventarioItem ? { ...item, cantidad: event.target.value } : item,
-                                    ))}
-                                    className="max-w-32"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  {product?.esEnvaseRetornable ? (
-                                    <>
-                                      <Select
-                                        value={line.estadoEnvase}
-                                        onValueChange={(value) => setDispatchDraft((previous) => previous.map((item) =>
-                                          item.idInventarioItem === line.idInventarioItem
-                                            ? { ...item, estadoEnvase: value as "VACIO" | "LLENO" }
-                                            : item,
-                                        ))}
-                                      >
-                                        <SelectTrigger className="min-w-28"><SelectValue placeholder="Estado" /></SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="VACIO">Vacío</SelectItem>
-                                          <SelectItem value="LLENO">Lleno</SelectItem>
-                                        </SelectContent>
-                                      </Select>
-                                      {line.estadoEnvase ? (
-                                        <p className="mt-1 text-xs text-muted-foreground">
-                                          Disponible verificado: {line.estadoEnvase === "VACIO"
-                                            ? product.stockEnvasePlanta?.vacio ?? 0
-                                            : product.stockEnvasePlanta?.lleno ?? 0}
-                                        </p>
-                                      ) : null}
-                                    </>
-                                  ) : "—"}
-                                </TableCell>
-                                <TableCell>
-                                  <Button variant="ghost" size="sm" onClick={() => setDispatchDraft((previous) => previous.filter((item) => item.idInventarioItem !== line.idInventarioItem))}>Quitar</Button>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    ) : <p className="text-sm text-muted-foreground">Agrega los productos que se cargarán al vehículo.</p>}
-                    <Textarea value={dispatchNotes} onChange={(event) => setDispatchNotes(event.target.value)} maxLength={255} placeholder="Observaciones del despacho" />
-                    <Button onClick={() => void submitDispatch()} disabled={!canCreate || isSaving || dispatchDraft.length === 0}>
-                      {isSaving ? <Loader2 className="size-4 animate-spin" /> : null} Confirmar despacho
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : null}
+                <TabsContent value="resumen" className="space-y-4">
+                  <SummaryTab
+                    selectedSession={selectedSession}
+                    visibleInventory={visibleInventory}
+                    transfers={transfers}
+                    handoffPending={Boolean(handoffResult)}
+                  />
+                </TabsContent>
 
-              {visibleInventory.productos.length > 0 ? (
-                <Card className="rounded-xl">
-                  <CardContent className="space-y-3 p-4">
-                    <div>
-                      <h2 className="text-lg font-semibold">Inventario y liquidación por producto</h2>
-                      <p className="text-sm text-muted-foreground">Las devoluciones vendibles aumentan el saldo del vehículo; las no vendibles se concilian físicamente, pero no quedan disponibles para reventa. &quot;Transferido&quot; refleja la custodia actual frente a otros vehículos (D-DIST-02/03/04).</p>
-                    </div>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Producto</TableHead><TableHead>Despachado</TableHead><TableHead>Vendido</TableHead>
-                          <TableHead>Dev. comercial</TableHead><TableHead>No vendible</TableHead>
-                          <TableHead>Devuelto</TableHead><TableHead>Dañado</TableHead><TableHead>Ajustado</TableHead>
-                          <TableHead>Reservado</TableHead>
-                          <TableHead>Transferido (salida)</TableHead><TableHead>Transferido (entrada)</TableHead>
-                          <TableHead>Disponible</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {visibleInventory.productos.map((line) => (
-                          <TableRow key={line.idInventarioItem}>
-                            <TableCell>{line.nombre}<span className="block text-xs text-muted-foreground">{line.unidadMedida ?? ""}</span></TableCell>
-                            <TableCell>{line.despachado}</TableCell><TableCell>{line.vendido}</TableCell>
-                            <TableCell>{line.devolucionComercial}</TableCell><TableCell>{line.noVendibleComercial}</TableCell>
-                            <TableCell>{line.devuelto}</TableCell><TableCell>{line.danado}</TableCell>
-                            <TableCell>{line.ajustado}</TableCell>
-                            <TableCell>{line.reservado}</TableCell>
-                            <TableCell>{line.transferidoSaliente ?? 0}</TableCell>
-                            <TableCell>{line.transferidoRecibido ?? 0}</TableCell>
-                            <TableCell className={line.disponible > 0.009 ? "font-semibold text-amber-700" : ""}>{line.disponible}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-              ) : null}
+                <TabsContent value="despachos" className="space-y-4">
+                  <DispatchTab
+                    canOperate={canOperate}
+                    canCreate={canCreate}
+                    canUpdate={canUpdate}
+                    isSaving={isSaving}
+                    visibleInventory={visibleInventory}
+                    dispatchList={dispatchList}
+                    dispatchCanBeCancelled={dispatchCanBeCancelled}
+                    dispatchCancelReasonById={dispatchCancelReasonById}
+                    setDispatchCancelReasonById={setDispatchCancelReasonById}
+                    requestDispatchCancellation={setDispatchCancelCandidate}
+                    dispatchDraft={dispatchDraft}
+                    setDispatchDraft={setDispatchDraft}
+                    dispatchSearch={dispatchSearch}
+                    setDispatchSearch={setDispatchSearch}
+                    dispatchProductId={dispatchProductId}
+                    setDispatchProductId={setDispatchProductId}
+                    dispatchProductOptions={dispatchProductOptions}
+                    productById={productById}
+                    addDispatchProduct={addDispatchProduct}
+                    dispatchNotes={dispatchNotes}
+                    setDispatchNotes={setDispatchNotes}
+                    submitDispatch={submitDispatch}
+                  />
+                </TabsContent>
 
-              {canOperate ? (
-                <Card className="rounded-xl">
-                  <CardContent className="space-y-4 p-4">
-                    <div>
-                      <h2 className="text-lg font-semibold">Transferencias parciales entre vehículos</h2>
-                      <p className="text-sm text-muted-foreground">
-                        Mueve parte del inventario disponible de este vehículo a otra sesión EN_CURSO. Queda PENDIENTE
-                        hasta que el vehículo destino la confirme; mientras tanto ya no está disponible en el origen.
-                        {!canCreate ? " Tu rol no tiene permiso para crear transferencias." : ""}
-                      </p>
-                    </div>
+                <TabsContent value="devoluciones" className="space-y-4">
+                  <ReturnsTab
+                    canOperate={canOperate}
+                    canCreate={canCreate}
+                    canUpdate={canUpdate}
+                    isSaving={isSaving}
+                    visibleInventory={visibleInventory}
+                    returnList={returnList}
+                    returnCanBeCancelled={returnCanBeCancelled}
+                    returnCancelReasonById={returnCancelReasonById}
+                    setReturnCancelReasonById={setReturnCancelReasonById}
+                    requestReturnCancellation={setReturnCancelCandidate}
+                    returnDraft={returnDraft}
+                    setReturnDraft={setReturnDraft}
+                    returnNotes={returnNotes}
+                    setReturnNotes={setReturnNotes}
+                    submitReturn={submitReturn}
+                  />
+                </TabsContent>
 
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div className="space-y-1.5">
-                        <Label>Sesión destino (vehículo)</Label>
-                        <Select value={transferDestinoId} onValueChange={setTransferDestinoId}>
-                          <SelectTrigger><SelectValue placeholder="Selecciona un vehículo EN_CURSO" /></SelectTrigger>
-                          <SelectContent>
-                            {transferDestinoOptions.map((session) => (
-                              <SelectItem key={session.id} value={String(session.id)}>
-                                {session.vehiculo?.placa ?? `Vehículo ${session.idVehiculo}`} · {session.ruta?.nombre ?? `Ruta ${session.idRuta}`}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Producto a transferir</Label>
-                        <div className="flex gap-2">
-                          <Select value={transferProductId} onValueChange={setTransferProductId}>
-                            <SelectTrigger><SelectValue placeholder="Selecciona producto" /></SelectTrigger>
-                            <SelectContent>
-                              {transferProductOptions.map((product) => (
-                                <SelectItem key={product.id} value={String(product.id)}>{product.nombre}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Button type="button" variant="outline" onClick={addTransferProduct} disabled={!transferProductId}>
-                            Agregar
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
+                <TabsContent value="transferencias" className="space-y-4">
+                  <TransfersTab
+                    canOperate={canOperate}
+                    canCreate={canCreate}
+                    canUpdate={canUpdate}
+                    isSavingTransfer={isSavingTransfer}
+                    selectedSession={selectedSession}
+                    transferDestinoOptions={transferDestinoOptions}
+                    transferDestinoId={transferDestinoId}
+                    setTransferDestinoId={setTransferDestinoId}
+                    transferProductOptions={transferProductOptions}
+                    transferProductId={transferProductId}
+                    setTransferProductId={setTransferProductId}
+                    addTransferProduct={addTransferProduct}
+                    transferDraft={transferDraft}
+                    setTransferDraft={setTransferDraft}
+                    productById={productById}
+                    transferMotivo={transferMotivo}
+                    setTransferMotivo={setTransferMotivo}
+                    submitTransfer={submitTransfer}
+                    transfers={transfers}
+                    sessionLabelById={sessionLabelById}
+                    transferRejectReason={transferRejectReason}
+                    setTransferRejectReason={setTransferRejectReason}
+                    submitRejectTransfer={submitRejectTransfer}
+                    transferCancelReason={transferCancelReason}
+                    setTransferCancelReason={setTransferCancelReason}
+                    submitCancelTransfer={submitCancelTransfer}
+                    submitConfirmTransfer={submitConfirmTransfer}
+                  />
+                </TabsContent>
 
-                    {transferDraft.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Producto</TableHead>
-                            <TableHead>Cantidad</TableHead>
-                            <TableHead>Estado envase</TableHead>
-                            <TableHead className="text-right">Quitar</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {transferDraft.map((line, index) => {
-                            const product = productById.get(line.idInventarioItem);
-                            return (
-                              <TableRow key={line.idInventarioItem}>
-                                <TableCell>{product?.nombre ?? line.idInventarioItem}</TableCell>
-                                <TableCell>
-                                  <Input
-                                    type="number" min="0" step="0.01" className="max-w-28"
-                                    value={line.cantidad}
-                                    onChange={(event) => setTransferDraft((previous) => previous.map((item, itemIndex) => itemIndex === index ? { ...item, cantidad: event.target.value } : item))}
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  {product?.esEnvaseRetornable ? (
-                                    <Select
-                                      value={line.estadoEnvase}
-                                      onValueChange={(value) => setTransferDraft((previous) => previous.map((item, itemIndex) => itemIndex === index ? { ...item, estadoEnvase: value as "VACIO" | "LLENO" } : item))}
-                                    >
-                                      <SelectTrigger className="min-w-28"><SelectValue placeholder="Estado" /></SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="VACIO">Vacío</SelectItem>
-                                        <SelectItem value="LLENO">Lleno</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  ) : "—"}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Button variant="outline" size="sm" onClick={() => setTransferDraft((previous) => previous.filter((_, itemIndex) => itemIndex !== index))}>
-                                    Quitar
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    ) : <p className="text-sm text-muted-foreground">Agrega los productos que se transferirán.</p>}
+                <TabsContent value="relevos" className="space-y-4">
+                  <HandoffTab
+                    canOperate={canOperate}
+                    canCreate={canCreate}
+                    isSavingHandoff={isSavingHandoff}
+                    handoffForm={handoffForm}
+                    setHandoffForm={setHandoffForm}
+                    routesCatalog={routesCatalog}
+                    handoffVehicleOptions={handoffVehicleOptions}
+                    sessionsHistory={sessions}
+                    employeeOptions={employeeOptions}
+                    handoffProductOptions={handoffProductOptions}
+                    handoffProductId={handoffProductId}
+                    setHandoffProductId={setHandoffProductId}
+                    addHandoffProduct={addHandoffProduct}
+                    handoffDraft={handoffDraft}
+                    setHandoffDraft={setHandoffDraft}
+                    productById={productById}
+                    submitHandoff={submitHandoff}
+                    handoffResult={handoffResult}
+                  />
+                </TabsContent>
 
-                    <Textarea value={transferMotivo} onChange={(event) => setTransferMotivo(event.target.value)} maxLength={255} placeholder="Motivo de la transferencia" />
-                    <Button onClick={() => void submitTransfer()} disabled={!canCreate || isSavingTransfer || transferDraft.length === 0 || !transferDestinoId}>
-                      {isSavingTransfer ? <Loader2 className="size-4 animate-spin" /> : null} Registrar transferencia
-                    </Button>
-
-                    {transfers.length > 0 ? (
-                      <div className="space-y-2 border-t pt-3">
-                        <h3 className="text-sm font-semibold">Transferencias de esta sesión</h3>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Origen</TableHead><TableHead>Destino</TableHead><TableHead>Estado</TableHead>
-                              <TableHead>Detalle</TableHead><TableHead>Motivo</TableHead>
-                              <TableHead className="text-right">Acciones</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {transfers.map((transfer) => {
-                              const isDestino = transfer.idRutaSesionDestino === selectedSession.id;
-                              const isOrigen = transfer.idRutaSesionOrigen === selectedSession.id;
-                              const isPending = transfer.estadoConfirmacion === "PENDIENTE";
-                              return (
-                                <TableRow key={transfer.id}>
-                                  <TableCell>{sessionLabelById.get(transfer.idRutaSesionOrigen) ?? `#${transfer.idRutaSesionOrigen}`}</TableCell>
-                                  <TableCell>{sessionLabelById.get(transfer.idRutaSesionDestino) ?? `#${transfer.idRutaSesionDestino}`}</TableCell>
-                                  <TableCell>
-                                    <Badge variant={transfer.estadoConfirmacion === "CONFIRMADA" ? "default" : transfer.estadoConfirmacion === "RECHAZADA" ? "destructive" : "secondary"}>
-                                      {transfer.estadoConfirmacion}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell>
-                                    <ul className="text-xs text-muted-foreground">
-                                      {transfer.detalle.map((item) => (
-                                        <li key={item.idInventarioItem}>{item.nombre}: {item.cantidad}{item.estadoEnvase ? ` (${item.estadoEnvase})` : ""}</li>
-                                      ))}
-                                    </ul>
-                                  </TableCell>
-                                  <TableCell className="max-w-56 text-xs text-muted-foreground">{transfer.motivo}</TableCell>
-                                  <TableCell className="text-right">
-                                    {isPending && isDestino ? (
-                                      <div className="flex flex-col items-end gap-1">
-                                        <Button size="sm" disabled={!canUpdate || isSavingTransfer} onClick={() => void submitConfirmTransfer(transfer)}>
-                                          Confirmar recepción
-                                        </Button>
-                                        <div className="flex gap-1">
-                                          <Input
-                                            className="h-8 max-w-40 text-xs"
-                                            placeholder="Motivo de rechazo"
-                                            value={transferRejectReason[transfer.id] ?? ""}
-                                            onChange={(event) => setTransferRejectReason((previous) => ({ ...previous, [transfer.id]: event.target.value }))}
-                                          />
-                                          <Button size="sm" variant="destructive" disabled={!canUpdate || isSavingTransfer} onClick={() => void submitRejectTransfer(transfer)}>
-                                            Rechazar
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    ) : null}
-                                    {isPending && isOrigen ? (
-                                      <div className="flex flex-col items-end gap-1">
-                                        <Input
-                                          className="h-8 max-w-40 text-xs"
-                                          placeholder="Motivo de anulación"
-                                          value={transferCancelReason[transfer.id] ?? ""}
-                                          onChange={(event) => setTransferCancelReason((previous) => ({ ...previous, [transfer.id]: event.target.value }))}
-                                        />
-                                        <Button size="sm" variant="outline" disabled={!canUpdate || isSavingTransfer} onClick={() => void submitCancelTransfer(transfer)}>
-                                          Anular transferencia
-                                        </Button>
-                                      </div>
-                                    ) : null}
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    ) : null}
-                  </CardContent>
-                </Card>
-              ) : null}
-
-              {canOperate ? (
-                <Card className="rounded-xl">
-                  <CardContent className="space-y-4 p-4">
-                    <div>
-                      <h2 className="text-lg font-semibold">Relevo de vehículo (custodia compartida)</h2>
-                      <p className="text-sm text-muted-foreground">
-                        Sustituye este vehículo por otro sin cerrar la sesión actual: ambos pueden seguir operando.
-                        Indica solo lo que se transfiera ahora; el resto permanece bajo custodia de este vehículo
-                        hasta transferirse después o hasta cerrar esta sesión por el flujo normal.
-                        {!canCreate ? " Tu rol no tiene permiso para registrar relevos." : ""}
-                      </p>
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                      <div className="space-y-1.5">
-                        <Label>Ruta de la sesión entrante</Label>
-                        <select
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                          value={handoffForm.idRuta}
-                          onChange={(event) => setHandoffForm((prev) => ({ ...prev, idRuta: event.target.value }))}
-                        >
-                          <option value="">Seleccionar</option>
-                          {routesCatalog.map((item) => (
-                            <option key={item.id} value={item.id}>{item.nombre}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Vehículo entrante</Label>
-                        <select
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                          value={handoffForm.idVehiculo}
-                          onChange={(event) => setHandoffForm((prev) => ({ ...prev, idVehiculo: event.target.value }))}
-                        >
-                          <option value="">Seleccionar</option>
-                          {handoffVehicleOptions.map((item) => (
-                            <option key={item.id} value={item.id}>{item.placa} - {item.marca}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Chofer entrante</Label>
-                        <select
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                          value={handoffForm.idUsuarioChofer}
-                          onChange={(event) => setHandoffForm((prev) => ({ ...prev, idUsuarioChofer: event.target.value }))}
-                        >
-                          <option value="">Seleccionar</option>
-                          {employeeOptions.map((item) => (
-                            <option key={item.userId} value={item.userId}>{item.nombre}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Vendedor entrante</Label>
-                        <select
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                          value={handoffForm.idUsuarioVendedor}
-                          onChange={(event) => setHandoffForm((prev) => ({ ...prev, idUsuarioVendedor: event.target.value }))}
-                        >
-                          <option value="">Seleccionar</option>
-                          {employeeOptions.map((item) => (
-                            <option key={item.userId} value={item.userId}>{item.nombre}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Km inicial entrante</Label>
-                        <Input
-                          type="number" min="0"
-                          value={handoffForm.kmInicialEntrante}
-                          onChange={(event) => setHandoffForm((prev) => ({ ...prev, kmInicialEntrante: event.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-1.5 md:col-span-2 lg:col-span-3">
-                        <Label>Motivo del relevo</Label>
-                        <Input
-                          value={handoffForm.motivo} maxLength={255}
-                          onChange={(event) => setHandoffForm((prev) => ({ ...prev, motivo: event.target.value }))}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Inventario a transferir ahora (opcional; el resto queda en este vehículo)</Label>
-                      <div className="flex gap-2">
-                        <Select value={handoffProductId} onValueChange={setHandoffProductId}>
-                          <SelectTrigger><SelectValue placeholder="Selecciona producto" /></SelectTrigger>
-                          <SelectContent>
-                            {handoffProductOptions.map((product) => (
-                              <SelectItem key={product.id} value={String(product.id)}>{product.nombre}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button type="button" variant="outline" onClick={addHandoffProduct} disabled={!handoffProductId}>
-                          Agregar
-                        </Button>
-                      </div>
-                      {handoffDraft.length > 0 ? (
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Producto</TableHead><TableHead>Cantidad</TableHead>
-                              <TableHead>Estado envase</TableHead><TableHead className="text-right">Quitar</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {handoffDraft.map((line, index) => {
-                              const product = productById.get(line.idInventarioItem);
-                              return (
-                                <TableRow key={line.idInventarioItem}>
-                                  <TableCell>{product?.nombre ?? line.idInventarioItem}</TableCell>
-                                  <TableCell>
-                                    <Input
-                                      type="number" min="0" step="0.01" className="max-w-28"
-                                      value={line.cantidad}
-                                      onChange={(event) => setHandoffDraft((previous) => previous.map((item, itemIndex) => itemIndex === index ? { ...item, cantidad: event.target.value } : item))}
-                                    />
-                                  </TableCell>
-                                  <TableCell>
-                                    {product?.esEnvaseRetornable ? (
-                                      <Select
-                                        value={line.estadoEnvase}
-                                        onValueChange={(value) => setHandoffDraft((previous) => previous.map((item, itemIndex) => itemIndex === index ? { ...item, estadoEnvase: value as "VACIO" | "LLENO" } : item))}
-                                      >
-                                        <SelectTrigger className="min-w-28"><SelectValue placeholder="Estado" /></SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="VACIO">Vacío</SelectItem>
-                                          <SelectItem value="LLENO">Lleno</SelectItem>
-                                        </SelectContent>
-                                      </Select>
-                                    ) : "—"}
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    <Button variant="outline" size="sm" onClick={() => setHandoffDraft((previous) => previous.filter((_, itemIndex) => itemIndex !== index))}>
-                                      Quitar
-                                    </Button>
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                      ) : null}
-                    </div>
-
-                    <Button onClick={() => void submitHandoff()} disabled={!canCreate || isSavingHandoff}>
-                      {isSavingHandoff ? <Loader2 className="size-4 animate-spin" /> : null} Registrar relevo
-                    </Button>
-
-                    {handoffResult ? (
-                      <div className="space-y-3 border-t pt-3">
-                        <h3 className="text-sm font-semibold">
-                          Resultado: nueva sesión #{handoffResult.sesionEntrante.id} ({handoffResult.sesionEntrante.estado})
-                        </h3>
-                        {handoffResult.transferenciaInventario ? (
-                          <p className="text-xs text-muted-foreground">
-                            Transferencia #{handoffResult.transferenciaInventario.id} ({handoffResult.transferenciaInventario.estadoConfirmacion}):{" "}
-                            {handoffResult.transferenciaInventario.detalle.map((item) => `${item.nombre}: ${item.cantidad}`).join(", ")}
-                          </p>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">No se transfirió inventario de inmediato; todo permanece en el vehículo saliente.</p>
-                        )}
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground">Custodia vehículo saliente (sesión #{handoffResult.custodia.saliente.idRutaSesion})</p>
-                            <ul className="text-xs text-muted-foreground">
-                              {handoffResult.custodia.saliente.productos.map((line) => (
-                                <li key={line.idInventarioItem}>{line.nombre}: disponible {line.disponible}</li>
-                              ))}
-                            </ul>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground">Custodia vehículo entrante (sesión #{handoffResult.custodia.entrante.idRutaSesion})</p>
-                            <ul className="text-xs text-muted-foreground">
-                              {handoffResult.custodia.entrante.productos.map((line) => (
-                                <li key={line.idInventarioItem}>{line.nombre}: disponible {line.disponible}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-                  </CardContent>
-                </Card>
-              ) : null}
-
-              {visibleInventory.despacho && canOperate ? (
-                <Card className="rounded-xl">
-                  <CardContent className="space-y-4 p-4">
-                    <div>
-                      <h2 className="text-lg font-semibold">Recepción de devolución</h2>
-                      <p className="text-sm text-muted-foreground">
-                        Puedes registrar varias devoluciones por sesión (por ejemplo, un conteo intermedio seguido de
-                        reabastecimiento y la devolución final del día). Solo lo vendible se traslada a planta al
-                        cerrar la sesión.
-                        {!canCreate ? " Tu rol no tiene permiso para registrar devoluciones." : ""}
-                      </p>
-                    </div>
-                    <Table>
-                      <TableHeader><TableRow><TableHead>Producto / saldo físico</TableHead><TableHead>Recibido</TableHead><TableHead>Vacíos</TableHead><TableHead>Llenos</TableHead><TableHead>Dañado</TableHead><TableHead>Estado antes de daño</TableHead><TableHead>Ubicación no vendible</TableHead><TableHead>Observaciones</TableHead></TableRow></TableHeader>
-                      <TableBody>
-                        {visibleInventory.productos.filter((line) => line.pendienteConciliacion - line.reservado > 0.009).map((line) => {
-                          const isReturnableContainer = line.estadoEnvaseDespachado != null;
-                          return (
-                          <TableRow key={line.idInventarioItem}>
-                            <TableCell>{line.nombre}<span className="block text-xs text-muted-foreground">Saldo físico: {Number(Math.max(0, line.pendienteConciliacion - line.reservado).toFixed(2))}</span></TableCell>
-                            <TableCell><Input type="number" min="0" step="0.01" value={returnDraft[line.idInventarioItem]?.cantidadRecibida ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadRecibida: event.target.value } }))} className="max-w-28" /></TableCell>
-                            <TableCell>{isReturnableContainer ? <Input type="number" min="0" step="1" value={returnDraft[line.idInventarioItem]?.cantidadEnvaseVacio ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadEnvaseVacio: event.target.value } }))} className="max-w-24" /> : "—"}</TableCell>
-                            <TableCell>{isReturnableContainer ? <Input type="number" min="0" step="1" value={returnDraft[line.idInventarioItem]?.cantidadEnvaseLleno ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadEnvaseLleno: event.target.value } }))} className="max-w-24" /> : "—"}</TableCell>
-                            <TableCell><Input type="number" min="0" step={isReturnableContainer ? "1" : "0.01"} value={returnDraft[line.idInventarioItem]?.cantidadDanada ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadDanada: event.target.value } }))} className="max-w-28" /></TableCell>
-                            <TableCell>{isReturnableContainer ? <Select value={returnDraft[line.idInventarioItem]?.estadoEnvaseDanado ?? ""} onValueChange={(value) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], estadoEnvaseDanado: value as "VACIO" | "LLENO" } }))}><SelectTrigger className="min-w-28"><SelectValue placeholder="Estado" /></SelectTrigger><SelectContent><SelectItem value="VACIO">Vacío</SelectItem><SelectItem value="LLENO">Lleno</SelectItem></SelectContent></Select> : "—"}</TableCell>
-                            <TableCell>
-                              <div className="min-w-44 space-y-1">
-                                <Select
-                                  value={returnDraft[line.idInventarioItem]?.ubicacionDanada ?? ""}
-                                  onValueChange={(value) =>
-                                    setReturnDraft((previous) => ({
-                                      ...previous,
-                                      [line.idInventarioItem]: {
-                                        ...previous[line.idInventarioItem],
-                                        ubicacionDanada: value as "CUARENTENA" | "OTRA",
-                                      },
-                                    }))
-                                  }
-                                  disabled={
-                                    isSaving ||
-                                    Number(returnDraft[line.idInventarioItem]?.cantidadDanada ?? 0) <= 0
-                                  }
-                                >
-                                  <SelectTrigger aria-label={`Ubicación no vendible de ${line.nombre}`}>
-                                    <SelectValue placeholder="Selecciona ubicación" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="CUARENTENA">Cuarentena</SelectItem>
-                                    <SelectItem value="OTRA">Otra ubicación</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                {returnDraft[line.idInventarioItem]?.ubicacionDanada === "OTRA" ? (
-                                  <Input
-                                    value={returnDraft[line.idInventarioItem]?.ubicacionDanadaDetalle ?? ""}
-                                    onChange={(event) =>
-                                      setReturnDraft((previous) => ({
-                                        ...previous,
-                                        [line.idInventarioItem]: {
-                                          ...previous[line.idInventarioItem],
-                                          ubicacionDanadaDetalle: event.target.value,
-                                        },
-                                      }))
-                                    }
-                                    maxLength={255}
-                                    placeholder="Especifica el lugar"
-                                    aria-label={`Detalle de ubicación no vendible de ${line.nombre}`}
-                                  />
-                                ) : null}
-                              </div>
-                            </TableCell>
-                            <TableCell><Input value={returnDraft[line.idInventarioItem]?.observaciones ?? ""} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], observaciones: event.target.value } }))} maxLength={255} /></TableCell>
-                          </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                    <Textarea value={returnNotes} onChange={(event) => setReturnNotes(event.target.value)} maxLength={255} placeholder="Observaciones de recepción" />
-                    {!canCreate ? <p className="text-sm text-muted-foreground">Tu rol no tiene permiso para registrar devoluciones.</p> : null}
-                    <Button onClick={() => void submitReturn()} disabled={!canCreate || isSaving || visibleInventory.productos.every((line) => line.pendienteConciliacion - line.reservado <= 0.009)}>
-                      Confirmar recepción
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : null}
-
-              {visibleInventory.devolucion && (visibleInventory.diferenciasPendientes?.length ?? 0) > 0 && canOperate ? (
-                <Card className="rounded-xl">
-                  <CardContent className="space-y-4 p-4">
-                    <div>
-                      <h2 className="text-lg font-semibold">Autorizar diferencias</h2>
-                      <p className="text-sm text-muted-foreground">
-                        La clasificación y el motivo quedan auditados con el usuario autenticado que autoriza.
-                        {!canUpdate ? " Tu rol no tiene permiso para autorizar diferencias." : ""}
-                      </p>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div className="space-y-1.5">
-                        <Label>Producto con diferencia</Label>
-                        <Select
-                          value={selectedPendingLine ? String(selectedPendingLine.idInventarioItem) : ""}
-                          onValueChange={setAdjustmentItemId}
-                        >
-                          <SelectTrigger><SelectValue placeholder="Selecciona producto" /></SelectTrigger>
-                          <SelectContent>
-                            {visibleInventory.diferenciasPendientes?.map((line) => (
-                              <SelectItem key={line.idInventarioItem} value={String(line.idInventarioItem)}>
-                                {line.nombre} · pendiente {Number(Math.max(0, line.pendienteConciliacion - line.reservado).toFixed(2))}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Clasificación</Label>
-                        <Select value={adjustmentClass} onValueChange={(value) => setAdjustmentClass(value as typeof adjustmentClass)}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="FALTANTE">Faltante</SelectItem>
-                            <SelectItem value="DANADO">Dañado no recibido</SelectItem>
-                            <SelectItem value="OTRO">Otro</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Cantidad</Label>
-                        <Input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          value={adjustmentAmount}
-                          placeholder={selectedPendingLine ? String(Number(Math.max(0, selectedPendingLine.pendienteConciliacion - selectedPendingLine.reservado).toFixed(2))) : ""}
-                          onChange={(event) => setAdjustmentAmount(event.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Motivo obligatorio</Label>
-                        <Input value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} maxLength={255} />
-                      </div>
-                    </div>
-                    <Button variant="outline" onClick={() => void submitAdjustment()} disabled={!canUpdate || isSaving}>
-                      Registrar autorización de diferencia
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : null}
-
-              {selectedSession.estado === "EN_CURSO" ? (
-                <Card className="rounded-xl">
-                  <CardContent className="flex flex-wrap items-end justify-between gap-4 p-4">
-                    <div className="max-w-sm space-y-1.5">
-                      <Label htmlFor="closing-km">Kilometraje final</Label>
-                      <Input id="closing-km" type="number" min={selectedSession.kmInicial ?? 0} value={closingKilometers} onChange={(event) => setClosingKilometers(event.target.value)} />
-                      <p className="text-xs text-muted-foreground">El backend rechazará el cierre si quedan cantidades sin conciliar.</p>
-                      {!canUpdate ? <p className="text-xs text-muted-foreground">Tu rol no tiene permiso para cerrar rutas.</p> : null}
-                    </div>
-                    <Button onClick={() => void closeRoute()} disabled={!canUpdate || !visibleInventory.conciliada || isSaving}>
-                      Cerrar y liquidar ruta
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card className="rounded-xl">
-                  <CardContent className="p-4 text-sm text-muted-foreground">
-                    Sesión {selectedSession.estado.toLowerCase()}. Cierre registrado: {formatDate(selectedSession.fechaCierre ?? null)}.
-                  </CardContent>
-                </Card>
-              )}
+                <TabsContent value="liquidacion" className="space-y-4">
+                  <SettlementTab
+                    canOperate={canOperate}
+                    canUpdate={canUpdate}
+                    isSaving={isSaving}
+                    selectedSession={selectedSession}
+                    visibleInventory={visibleInventory}
+                    selectedPendingLine={selectedPendingLine}
+                    setAdjustmentItemId={setAdjustmentItemId}
+                    adjustmentClass={adjustmentClass}
+                    setAdjustmentClass={setAdjustmentClass}
+                    adjustmentAmount={adjustmentAmount}
+                    setAdjustmentAmount={setAdjustmentAmount}
+                    adjustmentReason={adjustmentReason}
+                    setAdjustmentReason={setAdjustmentReason}
+                    submitAdjustment={submitAdjustment}
+                    closingKilometers={closingKilometers}
+                    setClosingKilometers={setClosingKilometers}
+                    closeRoute={closeRoute}
+                  />
+                </TabsContent>
+              </Tabs>
             </>
           ) : null}
         </div>
       </DashboardShell>
+
+      <ConfirmActionDialog
+        open={Boolean(dispatchCancelCandidate)}
+        onOpenChange={(open) => {
+          if (!open) setDispatchCancelCandidate(null);
+        }}
+        onConfirm={() => void submitDispatchCancellation()}
+        title={`Anular despacho #${dispatchCancelCandidate?.id ?? ""}`}
+        description={`Se restaurarán las existencias de planta y envases de este despacho. Motivo: "${dispatchCancelCandidate?.motivo ?? ""}". Esta acción queda auditada.`}
+        confirmLabel="Anular despacho"
+        cancelLabel="Cancelar"
+        loading={isSaving}
+      />
+
+      <ConfirmActionDialog
+        open={Boolean(returnCancelCandidate)}
+        onOpenChange={(open) => {
+          if (!open) setReturnCancelCandidate(null);
+        }}
+        onConfirm={() => void submitReturnCancellation()}
+        title={`Anular devolución #${returnCancelCandidate?.id ?? ""}`}
+        description={`La recepción anterior quedará en el historial como anulada. Motivo: "${returnCancelCandidate?.motivo ?? ""}". Esta acción queda auditada.`}
+        confirmLabel="Anular devolución"
+        cancelLabel="Cancelar"
+        loading={isSaving}
+      />
     </RequireAuth>
   );
 }

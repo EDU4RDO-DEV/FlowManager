@@ -17,6 +17,7 @@ import { createClient, uploadClientImage } from "@/services/clients.service";
 const EMPTY_FORM: ClientFormValues = {
   nombreCompleto: "",
   habilitadoCredito: false,
+  limiteCredito: 0,
   correoElectronico: "",
   telefono1: "",
   telefono2: "",
@@ -61,6 +62,7 @@ export default function CreateClientPage() {
       await createClient({
         idUsuario: user.id,
         habilitadoCredito: form.habilitadoCredito,
+        limiteCredito: form.limiteCredito,
         entidad: {
           nombreCompleto: form.nombreCompleto.trim(),
           correoElectronico: form.correoElectronico.trim() || undefined,

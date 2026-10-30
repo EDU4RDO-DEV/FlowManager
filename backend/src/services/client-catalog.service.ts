@@ -1,4 +1,8 @@
+import { Prisma, PrismaClient } from '@prisma/client';
+
 import { prisma } from '../config/prisma';
+
+type CatalogDb = PrismaClient | Prisma.TransactionClient;
 
 type CreateTipoClienteInput = {
   idUsuario: number;
@@ -95,8 +99,8 @@ function toCondicionCreditoDto(condicion: {
   };
 }
 
-async function validateUsuarioExists(idUsuario: number) {
-  const usuario = await prisma.usuario.findFirst({
+async function validateUsuarioExists(idUsuario: number, db: CatalogDb = prisma) {
+  const usuario = await db.usuario.findFirst({
     where: { Id: idUsuario, Anulado: false },
     select: { Id: true },
   });
@@ -106,8 +110,8 @@ async function validateUsuarioExists(idUsuario: number) {
   }
 }
 
-async function validateClienteExists(idCliente: number) {
-  const cliente = await prisma.cliente.findFirst({
+async function validateClienteExists(idCliente: number, db: CatalogDb = prisma) {
+  const cliente = await db.cliente.findFirst({
     where: { Id: idCliente, Anulado: false },
     select: { Id: true },
   });
@@ -117,8 +121,8 @@ async function validateClienteExists(idCliente: number) {
   }
 }
 
-async function validateTipoCreditoActivo(idTipoCredito: number) {
-  const tipo = await prisma.tipoCredito.findFirst({
+async function validateTipoCreditoActivo(idTipoCredito: number, db: CatalogDb = prisma) {
+  const tipo = await db.tipoCredito.findFirst({
     where: { Id: idTipoCredito, Anulado: false, Activo: true },
     select: { Id: true },
   });
@@ -144,11 +148,50 @@ async function validateNombreTipoClienteDisponible(nombre: string, exceptId?: nu
 }
 
 function parseDateOnly(value: string, fieldName: string): Date {
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
     throw new Error(`${fieldName} inválida`);
   }
   return parsed;
+}
+
+function previousCalendarDate(value: Date): Date {
+  const previous = new Date(value);
+  previous.setUTCDate(previous.getUTCDate() - 1);
+  return previous;
+}
+
+function overlappingConditionsWhere(
+  idCliente: number,
+  fechaInicioVigencia: Date,
+  fechaFinVigencia: Date | null,
+  exceptId?: number,
+) {
+  return {
+    IdCliente: idCliente,
+    HabilitadoCredito: true,
+    Anulado: false,
+    ...(exceptId !== undefined ? { NOT: { Id: exceptId } } : {}),
+    ...(fechaFinVigencia ? { FechaInicioVigencia: { lte: fechaFinVigencia } } : {}),
+    OR: [{ FechaFinVigencia: null }, { FechaFinVigencia: { gte: fechaInicioVigencia } }],
+  };
+}
+
+async function assertNoOverlappingEnabledCondition(
+  db: CatalogDb,
+  idCliente: number,
+  fechaInicioVigencia: Date,
+  fechaFinVigencia: Date | null,
+  exceptId?: number,
+) {
+  const overlaps = await db.clienteCondicionCredito.findMany({
+    where: overlappingConditionsWhere(idCliente, fechaInicioVigencia, fechaFinVigencia, exceptId),
+    select: { Id: true },
+  });
+
+  if (overlaps.length > 0) {
+    throw new Error('El período de vigencia se superpone con otra condición habilitada');
+  }
 }
 
 // ===== TipoCliente =====
@@ -275,7 +318,6 @@ export async function restoreTipoCliente(id: number, idUsuarioModificador?: numb
 export async function listClienteCondicionesCredito(filters: { idCliente?: number }) {
   const condiciones = await prisma.clienteCondicionCredito.findMany({
     where: {
-      Anulado: false,
       ...(filters.idCliente !== undefined ? { IdCliente: filters.idCliente } : {}),
     },
     include: { TipoCredito: { select: { Id: true, Nombre: true } } },
@@ -309,10 +351,6 @@ export async function getClienteCondicionCreditoById(id: number) {
 }
 
 export async function createClienteCondicionCredito(input: CreateClienteCondicionCreditoInput) {
-  await validateUsuarioExists(input.idUsuario);
-  await validateClienteExists(input.idCliente);
-  await validateTipoCreditoActivo(input.idTipoCredito);
-
   const fechaInicioVigencia = parseDateOnly(input.fechaInicioVigencia, 'fechaInicioVigencia');
   const fechaFinVigencia =
     input.fechaFinVigencia !== undefined ? parseDateOnly(input.fechaFinVigencia, 'fechaFinVigencia') : null;
@@ -321,157 +359,204 @@ export async function createClienteCondicionCredito(input: CreateClienteCondicio
     throw new Error('fechaFinVigencia no puede ser anterior a fechaInicioVigencia');
   }
 
-  if (!fechaFinVigencia) {
-    const openEnded = await prisma.clienteCondicionCredito.findFirst({
-      where: { IdCliente: input.idCliente, Anulado: false, FechaFinVigencia: null },
-      select: { Id: true },
-    });
+  return prisma.$transaction(
+    async (tx) => {
+      await validateUsuarioExists(input.idUsuario, tx);
+      await validateClienteExists(input.idCliente, tx);
+      await validateTipoCreditoActivo(input.idTipoCredito, tx);
 
-    if (openEnded) {
-      throw new Error('El cliente ya tiene una condición de crédito vigente sin fecha de fin');
-    }
-  }
+      if (input.habilitadoCredito ?? true) {
+        const overlaps = await tx.clienteCondicionCredito.findMany({
+          where: overlappingConditionsWhere(input.idCliente, fechaInicioVigencia, fechaFinVigencia),
+          select: { Id: true, FechaInicioVigencia: true },
+        });
 
-  const created = await prisma.clienteCondicionCredito.create({
-    data: {
-      IdCliente: input.idCliente,
-      IdTipoCredito: input.idTipoCredito,
-      IdUsuario: input.idUsuario,
-      HabilitadoCredito: input.habilitadoCredito ?? true,
-      FechaInicioVigencia: fechaInicioVigencia,
-      FechaFinVigencia: fechaFinVigencia,
-      Observaciones: input.observaciones ?? null,
-      Anulado: false,
+        if (overlaps.length > 1 || (overlaps.length === 1 && overlaps[0].FechaInicioVigencia >= fechaInicioVigencia)) {
+          throw new Error('El período de vigencia se superpone con otra condición habilitada');
+        }
+
+        if (overlaps.length === 1) {
+          await tx.clienteCondicionCredito.update({
+            where: { Id: overlaps[0].Id },
+            data: {
+              FechaFinVigencia: previousCalendarDate(fechaInicioVigencia),
+              IdUsuarioModificador: input.idUsuario,
+              FechaModificacion: new Date(),
+            },
+          });
+        }
+      }
+
+      const created = await tx.clienteCondicionCredito.create({
+        data: {
+          IdCliente: input.idCliente,
+          IdTipoCredito: input.idTipoCredito,
+          IdUsuario: input.idUsuario,
+          HabilitadoCredito: input.habilitadoCredito ?? true,
+          FechaInicioVigencia: fechaInicioVigencia,
+          FechaFinVigencia: fechaFinVigencia,
+          Observaciones: input.observaciones ?? null,
+          Anulado: false,
+        },
+        include: { TipoCredito: { select: { Id: true, Nombre: true } } },
+      });
+
+      return toCondicionCreditoDto(created);
     },
-    include: { TipoCredito: { select: { Id: true, Nombre: true } } },
-  });
-
-  return toCondicionCreditoDto(created);
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+  );
 }
 
 export async function updateClienteCondicionCredito(id: number, input: UpdateClienteCondicionCreditoInput) {
-  const existing = await prisma.clienteCondicionCredito.findFirst({
-    where: { Id: id, Anulado: false },
-    select: { Id: true, IdCliente: true, FechaInicioVigencia: true },
-  });
+  return prisma.$transaction(
+    async (tx) => {
+      const existing = await tx.clienteCondicionCredito.findFirst({
+        where: { Id: id, Anulado: false },
+        select: {
+          Id: true,
+          IdCliente: true,
+          IdTipoCredito: true,
+          HabilitadoCredito: true,
+          FechaInicioVigencia: true,
+          FechaFinVigencia: true,
+        },
+      });
 
-  if (!existing) {
-    throw new Error('Condición de crédito no existe');
-  }
+      if (!existing) {
+        throw new Error('Condición de crédito no existe');
+      }
 
-  if (input.idUsuarioModificador !== undefined) {
-    await validateUsuarioExists(input.idUsuarioModificador);
-  }
+      if (input.idUsuarioModificador !== undefined) {
+        await validateUsuarioExists(input.idUsuarioModificador, tx);
+      }
 
-  if (input.idTipoCredito !== undefined) {
-    await validateTipoCreditoActivo(input.idTipoCredito);
-  }
+      if (input.idTipoCredito !== undefined && input.idTipoCredito !== existing.IdTipoCredito) {
+        throw new Error('El tipo de crédito no se modifica en una condición existente; asigne una nueva condición');
+      }
 
-  const fechaInicioVigencia =
-    input.fechaInicioVigencia !== undefined
-      ? parseDateOnly(input.fechaInicioVigencia, 'fechaInicioVigencia')
-      : existing.FechaInicioVigencia;
+      const fechaInicioVigencia =
+        input.fechaInicioVigencia !== undefined
+          ? parseDateOnly(input.fechaInicioVigencia, 'fechaInicioVigencia')
+          : existing.FechaInicioVigencia;
+      const fechaFinVigencia =
+        input.fechaFinVigencia !== undefined
+          ? input.fechaFinVigencia === null
+            ? null
+            : parseDateOnly(input.fechaFinVigencia, 'fechaFinVigencia')
+          : existing.FechaFinVigencia;
+      const habilitadoCredito = input.habilitadoCredito ?? existing.HabilitadoCredito;
 
-  const fechaFinVigencia =
-    input.fechaFinVigencia !== undefined && input.fechaFinVigencia !== null
-      ? parseDateOnly(input.fechaFinVigencia, 'fechaFinVigencia')
-      : input.fechaFinVigencia === null
-        ? null
-        : undefined;
+      if (fechaFinVigencia && fechaFinVigencia < fechaInicioVigencia) {
+        throw new Error('fechaFinVigencia no puede ser anterior a fechaInicioVigencia');
+      }
 
-  if (fechaFinVigencia && fechaFinVigencia < fechaInicioVigencia) {
-    throw new Error('fechaFinVigencia no puede ser anterior a fechaInicioVigencia');
-  }
+      if (habilitadoCredito) {
+        await assertNoOverlappingEnabledCondition(
+          tx,
+          existing.IdCliente,
+          fechaInicioVigencia,
+          fechaFinVigencia,
+          id,
+        );
+      }
 
-  if (fechaFinVigencia === null) {
-    const openEnded = await prisma.clienteCondicionCredito.findFirst({
-      where: {
-        IdCliente: existing.IdCliente,
-        Anulado: false,
-        FechaFinVigencia: null,
-        NOT: { Id: id },
-      },
-      select: { Id: true },
-    });
+      const updated = await tx.clienteCondicionCredito.update({
+        where: { Id: id },
+        data: {
+          ...(input.habilitadoCredito !== undefined ? { HabilitadoCredito: input.habilitadoCredito } : {}),
+          ...(input.fechaInicioVigencia !== undefined ? { FechaInicioVigencia: fechaInicioVigencia } : {}),
+          ...(input.fechaFinVigencia !== undefined ? { FechaFinVigencia: fechaFinVigencia } : {}),
+          ...(input.observaciones !== undefined ? { Observaciones: input.observaciones } : {}),
+          ...(input.idUsuarioModificador !== undefined
+            ? { IdUsuarioModificador: input.idUsuarioModificador }
+            : {}),
+          FechaModificacion: new Date(),
+        },
+        include: { TipoCredito: { select: { Id: true, Nombre: true } } },
+      });
 
-    if (openEnded) {
-      throw new Error('El cliente ya tiene una condición de crédito vigente sin fecha de fin');
-    }
-  }
-
-  const updated = await prisma.clienteCondicionCredito.update({
-    where: { Id: id },
-    data: {
-      ...(input.idTipoCredito !== undefined ? { IdTipoCredito: input.idTipoCredito } : {}),
-      ...(input.habilitadoCredito !== undefined ? { HabilitadoCredito: input.habilitadoCredito } : {}),
-      ...(input.fechaInicioVigencia !== undefined ? { FechaInicioVigencia: fechaInicioVigencia } : {}),
-      ...(fechaFinVigencia !== undefined ? { FechaFinVigencia: fechaFinVigencia } : {}),
-      ...(input.observaciones !== undefined ? { Observaciones: input.observaciones } : {}),
-      ...(input.idUsuarioModificador !== undefined ? { IdUsuarioModificador: input.idUsuarioModificador } : {}),
-      FechaModificacion: new Date(),
+      return toCondicionCreditoDto(updated);
     },
-    include: { TipoCredito: { select: { Id: true, Nombre: true } } },
-  });
-
-  return toCondicionCreditoDto(updated);
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+  );
 }
 
 export async function deleteClienteCondicionCredito(id: number, idUsuarioAnulador?: number) {
-  const existing = await prisma.clienteCondicionCredito.findFirst({ where: { Id: id, Anulado: false }, select: { Id: true } });
-  if (!existing) {
-    throw new Error('Condición de crédito no existe');
-  }
+  await prisma.$transaction(
+    async (tx) => {
+      const existing = await tx.clienteCondicionCredito.findFirst({
+        where: { Id: id, Anulado: false },
+        select: { Id: true },
+      });
+      if (!existing) {
+        throw new Error('Condición de crédito no existe');
+      }
 
-  if (idUsuarioAnulador !== undefined) {
-    await validateUsuarioExists(idUsuarioAnulador);
-  }
+      if (idUsuarioAnulador !== undefined) {
+        await validateUsuarioExists(idUsuarioAnulador, tx);
+      }
 
-  await prisma.clienteCondicionCredito.update({
-    where: { Id: id },
-    data: {
-      Anulado: true,
-      ...(idUsuarioAnulador !== undefined ? { IdUsuarioAnulador: idUsuarioAnulador } : {}),
-      FechaAnulacion: new Date(),
+      await tx.clienteCondicionCredito.update({
+        where: { Id: id },
+        data: {
+          Anulado: true,
+          ...(idUsuarioAnulador !== undefined ? { IdUsuarioAnulador: idUsuarioAnulador } : {}),
+          FechaAnulacion: new Date(),
+        },
+      });
     },
-  });
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+  );
 }
 
 export async function restoreClienteCondicionCredito(id: number, idUsuarioModificador?: number) {
-  const existing = await prisma.clienteCondicionCredito.findFirst({
-    where: { Id: id, Anulado: true },
-    select: { Id: true, IdCliente: true, FechaFinVigencia: true },
-  });
+  return prisma.$transaction(
+    async (tx) => {
+      const existing = await tx.clienteCondicionCredito.findFirst({
+        where: { Id: id, Anulado: true },
+        select: {
+          Id: true,
+          IdCliente: true,
+          IdTipoCredito: true,
+          HabilitadoCredito: true,
+          FechaInicioVigencia: true,
+          FechaFinVigencia: true,
+        },
+      });
 
-  if (!existing) {
-    throw new Error('Condición de crédito anulada no existe');
-  }
+      if (!existing) {
+        throw new Error('Condición de crédito anulada no existe');
+      }
 
-  if (idUsuarioModificador !== undefined) {
-    await validateUsuarioExists(idUsuarioModificador);
-  }
+      if (idUsuarioModificador !== undefined) {
+        await validateUsuarioExists(idUsuarioModificador, tx);
+      }
 
-  if (!existing.FechaFinVigencia) {
-    const openEnded = await prisma.clienteCondicionCredito.findFirst({
-      where: { IdCliente: existing.IdCliente, Anulado: false, FechaFinVigencia: null },
-      select: { Id: true },
-    });
+      if (existing.HabilitadoCredito) {
+        await validateTipoCreditoActivo(existing.IdTipoCredito, tx);
+        await assertNoOverlappingEnabledCondition(
+          tx,
+          existing.IdCliente,
+          existing.FechaInicioVigencia,
+          existing.FechaFinVigencia,
+          id,
+        );
+      }
 
-    if (openEnded) {
-      throw new Error('El cliente ya tiene una condición de crédito vigente sin fecha de fin');
-    }
-  }
+      const restored = await tx.clienteCondicionCredito.update({
+        where: { Id: id },
+        data: {
+          Anulado: false,
+          ...(idUsuarioModificador !== undefined ? { IdUsuarioModificador: idUsuarioModificador } : {}),
+          FechaModificacion: new Date(),
+          IdUsuarioAnulador: null,
+          FechaAnulacion: null,
+        },
+        include: { TipoCredito: { select: { Id: true, Nombre: true } } },
+      });
 
-  const restored = await prisma.clienteCondicionCredito.update({
-    where: { Id: id },
-    data: {
-      Anulado: false,
-      ...(idUsuarioModificador !== undefined ? { IdUsuarioModificador: idUsuarioModificador } : {}),
-      FechaModificacion: new Date(),
-      IdUsuarioAnulador: null,
-      FechaAnulacion: null,
+      return toCondicionCreditoDto(restored);
     },
-    include: { TipoCredito: { select: { Id: true, Nombre: true } } },
-  });
-
-  return toCondicionCreditoDto(restored);
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+  );
 }

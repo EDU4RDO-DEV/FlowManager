@@ -296,9 +296,23 @@ export default function EmployeesPage() {
                                 <TableCell className="font-medium">{employee.entidad.nombreCompleto}</TableCell>
                                 <TableCell>{employee.puestoTrabajo}</TableCell>
                                 <TableCell>
-                                  {employee.usuarioVinculado
-                                    ? `${employee.usuarioVinculado.nombre} (${employee.usuarioVinculado.correo})${employee.usuarioVinculado.anulado ? " — anulada" : ""}`
-                                    : "—"}
+                                  {employee.usuarioVinculado ? (
+                                    `${employee.usuarioVinculado.nombre} (${employee.usuarioVinculado.correo})${employee.usuarioVinculado.anulado ? " — anulada" : ""}`
+                                  ) : (
+                                    <div className="flex flex-col gap-1">
+                                      <span className="text-muted-foreground">Sin cuenta vinculada</span>
+                                      {employee.tipoTrabajador?.clave === "RUTA" ? (
+                                        <span className="text-xs text-amber-600">
+                                          No podrá asignarse como conductor/vendedor en Logística hasta vincularlo.
+                                        </span>
+                                      ) : null}
+                                      <Button size="xs" variant="outline" asChild className="w-fit">
+                                        <Link href={`/users/create?idEmpleadoVinculado=${employee.id}`} target="_blank">
+                                          Vincular usuario
+                                        </Link>
+                                      </Button>
+                                    </div>
+                                  )}
                                 </TableCell>
                                 <TableCell>{formatCurrency(employee.sueldoBase)}</TableCell>
                                 <TableCell>{formatDate(employee.fechaContratacion)}</TableCell>

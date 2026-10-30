@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/select";
 import { getApiErrorMessage } from "@/lib/api";
 import { createClient, listClients } from "@/services/clients.service";
+import { getCustomerCreditAuthorization } from "@/services/credits.service";
 import { listProducts } from "@/services/products.service";
 import {
   createSale,
@@ -50,6 +51,7 @@ import {
   uploadSaleProofImage,
 } from "@/services/sales.service";
 import type { ClientDto } from "@/types/clients";
+import type { CustomerCreditAuthorization } from "@/types/credits";
 import type { ProductDto } from "@/types/products";
 import type {
   BonusPreviewItem,
@@ -100,6 +102,11 @@ export default function CreateSalePage() {
   const [bonusPreview, setBonusPreview] = useState<BonusPreviewItem[]>([]);
 
   const [idCliente, setIdCliente] = useState<number | null>(null);
+  const [creditAuthorizationState, setCreditAuthorizationState] = useState<{
+    idCliente: number;
+    data?: CustomerCreditAuthorization;
+    error?: string;
+  } | null>(null);
   const [idRutaSesion, setIdRutaSesion] = useState<number | null>(null);
   const [idTalonario, setIdTalonario] = useState<number | null>(null);
   const [tipoRegistro, setTipoRegistro] = useState<"VENTA" | "PROFORMA">("VENTA");
@@ -178,6 +185,40 @@ export default function CreateSalePage() {
     [clients, idCliente],
   );
 
+  const currentCreditAuthorizationState =
+    tipoRegistro === "VENTA" && creditAuthorizationState?.idCliente === idCliente
+      ? creditAuthorizationState
+      : null;
+  const creditAuthorization = currentCreditAuthorizationState?.data ?? null;
+  const creditAuthorizationError = currentCreditAuthorizationState?.error ?? "";
+  const isLoadingCreditAuthorization = Boolean(
+    idCliente && tipoRegistro === "VENTA" && !currentCreditAuthorizationState,
+  );
+
+  useEffect(() => {
+    if (!idCliente || tipoRegistro === "PROFORMA") {
+      return;
+    }
+
+    let active = true;
+    void getCustomerCreditAuthorization(idCliente)
+      .then((authorization) => {
+        if (active) setCreditAuthorizationState({ idCliente, data: authorization });
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setCreditAuthorizationState({
+            idCliente,
+            error: getApiErrorMessage(error, "No se pudo consultar la autorización de crédito"),
+          });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [idCliente, tipoRegistro]);
+
   const selectedIds = useMemo(() => new Set(detalle.map((row) => row.idInventarioItem)), [detalle]);
 
   const selectableProducts = useMemo(
@@ -191,6 +232,10 @@ export default function CreateSalePage() {
   );
 
   const total = Number(subtotal.toFixed(2));
+  const creditConsumption = Number(Math.max(0, total - pagoMonto).toFixed(2));
+  const exceedsCreditAvailable = Boolean(
+    creditAuthorization && creditConsumption > creditAuthorization.creditoDisponible,
+  );
 
   const cambio = useMemo(() => {
     if (condicionPago !== "CONTADO") {
@@ -491,17 +536,40 @@ export default function CreateSalePage() {
       return "En contado el pago debe coincidir con el total";
     }
 
-    if (condicionPago === "CREDITO" && !selectedClient?.habilitadoCredito) {
-      return "El cliente no tiene habilitado el crédito";
+    if (condicionPago === "CREDITO") {
+      if (pagoMonto < 0) {
+        return "El abono inicial no puede ser negativo";
+      }
+      if (pagoMonto > total) {
+        return "El abono inicial no puede superar el total de la venta";
+      }
+      if (tipoRegistro === "VENTA") {
+        if (isLoadingCreditAuthorization) {
+          return "Espera a que se consulte la autorización de crédito";
+        }
+        if (creditAuthorizationError) {
+          return creditAuthorizationError;
+        }
+        if (!creditAuthorization) {
+          return "No se pudo verificar la autorización de crédito del cliente";
+        }
+        if (creditAuthorization.motivoNoAutorizado) {
+          return creditAuthorization.motivoNoAutorizado;
+        }
+        if (exceedsCreditAvailable) {
+          return `Crédito insuficiente: consumo ${toMoney(creditConsumption)}; disponible ${toMoney(creditAuthorization.creditoDisponible)}`;
+        }
+      }
     }
 
-    if (pagoMetodo === "TRANSFERENCIA" || pagoMetodo === "CHEQUE" || pagoMetodo === "POS") {
+    const hasInitialPayment = condicionPago === "CONTADO" || pagoMonto > 0;
+    if (hasInitialPayment && (pagoMetodo === "TRANSFERENCIA" || pagoMetodo === "CHEQUE" || pagoMetodo === "POS")) {
       if (!pagoReferencia.trim()) {
         return "La referencia es obligatoria para el método de pago seleccionado";
       }
     }
 
-    if (pagoMetodo === "TRANSFERENCIA" || pagoMetodo === "CHEQUE") {
+    if (hasInitialPayment && (pagoMetodo === "TRANSFERENCIA" || pagoMetodo === "CHEQUE")) {
       if (!pagoBanco.trim()) {
         return "El banco es obligatorio para transferencia y cheque";
       }
@@ -536,7 +604,7 @@ export default function CreateSalePage() {
     });
 
     const paymentPayload: SalePaymentPayload | undefined =
-      condicionPago === "CONTADO"
+      condicionPago === "CONTADO" || pagoMonto > 0
         ? {
             monto: Number(pagoMonto.toFixed(2)),
             metodoPago: pagoMetodo,
@@ -650,7 +718,9 @@ export default function CreateSalePage() {
                               value={`${client.entidad.nombreCompleto} ${client.entidad.nit ?? ""}`}
                               onSelect={() => {
                                 setIdCliente(client.id);
-                                if (!client.habilitadoCredito) setCondicionPago("CONTADO");
+                                if (!client.habilitadoCredito && tipoRegistro === "VENTA") {
+                                  setCondicionPago("CONTADO");
+                                }
                                 setClientPopoverOpen(false);
                               }}
                             >
@@ -677,11 +747,25 @@ export default function CreateSalePage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="CONTADO">CONTADO</SelectItem>
-                    <SelectItem value="CREDITO" disabled={!selectedClient?.habilitadoCredito}>
+                    <SelectItem
+                      value="CREDITO"
+                      disabled={
+                        tipoRegistro === "VENTA" &&
+                        (isLoadingCreditAuthorization ||
+                          !creditAuthorization?.habilitadoCredito ||
+                          !creditAuthorization.condicionVigente)
+                      }
+                    >
                       CREDITO
                     </SelectItem>
                   </SelectContent>
                 </Select>
+                {tipoRegistro === "VENTA" && creditAuthorizationError ? (
+                  <p className="text-xs text-destructive">{creditAuthorizationError}</p>
+                ) : null}
+                {tipoRegistro === "VENTA" && creditAuthorization?.motivoNoAutorizado ? (
+                  <p className="text-xs text-amber-700">{creditAuthorization.motivoNoAutorizado}</p>
+                ) : null}
               </div>
 
               <div className="space-y-1">
@@ -1077,6 +1161,59 @@ export default function CreateSalePage() {
                 />
               </div>
 
+              {tipoRegistro === "PROFORMA" && condicionPago === "CREDITO" ? (
+                <div className="rounded-lg border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900 md:col-span-2">
+                  La autorización y disponibilidad del crédito se validarán al convertir esta proforma en venta.
+                </div>
+              ) : null}
+
+              {tipoRegistro === "VENTA" && condicionPago === "CREDITO" ? (
+                <div className="rounded-lg border p-3 text-sm md:col-span-2">
+                  {isLoadingCreditAuthorization ? (
+                    <p className="text-muted-foreground">Consultando crédito autorizado...</p>
+                  ) : creditAuthorizationError ? (
+                    <p className="text-destructive">{creditAuthorizationError}</p>
+                  ) : creditAuthorization ? (
+                    <>
+                      <p className="font-medium">
+                        Límite: {toMoney(creditAuthorization.limiteCredito)} · Utilizado:{" "}
+                        {toMoney(creditAuthorization.saldoPendiente)} · Disponible:{" "}
+                        {toMoney(creditAuthorization.creditoDisponible)}
+                      </p>
+                      {creditAuthorization.motivoNoAutorizado ? (
+                        <p className="mt-1 text-destructive">{creditAuthorization.motivoNoAutorizado}</p>
+                      ) : null}
+                      <p className="mt-1">
+                        Consumo de esta venta: {toMoney(creditConsumption)}
+                        {pagoMonto > 0 ? ` · Abono inicial: ${toMoney(pagoMonto)}` : ""}
+                      </p>
+                      {pagoMonto > total ? (
+                        <p className="mt-1 text-destructive">
+                          El abono inicial no puede superar el total de la venta.
+                        </p>
+                      ) : exceedsCreditAvailable ? (
+                        <p className="mt-1 text-destructive">
+                          No se puede registrar: el consumo supera el crédito disponible de{" "}
+                          {toMoney(creditAuthorization.creditoDisponible)}.
+                        </p>
+                      ) : null}
+                      {creditAuthorization.condicionVigente ? (
+                        <p className="mt-1 text-muted-foreground">
+                          Condición: {creditAuthorization.condicionVigente.nombreTipoCredito}
+                          {creditAuthorization.condicionVigente.plazoDias !== null
+                            ? ` · Plazo ${creditAuthorization.condicionVigente.plazoDias} días`
+                            : ""}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="text-muted-foreground">
+                      Selecciona un cliente para consultar su autorización de crédito.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+
               {(pagoMetodo === "TRANSFERENCIA" || pagoMetodo === "CHEQUE" || pagoMetodo === "POS") ? (
                 <div className="space-y-1">
                   <Label htmlFor="pago-referencia">Referencia</Label>
@@ -1120,6 +1257,11 @@ export default function CreateSalePage() {
                 <p className="text-sm text-muted-foreground">Resumen</p>
                 <p className="text-lg font-semibold">Total: {toMoney(total)}</p>
                 <p className="text-sm">Pago inicial: {toMoney(pagoMonto)}</p>
+                {condicionPago === "CREDITO" ? (
+                  <p className="text-sm font-medium">
+                    Consumo estimado del límite: {toMoney(creditConsumption)}
+                  </p>
+                ) : null}
                 <p className="text-sm">Cambio: {toMoney(cambio)}</p>
               </div>
 

@@ -1,0 +1,22 @@
+
+{
+  "servers": {
+    "shadcn": {
+      "type": "stdio",
+      "command": "pnpm",
+      "args": [
+        "dlx",
+        "shadcn@latest",
+        "mcp"
+      ]
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "pnpm",
+      "args": [
+        "dlx",
+        "@playwright/mcp@latest"
+      ]
+    }
+  }
+}

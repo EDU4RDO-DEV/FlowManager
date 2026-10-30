@@ -6,6 +6,7 @@ import {
   anulateCreditPayment,
   createCreditPayment,
   getCreditById,
+  getCustomerCreditAuthorization,
   getCreditsPortfolio,
   listCreditPayments,
   listCredits,
@@ -71,6 +72,26 @@ export async function listCreditsByCustomerController(req: Request, res: Respons
     }
 
     const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function getCustomerCreditAuthorizationController(req: Request, res: Response) {
+  try {
+    const { idCliente } = customerIdParamsSchema.parse(req.params);
+    const data = await getCustomerCreditAuthorization(idCliente);
+
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+
+    const message = error instanceof Error ? error.message : 'Error interno';
+    if (message === 'Cliente no existe') {
+      return res.status(404).json({ ok: false, message });
+    }
+
     return res.status(500).json({ ok: false, message });
   }
 }

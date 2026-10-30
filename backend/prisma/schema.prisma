@@ -61,6 +61,7 @@ model Cliente {
   IdUsuario               Int
   IdTipoCliente           Int?
   HabilitadoCredito       Boolean                   @default(false, map: "DF_Cliente_HabilitadoCredito")
+  LimiteCredito           Decimal                   @default(0, map: "DF_Cliente_LimiteCredito") @db.Decimal(10, 2)
   FechaRegistro           DateTime?                 @default(now(), map: "DF__Cliente__FechaRe__5CD6CB2B") @db.DateTime
   IdUsuarioModificador    Int?
   FechaModificacion       DateTime?                 @db.DateTime
@@ -139,7 +140,7 @@ model ClienteCondicionCredito {
   Usuario              Usuario           @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_ClienteCondicionCredito_Usuario")
   CuentaPorCobrar      CuentaPorCobrar[]
 
-  @@unique([IdCliente, FechaFinVigencia, Anulado], map: "UQ_ClienteCondicionCredito_Vigencia")
+  @@index([IdCliente, FechaFinVigencia, Anulado], map: "IX_ClienteCondicionCredito_Vigencia")
   @@index([IdCliente, Anulado, FechaInicioVigencia], map: "IX_ClienteCondicionCredito_ClienteVigencia")
   @@index([IdCliente, HabilitadoCredito, Anulado], map: "IX_ClienteCondicionCredito_Habilitado")
 }

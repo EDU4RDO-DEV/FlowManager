@@ -97,10 +97,14 @@ const EMPTY_JORNADA_FORM: JornadaFormState = {
   observaciones: "",
 };
 
+// Fecha (Jornada) y FechaSesion (RutaSesion) son columnas @db.Date: representan un
+// día calendario, no un instante. El valor llega como medianoche UTC; formatear en
+// hora local retrocede un día en husos horarios detrás de UTC (p. ej. Guatemala).
+// Se fuerza timeZone: "UTC" para mostrar el día calendario tal como se guardó.
 function formatDate(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "-";
-  return parsed.toLocaleDateString();
+  return parsed.toLocaleDateString(undefined, { timeZone: "UTC" });
 }
 
 export default function LogisticsRoutesPage() {
@@ -167,6 +171,29 @@ export default function LogisticsRoutesPage() {
       sesionesEnCurso: sessions.filter((item) => item.estado === "EN_CURSO").length,
     };
   }, [routes, sessions]);
+
+  // Sugerencia de personal habitual: busca la sesión más reciente del vehículo
+  // seleccionado para proponer su chofer/vendedor frecuente (no obliga a usarlo).
+  function findHabitualCrew(idVehiculo: string) {
+    if (!idVehiculo) return null;
+    const matches = sessions
+      .filter((item) => String(item.idVehiculo) === idVehiculo)
+      .sort((a, b) => new Date(b.fechaSesion).getTime() - new Date(a.fechaSesion).getTime());
+    return matches[0] ?? null;
+  }
+
+  function handleVehicleChange(idVehiculo: string) {
+    const habitual = findHabitualCrew(idVehiculo);
+    setSessionForm((prev) => ({
+      ...prev,
+      idVehiculo,
+      idUsuarioChofer: !prev.idUsuarioChofer && habitual ? String(habitual.idUsuarioChofer) : prev.idUsuarioChofer,
+      idUsuarioVendedor: !prev.idUsuarioVendedor && habitual ? String(habitual.idUsuarioVendedor) : prev.idUsuarioVendedor,
+    }));
+    if (habitual && (!sessionForm.idUsuarioChofer || !sessionForm.idUsuarioVendedor)) {
+      toast.info("Se sugirió el chofer/vendedor habitual de este vehículo; puedes cambiarlos si corresponde.");
+    }
+  }
 
   function resetRouteForm() {
     setRouteForm(EMPTY_ROUTE_FORM);
@@ -570,7 +597,7 @@ export default function LogisticsRoutesPage() {
                         id="session-vehicle"
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         value={sessionForm.idVehiculo}
-                        onChange={(event) => setSessionForm((prev) => ({ ...prev, idVehiculo: event.target.value }))}
+                        onChange={(event) => handleVehicleChange(event.target.value)}
                       >
                         <option value="">Seleccionar</option>
                         {vehicles.map((item) => (
@@ -596,6 +623,15 @@ export default function LogisticsRoutesPage() {
                           </option>
                         ))}
                       </select>
+                      {employees.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          No hay personal disponible. Solo aparecen empleados con una cuenta de usuario vinculada.{" "}
+                          <Link href="/employees" target="_blank" className="underline">
+                            Revisar empleados
+                          </Link>
+                          .
+                        </p>
+                      ) : null}
                     </div>
 
                     <div className="space-y-1.5">
@@ -613,6 +649,11 @@ export default function LogisticsRoutesPage() {
                           </option>
                         ))}
                       </select>
+                      {employees.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          Mismo listado que Chofer: empleados vinculados a una cuenta de usuario.
+                        </p>
+                      ) : null}
                     </div>
 
                     <div className="space-y-1.5">

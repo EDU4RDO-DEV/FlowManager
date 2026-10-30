@@ -350,6 +350,13 @@ export async function getRouteInventory(idRutaSesion: number) {
             fechaRegistro: result.despacho.FechaRegistro,
           }
         : null,
+      // T-F2-DIST-02 (reabastecimiento): puede haber varios despachos activos por sesión.
+      // Se exponen todos, identificados por Id, para permitir anulación individual desde la UI.
+      despachos: result.session.DespachoRuta.map((dispatch) => ({
+        id: dispatch.Id,
+        observaciones: dispatch.Observaciones,
+        fechaRegistro: dispatch.FechaRegistro,
+      })),
       devolucion: result.devolucion
         ? {
             id: result.devolucion.Id,
@@ -357,6 +364,15 @@ export async function getRouteInventory(idRutaSesion: number) {
             fechaRegistro: result.devolucion.FechaRegistro,
           }
         : null,
+      // D-DIST-06 (devoluciones múltiples): se exponen todas las activas, identificadas por
+      // Id, para permitir anulación individual desde la UI.
+      devoluciones: result.session.DevolucionRuta
+        .filter((routeReturn) => !routeReturn.Anulado)
+        .map((routeReturn) => ({
+          id: routeReturn.Id,
+          observaciones: routeReturn.Observaciones,
+          fechaRegistro: routeReturn.FechaRegistro,
+        })),
       devolucionesAnuladas: result.session.DevolucionRuta
         .filter((routeReturn) => routeReturn.Anulado)
         .map((routeReturn) => ({

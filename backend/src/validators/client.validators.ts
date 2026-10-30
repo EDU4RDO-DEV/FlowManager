@@ -33,6 +33,7 @@ export const clientIdParamsSchema = z.object({
 export const createClientSchema = z.object({
   idUsuario: positiveInt,
   habilitadoCredito: z.boolean().default(false),
+  limiteCredito: z.number().finite().min(0).max(99_999_999.99).default(0),
   entidad: entityCreateSchema,
 });
 
@@ -41,6 +42,7 @@ export const updateClientSchema = z
     idUsuario: positiveInt.optional(),
     idUsuarioModificador: positiveInt.optional(),
     habilitadoCredito: z.boolean().optional(),
+    limiteCredito: z.number().finite().min(0).max(99_999_999.99).optional(),
     entidad: entityUpdateSchema.optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {

@@ -82,6 +82,9 @@ function getDocumentLabel(credit: CreditDto): string {
 export default function CreditsPage() {
   const { user } = useAuth();
   const canCreatePayments = hasModulePermission(user, "ventas", "create");
+  const canManageCreditTypes =
+    hasModulePermission(user, "ventas", "create") ||
+    hasModulePermission(user, "ventas", "update");
   const [credits, setCredits] = useState<CreditDto[]>([]);
   const [query, setQuery] = useState("");
   const [paymentStatus, setPaymentStatus] = useState<"" | CreditPaymentStatus>("");
@@ -138,10 +141,17 @@ export default function CreditsPage() {
               <CreditCard className="size-5 text-primary" />
               Cuentas por cobrar
             </CardTitle>
-            <Button variant="outline" onClick={() => void loadCredits()} disabled={isLoading}>
-              {isLoading ? <Loader2 className="mr-2 size-4 animate-spin" /> : <RefreshCw className="mr-2 size-4" />}
-              Actualizar
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {canManageCreditTypes ? (
+                <Button asChild variant="outline">
+                  <Link href="/credits/types">Administrar tipos de crédito</Link>
+                </Button>
+              ) : null}
+              <Button variant="outline" onClick={() => void loadCredits()} disabled={isLoading}>
+                {isLoading ? <Loader2 className="mr-2 size-4 animate-spin" /> : <RefreshCw className="mr-2 size-4" />}
+                Actualizar
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">

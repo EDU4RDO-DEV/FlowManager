@@ -19,6 +19,7 @@ export interface ClientDto {
   idEntidad: number;
   idUsuario: number;
   habilitadoCredito: boolean;
+  limiteCredito: number;
   fechaRegistro: string | null;
   idUsuarioModificador: number | null;
   fechaModificacion: string | null;
@@ -33,6 +34,7 @@ export type ClientsListResponse = ApiResponse<ClientDto[]>;
 export interface CreateClientPayload {
   idUsuario: number;
   habilitadoCredito?: boolean;
+  limiteCredito?: number;
   entidad: {
     nombreCompleto: string;
     sexo?: string;
@@ -50,6 +52,7 @@ export interface UpdateClientPayload {
   idUsuario?: number;
   idUsuarioModificador?: number;
   habilitadoCredito?: boolean;
+  limiteCredito?: number;
   entidad?: {
     nombreCompleto?: string;
     sexo?: string;

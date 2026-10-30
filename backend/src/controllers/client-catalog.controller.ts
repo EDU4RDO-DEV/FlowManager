@@ -207,7 +207,8 @@ export async function createCondicionCreditoController(req: Request, res: Respon
     }
     if (
       message === 'fechaFinVigencia no puede ser anterior a fechaInicioVigencia' ||
-      message === 'El cliente ya tiene una condición de crédito vigente sin fecha de fin'
+      message === 'El cliente ya tiene una condición de crédito vigente sin fecha de fin' ||
+      message === 'El período de vigencia se superpone con otra condición habilitada'
     ) {
       return res.status(409).json({ ok: false, message });
     }
@@ -233,7 +234,9 @@ export async function updateCondicionCreditoController(req: Request, res: Respon
     }
     if (
       message === 'fechaFinVigencia no puede ser anterior a fechaInicioVigencia' ||
-      message === 'El cliente ya tiene una condición de crédito vigente sin fecha de fin'
+      message === 'El cliente ya tiene una condición de crédito vigente sin fecha de fin' ||
+      message === 'El período de vigencia se superpone con otra condición habilitada' ||
+      message === 'El tipo de crédito no se modifica en una condición existente; asigne una nueva condición'
     ) {
       return res.status(409).json({ ok: false, message });
     }
@@ -268,8 +271,15 @@ export async function restoreCondicionCreditoController(req: Request, res: Respo
   } catch (error) {
     if (handleZodOr500(error, res)) return;
     const message = getMessage(error);
-    if (message === 'Condición de crédito anulada no existe' || message === 'Usuario no existe') {
+    if (
+      message === 'Condición de crédito anulada no existe' ||
+      message === 'Usuario no existe' ||
+      message === 'Tipo de crédito no existe o no está activo'
+    ) {
       return res.status(404).json({ ok: false, message });
+    }
+    if (message === 'El período de vigencia se superpone con otra condición habilitada') {
+      return res.status(409).json({ ok: false, message });
     }
     if (message === 'El cliente ya tiene una condición de crédito vigente sin fecha de fin') {
       return res.status(409).json({ ok: false, message });

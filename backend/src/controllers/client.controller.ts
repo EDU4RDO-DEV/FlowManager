@@ -94,6 +94,7 @@ export async function createClientController(req: Request, res: Response) {
     const data = await createClient({
       idUsuario: payload.idUsuario,
       habilitadoCredito: payload.habilitadoCredito,
+      limiteCredito: payload.limiteCredito,
       entidad: payload.entidad,
     });
 

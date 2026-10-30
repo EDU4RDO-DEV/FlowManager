@@ -272,6 +272,8 @@ export async function createSaleController(req: Request, res: Response) {
       message.startsWith('Pago inicial') ||
       message === 'Cliente no tiene habilitado el crédito' ||
       message === 'Cliente no habilitado para crédito' ||
+      message === 'El cliente no tiene una condición de crédito vigente con un tipo activo' ||
+      message.startsWith('Crédito insuficiente') ||
       message.includes('No fue posible reservar correlativo de talonario')
     ) {
       return res.status(400).json({ ok: false, message });
@@ -349,6 +351,13 @@ export async function confirmRouteProformaController(req: Request, res: Response
     const message = error instanceof Error ? error.message : 'Error interno';
     if (message === 'Venta no existe o está anulada' || message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
+    }
+    if (
+      message === 'El cliente no tiene habilitado el crédito' ||
+      message === 'El cliente no tiene una condición de crédito vigente con un tipo activo' ||
+      message.startsWith('Crédito insuficiente')
+    ) {
+      return res.status(400).json({ ok: false, message });
     }
     if (
       message.includes('proforma') ||

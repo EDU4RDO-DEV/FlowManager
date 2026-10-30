@@ -471,6 +471,34 @@ describe('route inventory lifecycle', () => {
     }]);
   });
 
+  it('exposes every active despacho and devolución with their own Id for individual cancellation', async () => {
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce(routeInventory({
+      DespachoRuta: [
+        { Id: 90, Observaciones: 'Carga inicial', FechaRegistro: new Date('2026-10-23T08:00:00.000Z'), Detalles: [{ IdInventarioItem: 7, NombreSnapshot: 'Agua', UnidadMedidaSnapshot: 'u', Cantidad: 8 }] },
+        { Id: 96, Observaciones: 'Reabastecimiento', FechaRegistro: new Date('2026-10-23T12:00:00.000Z'), Detalles: [{ IdInventarioItem: 7, NombreSnapshot: 'Agua', UnidadMedidaSnapshot: 'u', Cantidad: 4 }] },
+      ],
+      DevolucionRuta: [
+        { Id: 97, Anulado: false, Observaciones: 'Cierre del día', FechaRegistro: new Date('2026-10-23T18:00:00.000Z'), Detalles: [{ IdInventarioItem: 7, CantidadRecibida: 1, CantidadDanada: 0 }] },
+        { Id: 92, Anulado: false, Observaciones: 'Conteo intermedio', FechaRegistro: new Date('2026-10-23T09:00:00.000Z'), Detalles: [{ IdInventarioItem: 7, CantidadRecibida: 2, CantidadDanada: 0 }] },
+      ],
+    }));
+
+    const inventory = await getRouteInventory(40);
+
+    expect(inventory.despachos).toEqual([
+      { id: 90, observaciones: 'Carga inicial', fechaRegistro: new Date('2026-10-23T08:00:00.000Z') },
+      { id: 96, observaciones: 'Reabastecimiento', fechaRegistro: new Date('2026-10-23T12:00:00.000Z') },
+    ]);
+    expect(inventory.devoluciones).toEqual([
+      { id: 97, observaciones: 'Cierre del día', fechaRegistro: new Date('2026-10-23T18:00:00.000Z') },
+      { id: 92, observaciones: 'Conteo intermedio', fechaRegistro: new Date('2026-10-23T09:00:00.000Z') },
+    ]);
+    // El campo singular "despacho"/"devolucion" sigue siendo el más reciente (metadata),
+    // sin romper a los consumidores existentes que no usan las listas nuevas.
+    expect(inventory.despacho?.id).toBe(96);
+    expect(inventory.devolucion?.id).toBe(97);
+  });
+
   it('records verified route returns without moving stock to plant before closure', async () => {
     prismaMock.rutaSesion.findFirst.mockResolvedValueOnce(routeInventory({
       Venta: [{

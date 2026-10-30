@@ -2,7 +2,12 @@ import { Prisma } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
 import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
-import { anulateSalePayment, createSalePayment, listSalePayments } from './sale.service';
+import {
+  anulateSalePayment,
+  createSalePayment,
+  getCustomerCreditAuthorization as getCustomerCreditAuthorizationFromSales,
+  listSalePayments,
+} from './sale.service';
 
 type ListCreditsInput = {
   page?: number;
@@ -459,6 +464,10 @@ export async function listCreditsByCustomer(idCliente: number) {
   });
 
   return rows.map(toCreditDto);
+}
+
+export async function getCustomerCreditAuthorization(idCliente: number) {
+  return getCustomerCreditAuthorizationFromSales(idCliente);
 }
 
 export async function getCreditsPortfolio() {

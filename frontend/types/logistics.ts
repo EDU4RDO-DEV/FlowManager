@@ -110,7 +110,13 @@ export interface RouteInventoryDto {
   idRutaSesion: number;
   estado: RutaSesionEstado;
   despacho: { id: number; observaciones: string | null; fechaRegistro: string | null } | null;
+  // Lista de TODOS los despachos activos (puede haber varios por reabastecimiento),
+  // para permitir anular uno específico por su Id.
+  despachos?: Array<{ id: number; observaciones: string | null; fechaRegistro: string | null }>;
   devolucion: { id: number; observaciones: string | null; fechaRegistro: string | null } | null;
+  // Lista de TODAS las devoluciones activas (puede haber varias), para permitir anular
+  // una específica por su Id.
+  devoluciones?: Array<{ id: number; observaciones: string | null; fechaRegistro: string | null }>;
   devolucionesAnuladas?: Array<{
     id: number;
     fechaRegistro: string | null;

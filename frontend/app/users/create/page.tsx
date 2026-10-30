@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import {
@@ -39,6 +39,7 @@ function emptyToUndefined(value: string): string | undefined {
 
 export default function CreateUserPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [roles, setRoles] = useState<RoleDto[]>([]);
   const [employees, setEmployees] = useState<EmployeeDto[]>([]);
   const [saving, setSaving] = useState(false);
@@ -53,13 +54,20 @@ export default function CreateUserPage() {
         ]);
         setRoles(rolesData);
         setEmployees(employeesData);
+
+        // Permite llegar desde el módulo de Empleados con el vínculo preseleccionado
+        // (p. ej. "Vincular usuario" de un empleado de ruta sin cuenta aún).
+        const preselected = searchParams.get("idEmpleadoVinculado");
+        if (preselected && employeesData.some((employee) => String(employee.id) === preselected)) {
+          setForm((prev) => ({ ...prev, idEmpleadoVinculado: preselected }));
+        }
       } catch (error) {
         toast.error(getApiErrorMessage(error, "No se pudieron cargar los catalogos del formulario."));
       }
     }
 
     void loadCatalogs();
-  }, []);
+  }, [searchParams]);
 
   async function handleSubmit() {
     if (!form.nombre.trim() || !form.correo.trim()) {

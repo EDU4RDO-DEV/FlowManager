@@ -55,6 +55,83 @@ export interface CreditDto {
   pagos: CreditPaymentDto[];
 }
 
+export interface CustomerCreditAuthorization {
+  idCliente: number;
+  nombreCliente: string;
+  nitCliente: string | null;
+  habilitadoCredito: boolean;
+  limiteCredito: number;
+  saldoPendiente: number;
+  creditoDisponible: number;
+  condicionVigente: {
+    id: number;
+    idTipoCredito: number;
+    nombreTipoCredito: string;
+    plazoDias: number | null;
+  } | null;
+  motivoNoAutorizado: string | null;
+}
+
+export interface CreditTypeDto {
+  id: number;
+  nombre: string;
+  plazoDias: number | null;
+  condiciones: string | null;
+  activo: boolean;
+  anulado: boolean;
+}
+
+export interface CustomerCreditConditionDto {
+  id: number;
+  idCliente: number;
+  idTipoCredito: number;
+  idUsuario: number;
+  habilitadoCredito: boolean;
+  fechaInicioVigencia: string;
+  fechaFinVigencia: string | null;
+  observaciones: string | null;
+  anulado: boolean;
+  tipoCredito?: {
+    id: number;
+    nombre: string;
+  };
+}
+
+export interface CreateCreditTypePayload {
+  idUsuario: number;
+  nombre: string;
+  plazoDias?: number;
+  condiciones?: string;
+  activo: boolean;
+}
+
+export interface UpdateCreditTypePayload {
+  idUsuarioModificador: number;
+  nombre?: string;
+  plazoDias?: number | null;
+  condiciones?: string | null;
+  activo?: boolean;
+}
+
+export interface CreateCustomerCreditConditionPayload {
+  idUsuario: number;
+  idCliente: number;
+  idTipoCredito: number;
+  habilitadoCredito: boolean;
+  fechaInicioVigencia: string;
+  fechaFinVigencia?: string;
+  observaciones?: string;
+}
+
+export interface UpdateCustomerCreditConditionPayload {
+  idUsuarioModificador: number;
+  idTipoCredito?: number;
+  habilitadoCredito: boolean;
+  fechaInicioVigencia: string;
+  fechaFinVigencia: string | null;
+  observaciones: string | null;
+}
+
 export interface CreditsListResult {
   items: CreditDto[];
   pagination: {
@@ -106,4 +183,9 @@ export interface CreateCreditPaymentResult {
 export type CreditsListResponse = ApiResponse<CreditsListResult>;
 export type CreditResponse = ApiResponse<CreditDto>;
 export type CustomerCreditsResponse = ApiResponse<CreditDto[]>;
+export type CustomerCreditAuthorizationResponse = ApiResponse<CustomerCreditAuthorization>;
 export type CreateCreditPaymentResponse = ApiResponse<CreateCreditPaymentResult>;
+export type CreditTypesResponse = ApiResponse<CreditTypeDto[]>;
+export type CreditTypeResponse = ApiResponse<CreditTypeDto>;
+export type CustomerCreditConditionsResponse = ApiResponse<CustomerCreditConditionDto[]>;
+export type CustomerCreditConditionResponse = ApiResponse<CustomerCreditConditionDto>;

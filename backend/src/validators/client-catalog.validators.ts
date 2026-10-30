@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
-import { dateString, positiveInt } from './validation';
+import { positiveInt } from './validation';
+
+const dateOnlyString = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'fecha debe tener formato AAAA-MM-DD')
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }, 'fecha inválida');
 
 export const tipoClienteIdParamsSchema = z.object({
   id: z.coerce.number().int('id debe ser entero').positive('id debe ser mayor a 0'),
@@ -43,8 +52,8 @@ export const createCondicionCreditoSchema = z.object({
   idCliente: positiveInt,
   idTipoCredito: positiveInt,
   habilitadoCredito: z.boolean().optional(),
-  fechaInicioVigencia: dateString,
-  fechaFinVigencia: dateString.optional(),
+  fechaInicioVigencia: dateOnlyString,
+  fechaFinVigencia: dateOnlyString.optional(),
   observaciones: z.string().trim().max(255, 'observaciones demasiado largas').optional(),
 });
 
@@ -52,8 +61,8 @@ export const updateCondicionCreditoSchema = z
   .object({
     idTipoCredito: positiveInt.optional(),
     habilitadoCredito: z.boolean().optional(),
-    fechaInicioVigencia: dateString.optional(),
-    fechaFinVigencia: z.union([dateString, z.null()]).optional(),
+    fechaInicioVigencia: dateOnlyString.optional(),
+    fechaFinVigencia: z.union([dateOnlyString, z.null()]).optional(),
     observaciones: z.union([z.string().trim().max(255, 'observaciones demasiado largas'), z.null()]).optional(),
     idUsuarioModificador: positiveInt.optional(),
   })

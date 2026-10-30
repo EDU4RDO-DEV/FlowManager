@@ -4,6 +4,7 @@ import {
   anulateCreditPaymentController,
   createCreditPaymentController,
   getCreditByIdController,
+  getCustomerCreditAuthorizationController,
   getCreditsPortfolioController,
   listCreditPaymentsController,
   listCreditsByCustomerController,
@@ -16,6 +17,11 @@ const creditRouter = Router();
 creditRouter.get('/', requireModulePermission('ventas', 'read'), listCreditsController);
 creditRouter.get('/portfolio', requireModulePermission('ventas', 'read'), getCreditsPortfolioController);
 creditRouter.get('/customer/:idCliente', requireModulePermission('ventas', 'read'), listCreditsByCustomerController);
+creditRouter.get(
+  '/customer/:idCliente/authorization',
+  requireModulePermission('ventas', 'read'),
+  getCustomerCreditAuthorizationController,
+);
 creditRouter.get('/:id', requireModulePermission('ventas', 'read'), getCreditByIdController);
 creditRouter.get('/:id/payments', requireModulePermission('ventas', 'read'), listCreditPaymentsController);
 creditRouter.post('/:id/payments', requireModulePermission('ventas', 'create'), createCreditPaymentController);

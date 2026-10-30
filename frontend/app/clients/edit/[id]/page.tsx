@@ -21,6 +21,7 @@ import {
 const EMPTY_FORM: ClientFormValues = {
   nombreCompleto: "",
   habilitadoCredito: false,
+  limiteCredito: 0,
   correoElectronico: "",
   telefono1: "",
   telefono2: "",
@@ -66,6 +67,7 @@ export default function EditClientPage() {
         setForm({
           nombreCompleto: clientData.entidad.nombreCompleto,
           habilitadoCredito: clientData.habilitadoCredito,
+          limiteCredito: clientData.limiteCredito,
           correoElectronico: clientData.entidad.correoElectronico ?? "",
           telefono1: clientData.entidad.telefono1 ?? "",
           telefono2: clientData.entidad.telefono2 ?? "",
@@ -106,6 +108,7 @@ export default function EditClientPage() {
       await updateClient(clientId, {
         idUsuarioModificador: user.id,
         habilitadoCredito: form.habilitadoCredito,
+        limiteCredito: form.limiteCredito,
         entidad: {
           nombreCompleto: form.nombreCompleto.trim(),
           correoElectronico: form.correoElectronico.trim() || undefined,

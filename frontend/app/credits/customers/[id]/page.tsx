@@ -21,10 +21,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CreditPaymentDialog } from "@/app/credits/_components/credit-payment-dialog";
+import { CreditConditionManager } from "@/app/credits/_components/credit-condition-manager";
 import { getApiErrorMessage } from "@/lib/api";
 import { hasModulePermission } from "@/lib/rbac";
-import { listCreditsByCustomer } from "@/services/credits.service";
-import type { CreditDto } from "@/types/credits";
+import {
+  getCustomerCreditAuthorization,
+  listCreditsByCustomer,
+} from "@/services/credits.service";
+import type { CreditDto, CustomerCreditAuthorization } from "@/types/credits";
 
 function formatMoney(value: number): string {
   return value.toLocaleString("es-GT", {
@@ -62,8 +66,11 @@ export default function CreditCustomerPage() {
   const params = useParams<{ id: string }>();
   const { user } = useAuth();
   const canCreatePayments = hasModulePermission(user, "ventas", "create");
+  const canUpdateClients = hasModulePermission(user, "clientes", "update");
   const customerId = Number(params.id);
   const [credits, setCredits] = useState<CreditDto[]>([]);
+  const [creditAuthorization, setCreditAuthorization] =
+    useState<CustomerCreditAuthorization | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -80,7 +87,12 @@ export default function CreditCustomerPage() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      setCredits(await listCreditsByCustomer(customerId));
+      const [creditRows, authorization] = await Promise.all([
+        listCreditsByCustomer(customerId),
+        getCustomerCreditAuthorization(customerId),
+      ]);
+      setCredits(creditRows);
+      setCreditAuthorization(authorization);
     } catch (error) {
       const message = getApiErrorMessage(error, "No se pudo cargar la ficha financiera del cliente");
       setLoadError(message);
@@ -96,16 +108,21 @@ export default function CreditCustomerPage() {
     return () => clearTimeout(timeoutId);
   }, [loadCustomerCredits]);
 
-  const customer = credits[0]?.cliente;
+  const customer = creditAuthorization
+    ? {
+        id: creditAuthorization.idCliente,
+        nombre: creditAuthorization.nombreCliente,
+        nit: creditAuthorization.nitCliente,
+      }
+    : credits[0]?.cliente;
   const totalPending = useMemo(
-    () =>
-      Number(
+    () => creditAuthorization?.saldoPendiente ?? Number(
         credits
           .filter((credit) => credit.estado === "ACTIVO" && !credit.anulado && !credit.venta.anulado)
           .reduce((total, credit) => total + credit.saldo, 0)
           .toFixed(2),
       ),
-    [credits],
+    [creditAuthorization, credits],
   );
   const paymentHistory = useMemo(
     () =>
@@ -138,6 +155,11 @@ export default function CreditCustomerPage() {
               {isLoading ? <Loader2 className="mr-2 size-4 animate-spin" /> : <RefreshCw className="mr-2 size-4" />}
               Actualizar
             </Button>
+            {canUpdateClients ? (
+              <Button asChild variant="outline">
+                <Link href={`/clients/edit/${customerId}`}>Administrar límite de crédito</Link>
+              </Button>
+            ) : null}
           </div>
 
           {isLoading && !hasLoadedOnce ? (
@@ -160,15 +182,25 @@ export default function CreditCustomerPage() {
           ) : (
             <>
               <Card>
-                <CardContent className="grid gap-4 p-5 sm:grid-cols-3">
+                <CardContent className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-5">
                   <div>
                     <p className="text-xs text-muted-foreground">Cliente</p>
                     <p className="font-semibold">{customer.nombre}</p>
                     {customer.nit ? <p className="text-sm text-muted-foreground">NIT {customer.nit}</p> : null}
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Saldo total pendiente del cliente</p>
+                    <p className="text-xs text-muted-foreground">Límite autorizado</p>
+                    <p className="text-xl font-bold">{formatMoney(creditAuthorization?.limiteCredito ?? 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Crédito utilizado</p>
                     <p className="text-xl font-bold text-amber-700">{formatMoney(totalPending)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Crédito disponible</p>
+                    <p className="text-xl font-bold text-emerald-700">
+                      {formatMoney(creditAuthorization?.creditoDisponible ?? 0)}
+                    </p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Documentos</p>
@@ -178,8 +210,26 @@ export default function CreditCustomerPage() {
                       {credits.filter((credit) => getCreditDisplayStatus(credit) === "ANULADO").length} anulados
                     </p>
                   </div>
+                  {creditAuthorization?.motivoNoAutorizado ? (
+                    <p className="text-sm text-amber-700 sm:col-span-2 lg:col-span-5">
+                      {creditAuthorization.motivoNoAutorizado}
+                    </p>
+                  ) : creditAuthorization?.condicionVigente ? (
+                    <p className="text-sm text-muted-foreground sm:col-span-2 lg:col-span-5">
+                      Condición vigente: {creditAuthorization.condicionVigente.nombreTipoCredito}
+                      {creditAuthorization.condicionVigente.plazoDias !== null
+                        ? ` · Plazo ${creditAuthorization.condicionVigente.plazoDias} días`
+                        : ""}
+                    </p>
+                  ) : null}
                 </CardContent>
               </Card>
+
+              <CreditConditionManager
+                customerId={customerId}
+                authorization={creditAuthorization}
+                onUpdated={() => void loadCustomerCredits()}
+              />
 
               <Card>
                 <CardHeader>

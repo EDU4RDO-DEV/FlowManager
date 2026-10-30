@@ -1,0 +1,27 @@
+-- Elimina el índice único heredado que permitía solo UNA devolución de ruta activa
+-- por sesión. Este índice fue creado en la migración 20261023100000_route_return_cancellation
+-- (diseño previo: anular la devolución existente antes de poder registrar otra),
+-- pero quedó obsoleto al aprobarse D-DIST-06 ("se permiten varias devoluciones por
+-- sesión": conteo intermedio + reabastecimiento + devolución final del día).
+--
+-- El código de servicio (route-inventory.service.ts) ya está preparado para múltiples
+-- devoluciones activas simultáneas:
+--   - createRouteReturn calcula el saldo pendiente sumando TODAS las devoluciones
+--     activas previas (receivableByItem), no solo la última.
+--   - cancelRouteReturn ya maneja explícitamente el caso de varias devoluciones
+--     activas (exige idDevolucion para desambiguar).
+--   - transferVerifiedRouteReturnToPlant traslada a planta TODAS las devoluciones
+--     activas pendientes, no solo la primera.
+--
+-- Sin este índice, una segunda (o posterior) llamada a POST .../devolucion para la
+-- misma sesión falla con un error 409 "operación concurrente" que en realidad es
+-- una violación de restricción única (Prisma P2002), no una colisión real.
+--
+-- Esta operación es aditiva/correctiva: no elimina datos ni modifica registros
+-- existentes, solo retira una restricción que contradice una regla de negocio ya
+-- aprobada e implementada en el código.
+DROP INDEX [UX_DevolucionRuta_RutaSesion_Activa] ON [dbo].[DevolucionRuta];
+
+-- Se conserva el índice no único existente (IX_DevolucionRuta_RutaSesion_Anulado,
+-- creado en la misma migración anterior) para mantener el rendimiento de las
+-- consultas por sesión + estado anulado; no requiere cambios.

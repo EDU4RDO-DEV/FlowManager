@@ -15,6 +15,7 @@ type EntidadInput = {
 type CreateClientInput = {
   idUsuario: number;
   habilitadoCredito?: boolean;
+  limiteCredito?: number;
   entidad: EntidadInput;
 };
 
@@ -22,6 +23,7 @@ type UpdateClientInput = {
   idUsuario?: number;
   idUsuarioModificador?: number;
   habilitadoCredito?: boolean;
+  limiteCredito?: number;
   entidad?: Partial<EntidadInput>;
 };
 
@@ -30,6 +32,7 @@ function toClientDto(cliente: {
   IdEntidad: number;
   IdUsuario: number;
   HabilitadoCredito: boolean;
+  LimiteCredito: unknown;
   FechaRegistro: Date | null;
   IdUsuarioModificador: number | null;
   FechaModificacion: Date | null;
@@ -55,6 +58,7 @@ function toClientDto(cliente: {
     idEntidad: cliente.IdEntidad,
     idUsuario: cliente.IdUsuario,
     habilitadoCredito: cliente.HabilitadoCredito,
+    limiteCredito: Number(cliente.LimiteCredito),
     fechaRegistro: cliente.FechaRegistro,
     idUsuarioModificador: cliente.IdUsuarioModificador,
     fechaModificacion: cliente.FechaModificacion,
@@ -225,6 +229,7 @@ export async function createClient(input: CreateClientInput) {
         IdEntidad: entidad.Id,
         IdUsuario: input.idUsuario,
         HabilitadoCredito: input.habilitadoCredito ?? false,
+        LimiteCredito: input.limiteCredito ?? 0,
         Anulado: false,
       },
       include: {
@@ -311,6 +316,7 @@ export async function updateClient(id: number, input: UpdateClientInput) {
         ...(input.habilitadoCredito !== undefined
           ? { HabilitadoCredito: input.habilitadoCredito }
           : {}),
+        ...(input.limiteCredito !== undefined ? { LimiteCredito: input.limiteCredito } : {}),
         ...(input.idUsuarioModificador !== undefined
           ? { IdUsuarioModificador: input.idUsuarioModificador }
           : {}),

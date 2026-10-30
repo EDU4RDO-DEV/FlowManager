@@ -212,26 +212,33 @@ async function getClienteCondicionCreditoVigente(
   idCliente: number,
   fechaOperacion: Date,
 ) {
+  const fechaOperacionCalendario = new Date(
+    Date.UTC(fechaOperacion.getUTCFullYear(), fechaOperacion.getUTCMonth(), fechaOperacion.getUTCDate()),
+  );
   const condicion = await tx.clienteCondicionCredito.findFirst({
     where: {
       IdCliente: idCliente,
       HabilitadoCredito: true,
       Anulado: false,
+      TipoCredito: { is: { Activo: true, Anulado: false } },
       FechaInicioVigencia: {
-        lte: fechaOperacion,
+        lte: fechaOperacionCalendario,
       },
-      OR: [{ FechaFinVigencia: null }, { FechaFinVigencia: { gte: fechaOperacion } }],
+      OR: [{ FechaFinVigencia: null }, { FechaFinVigencia: { gte: fechaOperacionCalendario } }],
     },
     orderBy: [{ FechaInicioVigencia: 'desc' }, { Id: 'desc' }],
     select: {
       Id: true,
       IdTipoCredito: true,
+      TipoCredito: {
+        select: {
+          Id: true,
+          Nombre: true,
+          PlazoDias: true,
+        },
+      },
     },
   });
-
-  if (!condicion) {
-    throw new Error('Cliente no habilitado para crédito');
-  }
 
   return condicion;
 }
@@ -256,6 +263,166 @@ async function validateClienteCreditoHabilitado(
   if (!cliente.HabilitadoCredito) {
     throw new Error('Cliente no tiene habilitado el crédito');
   }
+}
+
+export type CustomerCreditAuthorization = {
+  idCliente: number;
+  nombreCliente: string;
+  nitCliente: string | null;
+  habilitadoCredito: boolean;
+  limiteCredito: number;
+  saldoPendiente: number;
+  creditoDisponible: number;
+  condicionVigente: {
+    id: number;
+    idTipoCredito: number;
+    nombreTipoCredito: string;
+    plazoDias: number | null;
+  } | null;
+  motivoNoAutorizado: string | null;
+};
+
+async function getCustomerCreditAuthorizationInternal(
+  tx: PrismaClient | Prisma.TransactionClient,
+  idCliente: number,
+  fechaOperacion: Date,
+  excluirIdVenta?: number,
+): Promise<CustomerCreditAuthorization> {
+  const cliente = await tx.cliente.findFirst({
+    where: {
+      Id: idCliente,
+      Anulado: false,
+      Entidad: { Anulado: false },
+    },
+    select: {
+      Id: true,
+      HabilitadoCredito: true,
+      LimiteCredito: true,
+      Entidad: {
+        select: {
+          NombreCompleto: true,
+          Nit: true,
+        },
+      },
+    },
+  });
+
+  if (!cliente) {
+    throw new Error('Cliente no existe');
+  }
+
+  const [condicion, cuentas] = await Promise.all([
+    getClienteCondicionCreditoVigente(tx, idCliente, fechaOperacion),
+    tx.cuentaPorCobrar.findMany({
+      where: {
+        Anulado: false,
+        Estado: { not: 'ANULADO' },
+        Venta: {
+          is: {
+            IdCliente: idCliente,
+            Anulado: false,
+            ...(excluirIdVenta !== undefined ? { Id: { not: excluirIdVenta } } : {}),
+          },
+        },
+      },
+      select: {
+        TotalOriginal: true,
+        Venta: {
+          select: {
+            PagoVenta: {
+              where: { Anulado: false },
+              select: { Monto: true },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+  const saldoPendiente = Number(
+    cuentas
+      .reduce((saldo, cuenta) => {
+        const totalAbonado = cuenta.Venta.PagoVenta.reduce(
+          (sum, pago) => sum + toNumber(pago.Monto),
+          0,
+        );
+        return saldo + Math.max(0, toNumber(cuenta.TotalOriginal) - totalAbonado);
+      }, 0)
+      .toFixed(2),
+  );
+  const limiteCredito = toNumber(cliente.LimiteCredito);
+  const creditoDisponible = Number((limiteCredito - saldoPendiente).toFixed(2));
+  const motivoNoAutorizado = !cliente.HabilitadoCredito
+    ? 'El cliente no tiene habilitado el crédito'
+    : !condicion
+      ? 'El cliente no tiene una condición de crédito vigente con un tipo activo'
+      : null;
+
+  return {
+    idCliente: cliente.Id,
+    nombreCliente: cliente.Entidad.NombreCompleto,
+    nitCliente: cliente.Entidad.Nit,
+    habilitadoCredito: cliente.HabilitadoCredito,
+    limiteCredito,
+    saldoPendiente,
+    creditoDisponible,
+    condicionVigente: condicion
+      ? {
+          id: condicion.Id,
+          idTipoCredito: condicion.IdTipoCredito,
+          nombreTipoCredito: condicion.TipoCredito.Nombre,
+          plazoDias: condicion.TipoCredito.PlazoDias,
+        }
+      : null,
+    motivoNoAutorizado,
+  };
+}
+
+export async function getCustomerCreditAuthorization(
+  idCliente: number,
+): Promise<CustomerCreditAuthorization> {
+  return getCustomerCreditAuthorizationInternal(prisma, idCliente, new Date());
+}
+
+async function authorizeCustomerCreditSale(
+  tx: Prisma.TransactionClient,
+  idCliente: number,
+  consumo: number,
+  fechaOperacion: Date,
+  excluirIdVenta?: number,
+) {
+  const authorization = await getCustomerCreditAuthorizationInternal(
+    tx,
+    idCliente,
+    fechaOperacion,
+    excluirIdVenta,
+  );
+
+  if (authorization.motivoNoAutorizado) {
+    throw new Error(authorization.motivoNoAutorizado);
+  }
+
+  if (consumo > authorization.creditoDisponible) {
+    throw new Error(
+      `Crédito insuficiente: ${consumo.toFixed(2)} de consumo supera los ${authorization.creditoDisponible.toFixed(2)} disponibles`,
+    );
+  }
+
+  const condicion = await getClienteCondicionCreditoVigente(tx, idCliente, fechaOperacion);
+  if (!condicion) {
+    throw new Error('El cliente no tiene una condición de crédito vigente con un tipo activo');
+  }
+
+  return condicion;
+}
+
+function getCreditDueDate(fechaOperacion: Date, plazoDias: number | null): Date | null {
+  if (plazoDias === null) {
+    return null;
+  }
+
+  const fechaVencimiento = new Date(fechaOperacion);
+  fechaVencimiento.setDate(fechaVencimiento.getDate() + plazoDias);
+  return fechaVencimiento;
 }
 
 async function syncCuentaPorCobrarFromSale(
@@ -1046,14 +1213,18 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
       if (isRouteProforma && proformaExpiration! <= fechaOperacion) {
         throw new Error('La fecha de expiración de la proforma debe ser futura');
       }
-      if (input.condicionPago === 'CREDITO') {
+      if (input.tipoRegistro === 'VENTA' && input.condicionPago === 'CREDITO') {
         await validateClienteCreditoHabilitado(tx, input.idCliente);
+        const condicionCredito = await getClienteCondicionCreditoVigente(
+          tx,
+          input.idCliente,
+          fechaOperacion,
+        );
+        if (!condicionCredito) {
+          throw new Error('Cliente no habilitado para crédito');
+        }
       }
       const numeroVenta = await getNextNumeroVenta(tx);
-      const condicionCreditoAplicada =
-        input.condicionPago === 'CREDITO'
-          ? await getClienteCondicionCreditoVigente(tx, input.idCliente, fechaOperacion)
-          : null;
 
       let numeroProForma = input.numeroProForma;
       if (input.idTalonario) {
@@ -1245,6 +1416,16 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
       if (input.condicionPago === 'CREDITO' && totalPagoInicial > totals.total) {
         throw new Error('Pago inicial no puede ser mayor al total de la venta');
       }
+
+      const condicionCreditoAplicada =
+        input.tipoRegistro === 'VENTA' && input.condicionPago === 'CREDITO'
+          ? await authorizeCustomerCreditSale(
+              tx,
+              input.idCliente,
+              Number(Math.max(0, totals.total - totalPagoInicial).toFixed(2)),
+              fechaOperacion,
+            )
+          : null;
 
       const estadoPago = getPaymentState(totals.total, totalPagoInicial);
 
@@ -1460,7 +1641,7 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
         });
       }
 
-      if (input.condicionPago === 'CREDITO') {
+      if (input.tipoRegistro === 'VENTA' && input.condicionPago === 'CREDITO') {
         const saldoInicial = Number(Math.max(0, totals.total - totalPagoInicial).toFixed(2));
         const estadoCxC = getCuentaPorCobrarEstadoBySaldo(saldoInicial);
 
@@ -1472,6 +1653,10 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
             IdUsuarioCreacion: input.idUsuario,
             TotalOriginal: totals.total,
             Estado: estadoCxC,
+            FechaVencimiento: getCreditDueDate(
+              fechaOperacion,
+              condicionCreditoAplicada?.TipoCredito.PlazoDias ?? null,
+            ),
             FechaLiquidacion: estadoCxC === 'PAGADO' ? new Date() : null,
             Anulado: false,
           },
@@ -1605,8 +1790,10 @@ export async function confirmRouteProforma(id: number, idUsuario: number) {
         where: { Id: id, Anulado: false },
         select: {
           Id: true,
+          IdCliente: true,
           IdRutaSesion: true,
           TipoRegistro: true,
+          CondicionPago: true,
           ReservaProforma: {
             select: {
               Id: true,
@@ -1629,6 +1816,18 @@ export async function confirmRouteProforma(id: number, idUsuario: number) {
       if (sale.ReservaProforma.Estado !== 'ACTIVA' || sale.ReservaProforma.FechaExpiracion <= new Date()) {
         throw new Error('La reserva de la proforma ya no está activa o venció');
       }
+
+      const paymentStatus = await recalculateSalePaymentStatus(tx, id);
+      const condicionCreditoAplicada =
+        sale.CondicionPago === 'CREDITO'
+          ? await authorizeCustomerCreditSale(
+              tx,
+              sale.IdCliente,
+              paymentStatus.saldo,
+              new Date(),
+              id,
+            )
+          : null;
 
       await getRouteAvailableQuantities(tx, sale.IdRutaSesion);
 
@@ -1664,6 +1863,32 @@ export async function confirmRouteProforma(id: number, idUsuario: number) {
       });
       if (updated.count !== 1) {
         throw new Error('La proforma cambió de estado; vuelva a consultar la venta');
+      }
+
+      if (condicionCreditoAplicada) {
+        const existingAccount = await tx.cuentaPorCobrar.findUnique({
+          where: { IdVenta: id },
+          select: { Id: true },
+        });
+        if (!existingAccount) {
+          const estadoCxC = getCuentaPorCobrarEstadoBySaldo(paymentStatus.saldo);
+          await tx.cuentaPorCobrar.create({
+            data: {
+              IdVenta: id,
+              IdTipoCreditoAplicado: condicionCreditoAplicada.IdTipoCredito,
+              IdClienteCondicionCreditoAplicada: condicionCreditoAplicada.Id,
+              IdUsuarioCreacion: idUsuario,
+              TotalOriginal: paymentStatus.total,
+              Estado: estadoCxC,
+              FechaVencimiento: getCreditDueDate(
+                new Date(),
+                condicionCreditoAplicada.TipoCredito.PlazoDias,
+              ),
+              FechaLiquidacion: estadoCxC === 'PAGADO' ? new Date() : null,
+              Anulado: false,
+            },
+          });
+        }
       }
 
       const convertedSale = await getSaleByIdInternal(tx, id, true);
