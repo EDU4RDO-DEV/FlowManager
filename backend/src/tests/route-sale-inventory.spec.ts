@@ -5,16 +5,28 @@ const {
   sendMock,
   registerMovementMock,
   registerEnvaseBucketChangeMock,
+  ensurePlantEnvaseBucketQuantityMock,
 } = vi.hoisted(() => {
   return {
     prismaMock: {
       usuario: { findFirst: vi.fn() },
       cliente: { findFirst: vi.fn() },
       rutaSesion: { findFirst: vi.fn() },
-      reservaProforma: { updateMany: vi.fn().mockResolvedValue({ count: 0 }), findMany: vi.fn().mockResolvedValue([]) },
+      reservaProforma: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn(),
+      },
       devolucionComercialDetalle: { findMany: vi.fn().mockResolvedValue([]) },
       venta: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
       detalleVenta: { create: vi.fn() },
+      detalleVentaEnvase: { create: vi.fn().mockResolvedValue({ Id: 12 }) },
+      envaseClienteSaldo: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      movimientoEnvase: { create: vi.fn().mockResolvedValue({ Id: 15 }) },
       inventarioItem: { findFirst: vi.fn(), update: vi.fn() },
       reglaBonificacion: { findMany: vi.fn() },
       pagoVenta: { create: vi.fn() },
@@ -23,6 +35,7 @@ const {
     sendMock: vi.fn(),
     registerMovementMock: vi.fn(),
     registerEnvaseBucketChangeMock: vi.fn(),
+    ensurePlantEnvaseBucketQuantityMock: vi.fn(),
   };
 });
 
@@ -36,6 +49,7 @@ vi.mock('../services/fel.service', () => ({
   emitFelInvoice: vi.fn(),
 }));
 vi.mock('../services/inventory-movement.service', () => ({
+  ensurePlantEnvaseBucketQuantity: ensurePlantEnvaseBucketQuantityMock,
   registerEnvaseBucketChange: registerEnvaseBucketChangeMock,
   registerInventoryMovement: registerMovementMock,
 }));
@@ -46,7 +60,7 @@ function routeSession(available: number, hasReturn = false) {
   return {
     Id: 12,
     Estado: 'EN_CURSO',
-    DespachoRuta: {
+    DespachoRuta: [{
       Id: 80,
       Detalles: [{
         IdInventarioItem: 9,
@@ -54,8 +68,8 @@ function routeSession(available: number, hasReturn = false) {
         UnidadMedidaSnapshot: 'unidad',
         Cantidad: available,
       }],
-    },
-    DevolucionRuta: hasReturn ? { Id: 91, Detalles: [] } : null,
+    }],
+    DevolucionRuta: hasReturn ? [{ Id: 91, Detalles: [] }] : [],
     AjustesRuta: [],
     MovimientosEnvaseCliente: [],
     Venta: [],
@@ -135,6 +149,7 @@ function configureRouteSale(
   hasReturn = false,
   esEnvaseRetornable = false,
   esVendible = true,
+  existencia = 0,
 ) {
   prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 1 });
   prismaMock.cliente.findFirst.mockResolvedValueOnce({
@@ -157,7 +172,7 @@ function configureRouteSale(
   prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({
     Id: 9,
     Nombre: 'Garrafón',
-    Existencia: 0,
+    Existencia: existencia,
     PrecioVenta: 10,
     EsVendible: esVendible,
     EsEnvaseRetornable: esEnvaseRetornable,
@@ -169,6 +184,7 @@ describe('route sales inventory source', () => {
     vi.clearAllMocks();
     prismaMock.rutaSesion.findFirst.mockReset();
     prismaMock.detalleVenta.create.mockReset();
+    prismaMock.inventarioItem.findFirst.mockReset();
     sendMock.mockResolvedValue({ ok: true });
   });
 
@@ -193,6 +209,43 @@ describe('route sales inventory source', () => {
     expect(prismaMock.venta.create).toHaveBeenCalledOnce();
     expect(prismaMock.inventarioItem.update).not.toHaveBeenCalled();
     expect(registerMovementMock).not.toHaveBeenCalled();
+  });
+
+  it('classifies plant full-container stock before a sale consumes the scalar balance', async () => {
+    configureRouteSale(5, false, true, true, 2);
+    const directSale = {
+      ...input,
+      idRutaSesion: undefined,
+      estadoEntrega: 'ENTREGADO' as const,
+      detalle: [{
+        idInventarioItem: 9,
+        cantidad: 2,
+        precioUnitario: 10,
+        estadoEnvase: 'LLENO' as const,
+        modoEnvase: 'CLIENTE_PROPIO' as const,
+      }],
+    };
+
+    await createSale(directSale);
+
+    expect(ensurePlantEnvaseBucketQuantityMock).toHaveBeenCalledWith(
+      prismaMock,
+      expect.objectContaining({ estado: 'LLENO', cantidad: 2 }),
+    );
+    expect(ensurePlantEnvaseBucketQuantityMock.mock.invocationCallOrder[0])
+      .toBeLessThan(prismaMock.inventarioItem.update.mock.invocationCallOrder[0]);
+    expect(prismaMock.inventarioItem.update).toHaveBeenCalledWith({
+      where: { Id: 9 },
+      data: { Existencia: 0 },
+    });
+    expect(registerEnvaseBucketChangeMock).toHaveBeenCalledWith(
+      prismaMock,
+      expect.objectContaining({
+        bucket: { ubicacion: 'PLANTA', estado: 'LLENO' },
+        cantidad: 2,
+        entrada: false,
+      }),
+    );
   });
 
   it('rejects a route sale that exceeds the remaining truck quantity', async () => {
@@ -226,7 +279,11 @@ describe('route sales inventory source', () => {
     configureRouteSale(5, false, true);
     const returnableSale = {
       ...input,
-      detalle: [{ ...input.detalle[0], estadoEnvase: 'LLENO' as const }],
+      detalle: [{
+        ...input.detalle[0],
+        estadoEnvase: 'LLENO' as const,
+        modoEnvase: 'CLIENTE_PROPIO' as const,
+      }],
     };
 
     await createSale(returnableSale);
@@ -239,5 +296,62 @@ describe('route sales inventory source', () => {
         entrada: false,
       }),
     );
+    expect(prismaMock.detalleVentaEnvase.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ Modo: 'CLIENTE_PROPIO' }) }),
+    );
+    expect(prismaMock.movimientoEnvase.create).not.toHaveBeenCalled();
+  });
+
+  it('registers company-owned container custody as part of the sale without a second stock movement', async () => {
+    configureRouteSale(5, false, true);
+    const returnableSale = {
+      ...input,
+      detalle: [{
+        ...input.detalle[0],
+        estadoEnvase: 'LLENO' as const,
+        modoEnvase: 'PRESTAMO_EMPRESA' as const,
+      }],
+    };
+
+    await createSale(returnableSale);
+
+    expect(prismaMock.envaseClienteSaldo.create).toHaveBeenCalledWith({
+      data: { IdCliente: 4, IdInventarioItem: 9, CantidadPrestada: 2 },
+    });
+    expect(prismaMock.movimientoEnvase.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          IdVenta: 7,
+          IdDetalleVentaEnvase: 12,
+          IdRutaSesion: 12,
+          TipoMovimiento: 'PRESTAMO',
+          UbicacionEnvase: 'RUTA',
+          Cantidad: 2,
+        }),
+      }),
+    );
+    expect(registerEnvaseBucketChangeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not move route stock for a reserved returnable item in a route proforma', async () => {
+    configureRouteSale(5, false, true);
+    const proformaInput = {
+      ...input,
+      tipoRegistro: 'PROFORMA' as const,
+      fechaExpiracionProforma: new Date(Date.now() + 60_000).toISOString(),
+      detalle: [{
+        idInventarioItem: 9,
+        cantidad: 2,
+        precioUnitario: 10,
+        estadoEnvase: 'LLENO' as const,
+      }],
+    };
+
+    await createSale(proformaInput);
+
+    expect(prismaMock.reservaProforma.create).toHaveBeenCalledOnce();
+    expect(ensurePlantEnvaseBucketQuantityMock).not.toHaveBeenCalled();
+    expect(registerEnvaseBucketChangeMock).not.toHaveBeenCalled();
+    expect(prismaMock.detalleVentaEnvase.create).not.toHaveBeenCalled();
   });
 });

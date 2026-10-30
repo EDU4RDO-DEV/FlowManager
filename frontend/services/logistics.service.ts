@@ -227,6 +227,20 @@ export async function createRouteDispatch(
   await api.post(`/api/logistics/rutas/sesiones/${idRutaSesion}/despacho`, payload);
 }
 
+export async function cancelRouteDispatch(
+  idRutaSesion: number,
+  payload: { motivo: string },
+): Promise<void> {
+  await api.post(`/api/logistics/rutas/sesiones/${idRutaSesion}/despacho/anular`, payload);
+}
+
+export async function cancelRouteReturn(
+  idRutaSesion: number,
+  payload: { motivo: string },
+): Promise<void> {
+  await api.post(`/api/logistics/rutas/sesiones/${idRutaSesion}/devolucion/anular`, payload);
+}
+
 export async function createRouteReturn(
   idRutaSesion: number,
   payload: {

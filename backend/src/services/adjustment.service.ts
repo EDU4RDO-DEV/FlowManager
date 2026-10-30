@@ -7,6 +7,7 @@ import {
   getEnvaseBucketQuantity,
   registerEnvaseBucketChange,
   registerInventoryMovement,
+  type EnvaseState,
 } from './inventory-movement.service';
 
 type ListAdjustmentsInput = {
@@ -26,6 +27,7 @@ type CreateAdjustmentInput = {
     idInventarioItem: number;
     tipoAjuste: 'ENTRADA' | 'SALIDA';
     cantidadAjustada: number;
+    estadoEnvase?: 'VACIO' | 'LLENO';
   }>;
 };
 
@@ -72,6 +74,26 @@ function toAdjustmentDto(adjustment: {
     },
   };
 };
+
+async function getAdjustmentEnvaseInfo(tx: Prisma.TransactionClient, adjustmentId: number) {
+  const movement = await tx.bitacoraInventario.findFirst({
+    where: {
+      TipoDocumento: 'AJ',
+      Documento: adjustmentId.toString(),
+      UbicacionEnvase: 'PLANTA',
+      EstadoEnvase: { in: ['VACIO', 'LLENO', 'PENDIENTE_CONTEO'] },
+    },
+    orderBy: { Id: 'desc' },
+    select: { EstadoEnvase: true },
+  });
+  const estado: EnvaseState = movement?.EstadoEnvase === 'VACIO' || movement?.EstadoEnvase === 'LLENO'
+    ? movement.EstadoEnvase
+    : 'PENDIENTE_CONTEO';
+  return {
+    estado,
+    changesSellableStock: estado !== 'VACIO',
+  };
+}
 
 type AdjustmentOperationStatus = 'ACTIVO' | 'ANULADO' | 'PARCIAL';
 
@@ -491,8 +513,22 @@ export async function createAdjustment(input: CreateAdjustmentInput) {
         throw new Error('Item de inventario no existe');
       }
 
+      const isReturnable = returnableItemIds.has(item.idInventarioItem);
+      if (isReturnable && !item.estadoEnvase) {
+        throw new Error('Indica si el ajuste del envase retornable corresponde a VACIO o LLENO');
+      }
+      if (!isReturnable && item.estadoEnvase) {
+        throw new Error('El estado físico solo se define para envases retornables');
+      }
+      if (isReturnable && !Number.isInteger(item.cantidadAjustada)) {
+        throw new Error('La cantidad de un ajuste de envases retornables debe ser entera');
+      }
+
+      const changesSellableStock = !isReturnable || item.estadoEnvase === 'LLENO';
       const nuevaExistencia =
-        item.tipoAjuste === 'ENTRADA'
+        !changesSellableStock
+          ? existenciaAnterior
+          : item.tipoAjuste === 'ENTRADA'
           ? existenciaAnterior + item.cantidadAjustada
           : existenciaAnterior - item.cantidadAjustada;
 
@@ -501,18 +537,15 @@ export async function createAdjustment(input: CreateAdjustmentInput) {
           `Stock insuficiente para el ajuste de salida. Existencia actual ${existenciaAnterior}, requerida ${item.cantidadAjustada}`,
         );
       }
-      if (returnableItemIds.has(item.idInventarioItem)) {
-        if (!Number.isInteger(item.cantidadAjustada)) {
-          throw new Error('La cantidad de un ajuste de envases retornables debe ser entera');
-        }
-        if (item.tipoAjuste === 'SALIDA') {
-          const pending = await getEnvaseBucketQuantity(tx, item.idInventarioItem, {
-            ubicacion: 'PLANTA',
-            estado: 'PENDIENTE_CONTEO',
-          });
-          if (pending < item.cantidadAjustada) {
-            throw new Error('Los ajustes de salida de envases sólo pueden descontar unidades pendientes de conteo');
-          }
+      if (isReturnable && item.tipoAjuste === 'SALIDA') {
+        const physicalAvailable = await getEnvaseBucketQuantity(tx, item.idInventarioItem, {
+          ubicacion: 'PLANTA',
+          estado: item.estadoEnvase!,
+        });
+        if (physicalAvailable + 0.009 < item.cantidadAjustada) {
+          throw new Error(
+            `Saldo físico explícito insuficiente para ${item.estadoEnvase} en planta: disponible ${physicalAvailable}, solicitado ${item.cantidadAjustada}. Clasifica primero el saldo pendiente.`,
+          );
         }
       }
 
@@ -540,38 +573,39 @@ export async function createAdjustment(input: CreateAdjustmentInput) {
         },
       });
 
-      await tx.inventarioItem.update({
-        where: { Id: item.idInventarioItem },
-        data: {
-          Existencia: nuevaExistencia,
-        },
-      });
-
-      await registerInventoryMovement(tx, {
-        idInventarioItem: item.idInventarioItem,
-        idUsuario: input.idUsuario,
-        tipoDocumento: 'AJ',
-        documento: ajuste.Id.toString(),
-        nombre: `${input.nombreAjuste} #${numeroAjuste}`,
-        tipoMovimiento: item.tipoAjuste === 'ENTRADA',
-        existenciaAnterior,
-        cantidad: item.cantidadAjustada,
-        nuevaExistencia,
-      });
-      if (returnableItemIds.has(item.idInventarioItem)) {
+      if (changesSellableStock) {
+        await tx.inventarioItem.update({
+          where: { Id: item.idInventarioItem },
+          data: { Existencia: nuevaExistencia },
+        });
+        await registerInventoryMovement(tx, {
+          idInventarioItem: item.idInventarioItem,
+          idUsuario: input.idUsuario,
+          tipoDocumento: 'AJ',
+          documento: ajuste.Id.toString(),
+          nombre: `${input.nombreAjuste} #${numeroAjuste}`,
+          tipoMovimiento: item.tipoAjuste === 'ENTRADA',
+          existenciaAnterior,
+          cantidad: item.cantidadAjustada,
+          nuevaExistencia,
+        });
+      }
+      if (isReturnable) {
         await registerEnvaseBucketChange(tx, {
           idInventarioItem: item.idInventarioItem,
           idUsuario: input.idUsuario,
-          bucket: { ubicacion: 'PLANTA', estado: 'PENDIENTE_CONTEO' },
+          bucket: { ubicacion: 'PLANTA', estado: item.estadoEnvase! },
           cantidad: item.cantidadAjustada,
           entrada: item.tipoAjuste === 'ENTRADA',
-          nombre: `Ajuste de envase pendiente de clasificación #${ajuste.Id}`,
+          nombre: `Ajuste de envase ${item.estadoEnvase} #${ajuste.Id}`,
           tipoDocumento: 'AJ',
           documento: ajuste.Id.toString(),
         });
       }
 
-      txStockMap.set(item.idInventarioItem, nuevaExistencia);
+      if (changesSellableStock) {
+        txStockMap.set(item.idInventarioItem, nuevaExistencia);
+      }
       createdAdjustments.push(ajuste);
     }
 
@@ -615,23 +649,19 @@ export async function deleteAdjustment(id: number, idUsuarioAnulador?: number) {
     if (!item) {
       throw new Error('Item de inventario no encontrado');
     }
+    const envaseInfo = item.EsEnvaseRetornable
+      ? await getAdjustmentEnvaseInfo(tx, existing.Id)
+      : null;
     if (item.EsEnvaseRetornable) {
       if (!Number.isInteger(existing.CantidadAjustada)) {
         throw new Error('La cantidad del ajuste histórico de envases no es entera; requiere conciliación manual');
       }
-      if (existing.TipoAjuste === 'ENTRADA') {
-        const pending = await getEnvaseBucketQuantity(tx, item.Id, {
-          ubicacion: 'PLANTA',
-          estado: 'PENDIENTE_CONTEO',
-        });
-        if (pending < existing.CantidadAjustada) {
-          throw new Error('No se puede anular el ajuste: reconcilia o verifica primero el estado de los envases');
-        }
-      }
     }
 
-    const nuevaExistencia =
-      existing.TipoAjuste === 'ENTRADA'
+    const changesSellableStock = !item.EsEnvaseRetornable || envaseInfo?.changesSellableStock;
+    const nuevaExistencia = !changesSellableStock
+      ? item.Existencia
+      : existing.TipoAjuste === 'ENTRADA'
         ? item.Existencia - existing.CantidadAjustada
         : item.Existencia + existing.CantidadAjustada;
 
@@ -650,29 +680,28 @@ export async function deleteAdjustment(id: number, idUsuarioAnulador?: number) {
       },
     });
 
-    await tx.inventarioItem.update({
-      where: { Id: existing.IdInventarioItem },
-      data: {
-        Existencia: nuevaExistencia,
-      },
-    });
-
-    await registerInventoryMovement(tx, {
-      idInventarioItem: existing.IdInventarioItem,
-      idUsuario: idUsuarioAnulador ?? existing.IdUsuario,
-      tipoDocumento: 'AJAN',
-      documento: existing.Id.toString(),
-      nombre: `Reversión por anulación de ajuste #${existing.Id} - ${item.Nombre}`,
-      tipoMovimiento: existing.TipoAjuste !== 'ENTRADA',
-      existenciaAnterior: item.Existencia,
-      cantidad: existing.CantidadAjustada,
-      nuevaExistencia,
-    });
+    if (changesSellableStock) {
+      await tx.inventarioItem.update({
+        where: { Id: existing.IdInventarioItem },
+        data: { Existencia: nuevaExistencia },
+      });
+      await registerInventoryMovement(tx, {
+        idInventarioItem: existing.IdInventarioItem,
+        idUsuario: idUsuarioAnulador ?? existing.IdUsuario,
+        tipoDocumento: 'AJAN',
+        documento: existing.Id.toString(),
+        nombre: `Reversión por anulación de ajuste #${existing.Id} - ${item.Nombre}`,
+        tipoMovimiento: existing.TipoAjuste !== 'ENTRADA',
+        existenciaAnterior: item.Existencia,
+        cantidad: existing.CantidadAjustada,
+        nuevaExistencia,
+      });
+    }
     if (item.EsEnvaseRetornable) {
       await registerEnvaseBucketChange(tx, {
         idInventarioItem: item.Id,
         idUsuario: idUsuarioAnulador ?? existing.IdUsuario,
-        bucket: { ubicacion: 'PLANTA', estado: 'PENDIENTE_CONTEO' },
+        bucket: { ubicacion: 'PLANTA', estado: envaseInfo!.estado },
         cantidad: existing.CantidadAjustada,
         entrada: existing.TipoAjuste !== 'ENTRADA',
         nombre: `Reversión de ajuste de envase #${existing.Id}`,
@@ -716,23 +745,19 @@ export async function deleteAdjustmentOperation(
       if (!item) {
         throw new Error('Item de inventario no encontrado');
       }
+      const envaseInfo = item.EsEnvaseRetornable
+        ? await getAdjustmentEnvaseInfo(tx, adjustment.Id)
+        : null;
       if (item.EsEnvaseRetornable) {
         if (!Number.isInteger(adjustment.CantidadAjustada)) {
           throw new Error('La cantidad del ajuste histórico de envases no es entera; requiere conciliación manual');
         }
-        if (adjustment.TipoAjuste === 'ENTRADA') {
-          const pending = await getEnvaseBucketQuantity(tx, item.Id, {
-            ubicacion: 'PLANTA',
-            estado: 'PENDIENTE_CONTEO',
-          });
-          if (pending < adjustment.CantidadAjustada) {
-            throw new Error('No se puede anular el ajuste: reconcilia o verifica primero el estado de los envases');
-          }
-        }
       }
 
-      const nuevaExistencia =
-        adjustment.TipoAjuste === 'ENTRADA'
+      const changesSellableStock = !item.EsEnvaseRetornable || envaseInfo?.changesSellableStock;
+      const nuevaExistencia = !changesSellableStock
+        ? item.Existencia
+        : adjustment.TipoAjuste === 'ENTRADA'
           ? item.Existencia - adjustment.CantidadAjustada
           : item.Existencia + adjustment.CantidadAjustada;
       if (nuevaExistencia < 0) {
@@ -749,26 +774,28 @@ export async function deleteAdjustmentOperation(
           FechaAnulacion: new Date(),
         },
       });
-      await tx.inventarioItem.update({
-        where: { Id: item.Id },
-        data: { Existencia: nuevaExistencia },
-      });
-      await registerInventoryMovement(tx, {
-        idInventarioItem: item.Id,
-        idUsuario: idUsuarioAnulador ?? adjustment.IdUsuario,
-        tipoDocumento: 'AJAN',
-        documento: adjustment.Id.toString(),
-        nombre: `Reversión por anulación de ajuste #${numeroAjuste} - ${item.Nombre}`,
-        tipoMovimiento: adjustment.TipoAjuste !== 'ENTRADA',
-        existenciaAnterior: item.Existencia,
-        cantidad: adjustment.CantidadAjustada,
-        nuevaExistencia,
-      });
+      if (changesSellableStock) {
+        await tx.inventarioItem.update({
+          where: { Id: item.Id },
+          data: { Existencia: nuevaExistencia },
+        });
+        await registerInventoryMovement(tx, {
+          idInventarioItem: item.Id,
+          idUsuario: idUsuarioAnulador ?? adjustment.IdUsuario,
+          tipoDocumento: 'AJAN',
+          documento: adjustment.Id.toString(),
+          nombre: `Reversión por anulación de ajuste #${numeroAjuste} - ${item.Nombre}`,
+          tipoMovimiento: adjustment.TipoAjuste !== 'ENTRADA',
+          existenciaAnterior: item.Existencia,
+          cantidad: adjustment.CantidadAjustada,
+          nuevaExistencia,
+        });
+      }
       if (item.EsEnvaseRetornable) {
         await registerEnvaseBucketChange(tx, {
           idInventarioItem: item.Id,
           idUsuario: idUsuarioAnulador ?? adjustment.IdUsuario,
-          bucket: { ubicacion: 'PLANTA', estado: 'PENDIENTE_CONTEO' },
+          bucket: { ubicacion: 'PLANTA', estado: envaseInfo!.estado },
           cantidad: adjustment.CantidadAjustada,
           entrada: adjustment.TipoAjuste !== 'ENTRADA',
           nombre: `Reversión de ajuste de envase #${adjustment.Id}`,
@@ -810,23 +837,19 @@ export async function restoreAdjustment(id: number, idUsuarioModificador?: numbe
     if (!item) {
       throw new Error('Item de inventario no encontrado');
     }
+    const envaseInfo = item.EsEnvaseRetornable
+      ? await getAdjustmentEnvaseInfo(tx, existing.Id)
+      : null;
     if (item.EsEnvaseRetornable) {
       if (!Number.isInteger(existing.CantidadAjustada)) {
         throw new Error('La cantidad del ajuste histórico de envases no es entera; requiere conciliación manual');
       }
-      if (existing.TipoAjuste === 'SALIDA') {
-        const pending = await getEnvaseBucketQuantity(tx, item.Id, {
-          ubicacion: 'PLANTA',
-          estado: 'PENDIENTE_CONTEO',
-        });
-        if (pending < existing.CantidadAjustada) {
-          throw new Error('No se puede restaurar el ajuste: no hay suficientes envases pendientes de conteo');
-        }
-      }
     }
 
-    const nuevaExistencia =
-      existing.TipoAjuste === 'ENTRADA'
+    const changesSellableStock = !item.EsEnvaseRetornable || envaseInfo?.changesSellableStock;
+    const nuevaExistencia = !changesSellableStock
+      ? item.Existencia
+      : existing.TipoAjuste === 'ENTRADA'
         ? item.Existencia + existing.CantidadAjustada
         : item.Existencia - existing.CantidadAjustada;
 
@@ -856,29 +879,28 @@ export async function restoreAdjustment(id: number, idUsuarioModificador?: numbe
       },
     });
 
-    await tx.inventarioItem.update({
-      where: { Id: existing.IdInventarioItem },
-      data: {
-        Existencia: nuevaExistencia,
-      },
-    });
-
-    await registerInventoryMovement(tx, {
-      idInventarioItem: existing.IdInventarioItem,
-      idUsuario: idUsuarioModificador ?? existing.IdUsuario,
-      tipoDocumento: 'AJRE',
-      documento: existing.Id.toString(),
-      nombre: `Reversión por restauración de ajuste #${existing.Id} - ${item.Nombre}`,
-      tipoMovimiento: existing.TipoAjuste === 'ENTRADA',
-      existenciaAnterior: item.Existencia,
-      cantidad: existing.CantidadAjustada,
-      nuevaExistencia,
-    });
+    if (changesSellableStock) {
+      await tx.inventarioItem.update({
+        where: { Id: existing.IdInventarioItem },
+        data: { Existencia: nuevaExistencia },
+      });
+      await registerInventoryMovement(tx, {
+        idInventarioItem: existing.IdInventarioItem,
+        idUsuario: idUsuarioModificador ?? existing.IdUsuario,
+        tipoDocumento: 'AJRE',
+        documento: existing.Id.toString(),
+        nombre: `Reversión por restauración de ajuste #${existing.Id} - ${item.Nombre}`,
+        tipoMovimiento: existing.TipoAjuste === 'ENTRADA',
+        existenciaAnterior: item.Existencia,
+        cantidad: existing.CantidadAjustada,
+        nuevaExistencia,
+      });
+    }
     if (item.EsEnvaseRetornable) {
       await registerEnvaseBucketChange(tx, {
         idInventarioItem: item.Id,
         idUsuario: idUsuarioModificador ?? existing.IdUsuario,
-        bucket: { ubicacion: 'PLANTA', estado: 'PENDIENTE_CONTEO' },
+        bucket: { ubicacion: 'PLANTA', estado: envaseInfo!.estado },
         cantidad: existing.CantidadAjustada,
         entrada: existing.TipoAjuste === 'ENTRADA',
         nombre: `Restauración de ajuste de envase #${existing.Id}`,
@@ -926,23 +948,19 @@ export async function restoreAdjustmentOperation(
       if (!item) {
         throw new Error('Item de inventario no encontrado');
       }
+      const envaseInfo = item.EsEnvaseRetornable
+        ? await getAdjustmentEnvaseInfo(tx, adjustment.Id)
+        : null;
       if (item.EsEnvaseRetornable) {
         if (!Number.isInteger(adjustment.CantidadAjustada)) {
           throw new Error('La cantidad del ajuste histórico de envases no es entera; requiere conciliación manual');
         }
-        if (adjustment.TipoAjuste === 'SALIDA') {
-          const pending = await getEnvaseBucketQuantity(tx, item.Id, {
-            ubicacion: 'PLANTA',
-            estado: 'PENDIENTE_CONTEO',
-          });
-          if (pending < adjustment.CantidadAjustada) {
-            throw new Error('No se puede restaurar el ajuste: no hay suficientes envases pendientes de conteo');
-          }
-        }
       }
 
-      const nuevaExistencia =
-        adjustment.TipoAjuste === 'ENTRADA'
+      const changesSellableStock = !item.EsEnvaseRetornable || envaseInfo?.changesSellableStock;
+      const nuevaExistencia = !changesSellableStock
+        ? item.Existencia
+        : adjustment.TipoAjuste === 'ENTRADA'
           ? item.Existencia + adjustment.CantidadAjustada
           : item.Existencia - adjustment.CantidadAjustada;
       if (nuevaExistencia < 0) {
@@ -959,26 +977,28 @@ export async function restoreAdjustmentOperation(
           FechaAnulacion: null,
         },
       });
-      await tx.inventarioItem.update({
-        where: { Id: item.Id },
-        data: { Existencia: nuevaExistencia },
-      });
-      await registerInventoryMovement(tx, {
-        idInventarioItem: item.Id,
-        idUsuario: idUsuarioModificador ?? adjustment.IdUsuario,
-        tipoDocumento: 'AJRE',
-        documento: adjustment.Id.toString(),
-        nombre: `Reversión por restauración de ajuste #${numeroAjuste} - ${item.Nombre}`,
-        tipoMovimiento: adjustment.TipoAjuste === 'ENTRADA',
-        existenciaAnterior: item.Existencia,
-        cantidad: adjustment.CantidadAjustada,
-        nuevaExistencia,
-      });
+      if (changesSellableStock) {
+        await tx.inventarioItem.update({
+          where: { Id: item.Id },
+          data: { Existencia: nuevaExistencia },
+        });
+        await registerInventoryMovement(tx, {
+          idInventarioItem: item.Id,
+          idUsuario: idUsuarioModificador ?? adjustment.IdUsuario,
+          tipoDocumento: 'AJRE',
+          documento: adjustment.Id.toString(),
+          nombre: `Reversión por restauración de ajuste #${numeroAjuste} - ${item.Nombre}`,
+          tipoMovimiento: adjustment.TipoAjuste === 'ENTRADA',
+          existenciaAnterior: item.Existencia,
+          cantidad: adjustment.CantidadAjustada,
+          nuevaExistencia,
+        });
+      }
       if (item.EsEnvaseRetornable) {
         await registerEnvaseBucketChange(tx, {
           idInventarioItem: item.Id,
           idUsuario: idUsuarioModificador ?? adjustment.IdUsuario,
-          bucket: { ubicacion: 'PLANTA', estado: 'PENDIENTE_CONTEO' },
+          bucket: { ubicacion: 'PLANTA', estado: envaseInfo!.estado },
           cantidad: adjustment.CantidadAjustada,
           entrada: adjustment.TipoAjuste === 'ENTRADA',
           nombre: `Restauración de ajuste de envase #${adjustment.Id}`,

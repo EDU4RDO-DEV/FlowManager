@@ -8,8 +8,8 @@ const { prismaMock } = vi.hoisted(() => ({
     usuario: { findFirst: vi.fn() },
     venta: { findFirst: vi.fn() },
     rutaSesion: { findFirst: vi.fn() },
-    despachoRuta: { findUnique: vi.fn() },
-    devolucionRuta: { findUnique: vi.fn() },
+    despachoRuta: { findFirst: vi.fn() },
+    devolucionRuta: { findFirst: vi.fn() },
   },
 }));
 
@@ -40,10 +40,10 @@ describe('commercial route returns', () => {
       DetalleVenta: [{ Id: 301, IdInventarioItem: 8, Cantidad: 5 }],
     });
     prismaMock.rutaSesion.findFirst.mockResolvedValue({ Estado: 'EN_CURSO' });
-    prismaMock.despachoRuta.findUnique.mockResolvedValue({
+    prismaMock.despachoRuta.findFirst.mockResolvedValue({
       Detalles: [{ IdInventarioItem: 8 }],
     });
-    prismaMock.devolucionRuta.findUnique.mockResolvedValue(null);
+    prismaMock.devolucionRuta.findFirst.mockResolvedValue(null);
     prismaMock.devolucionComercialDetalle.findMany.mockResolvedValue([]);
     prismaMock.devolucionComercial.create.mockResolvedValue({ Id: 44, Detalles: [] });
   });
@@ -138,7 +138,7 @@ describe('commercial route returns', () => {
   });
 
   it('rejects commercial returns after the physical route receipt starts', async () => {
-    prismaMock.devolucionRuta.findUnique.mockResolvedValueOnce({ Id: 99 });
+    prismaMock.devolucionRuta.findFirst.mockResolvedValueOnce({ Id: 99 });
 
     await expect(
       createCommercialReturn(90, 12, 'b866ea50-f739-4ec5-996f-15a00a30e080', input),

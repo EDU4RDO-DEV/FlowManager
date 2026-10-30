@@ -34,6 +34,8 @@ import {
   createRouteAdjustmentController,
   createRouteDispatchController,
   createRouteReturnController,
+  cancelRouteReturnController,
+  cancelRouteDispatchController,
   getRouteInventoryController,
   getRouteSettlementController,
   listDispatchProductsController,
@@ -73,9 +75,19 @@ logisticsRouter.post(
   createRouteDispatchController,
 );
 logisticsRouter.post(
+  '/rutas/sesiones/:id/despacho/anular',
+  requireModulePermission('despacho', 'update'),
+  cancelRouteDispatchController,
+);
+logisticsRouter.post(
   '/rutas/sesiones/:id/devolucion',
   requireModulePermission('despacho', 'create'),
   createRouteReturnController,
+);
+logisticsRouter.post(
+  '/rutas/sesiones/:id/devolucion/anular',
+  requireModulePermission('despacho', 'update'),
+  cancelRouteReturnController,
 );
 logisticsRouter.post(
   '/rutas/sesiones/:id/ajustes',

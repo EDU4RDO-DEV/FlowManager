@@ -25,6 +25,8 @@ import { getApiErrorMessage } from "@/lib/api";
 import { hasModulePermission } from "@/lib/rbac";
 import {
   closeRouteSession,
+  cancelRouteDispatch,
+  cancelRouteReturn,
   createRouteAdjustment,
   createRouteDispatch,
   createRouteReturn,
@@ -46,7 +48,8 @@ type ReturnDraft = {
   cantidadEnvaseLleno: string;
   estadoEnvaseDanado: "VACIO" | "LLENO" | "";
   observaciones: string;
-  ubicacionDanada: string;
+  ubicacionDanada: "" | "CUARENTENA" | "OTRA";
+  ubicacionDanadaDetalle: string;
 };
 
 function formatDate(value: string | null) {
@@ -80,11 +83,13 @@ export default function RouteOperationsPage() {
   const [sessionSearch, setSessionSearch] = useState("");
   const [inventory, setInventory] = useState<RouteInventoryDto | null>(null);
   const [dispatchDraft, setDispatchDraft] = useState<DispatchDraft[]>([]);
+  const [dispatchCancellationReason, setDispatchCancellationReason] = useState("");
   const [dispatchProductId, setDispatchProductId] = useState("");
   const [dispatchSearch, setDispatchSearch] = useState("");
   const [dispatchNotes, setDispatchNotes] = useState("");
   const [returnDraft, setReturnDraft] = useState<Record<number, ReturnDraft>>({});
   const [returnNotes, setReturnNotes] = useState("");
+  const [returnCancellationReason, setReturnCancellationReason] = useState("");
   const [adjustmentItemId, setAdjustmentItemId] = useState("");
   const [adjustmentAmount, setAdjustmentAmount] = useState("");
   const [adjustmentClass, setAdjustmentClass] = useState<"FALTANTE" | "DANADO" | "OTRO">("FALTANTE");
@@ -182,6 +187,8 @@ export default function RouteOperationsPage() {
     setSelectedSessionId(id);
     setInventory(null);
     setReturnDraft({});
+    setDispatchCancellationReason("");
+    setReturnCancellationReason("");
     setAdjustmentItemId("");
     setDispatchDraft([]);
     setDispatchNotes("");
@@ -276,7 +283,9 @@ export default function RouteOperationsPage() {
         received < 0 ||
         damaged < 0 ||
         damaged > received ||
-        (damaged > 0 && !line.ubicacionDanada.trim()) ||
+        (damaged > 0 &&
+          (!line.ubicacionDanada ||
+            (line.ubicacionDanada === "OTRA" && !line.ubicacionDanadaDetalle?.trim()))) ||
         (received > 0 && isReturnableContainer &&
           (!Number.isInteger(received) ||
             !Number.isInteger(damaged) ||
@@ -299,8 +308,15 @@ export default function RouteOperationsPage() {
         cantidadEnvaseVacio: Number(line.cantidadEnvaseVacio || 0),
         cantidadEnvaseLleno: Number(line.cantidadEnvaseLleno || 0),
         ...(line.estadoEnvaseDanado ? { estadoEnvaseDanado: line.estadoEnvaseDanado } : {}),
-        observaciones: line.observaciones.trim() || undefined,
-        ubicacionDanada: line.ubicacionDanada.trim() || undefined,
+        observaciones: line.observaciones?.trim() || undefined,
+        ...(Number(line.cantidadDanada) > 0
+          ? {
+              ubicacionDanada:
+                line.ubicacionDanada === "CUARENTENA"
+                  ? "Cuarentena"
+                  : line.ubicacionDanadaDetalle?.trim() ?? "",
+            }
+          : {}),
       }))
       .filter((line) => line.cantidadRecibida > 0);
 
@@ -312,6 +328,50 @@ export default function RouteOperationsPage() {
       await loadInventory(selectedSession.id);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo registrar la devolución"));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function submitDispatchCancellation() {
+    if (!selectedSession || !inventory?.despacho) return;
+    const motivo = dispatchCancellationReason.trim();
+    if (motivo.length < 3) {
+      toast.error("Indica el motivo de anulación (mínimo 3 caracteres)");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await cancelRouteDispatch(selectedSession.id, { motivo });
+      toast.success("Despacho anulado y existencias restauradas con trazabilidad; puedes capturarlo nuevamente");
+      setDispatchCancellationReason("");
+      await loadInventory(selectedSession.id);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo anular el despacho"));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function submitReturnCancellation() {
+    if (!selectedSession || !inventory?.devolucion) return;
+    const motivo = returnCancellationReason.trim();
+    if (motivo.length < 3) {
+      toast.error("Indica el motivo de anulación (mínimo 3 caracteres)");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await cancelRouteReturn(selectedSession.id, { motivo });
+      toast.success("Recepción anulada con trazabilidad; puedes volver a capturar las cantidades físicas correctas");
+      setReturnCancellationReason("");
+      setReturnDraft({});
+      setReturnNotes("");
+      await loadInventory(selectedSession.id);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo anular la devolución"));
     } finally {
       setIsSaving(false);
     }
@@ -371,6 +431,27 @@ export default function RouteOperationsPage() {
   const canOperate = selectedSession?.estado === "EN_CURSO";
   const visibleInventory =
     selectedSession && inventory?.idRutaSesion === selectedSession.id ? inventory : null;
+  const dispatchCanBeCancelled = Boolean(
+    visibleInventory?.despacho &&
+      selectedSession?.estado === "EN_CURSO" &&
+      !visibleInventory.devolucion &&
+      visibleInventory.productos.every((line) =>
+        line.vendido <= 0.009 &&
+        line.devolucionComercial <= 0.009 &&
+        line.noVendibleComercial <= 0.009 &&
+        line.devuelto <= 0.009 &&
+        line.ajustado <= 0.009 &&
+        line.reservado <= 0.009 &&
+        (line.envasePrestado ?? 0) <= 0.009 &&
+        (line.envaseDevuelto ?? 0) <= 0.009 &&
+        (line.envaseBaja ?? 0) <= 0.009,
+      ),
+  );
+  const returnCanBeCancelled = Boolean(
+    visibleInventory?.devolucion &&
+      selectedSession?.estado === "EN_CURSO" &&
+      visibleInventory.productos.every((line) => line.ajustado <= 0.009),
+  );
   const selectedPendingLine =
     visibleInventory?.diferenciasPendientes?.find((line) => String(line.idInventarioItem) === adjustmentItemId) ??
     visibleInventory?.diferenciasPendientes?.[0];
@@ -468,6 +549,80 @@ export default function RouteOperationsPage() {
                     <p className="text-xs text-muted-foreground">
                       {visibleInventory.devolucion ? `Recibido ${formatDate(visibleInventory.devolucion.fechaRegistro)}` : "Devolución aún no registrada"}
                     </p>
+                    {visibleInventory.devolucionesAnuladas?.map((routeReturn) => (
+                      <p key={routeReturn.id} className="text-xs text-muted-foreground">
+                        Recepción anterior anulada {formatDate(routeReturn.fechaAnulacion)} · {routeReturn.motivoAnulacion}
+                        {routeReturn.usuarioAnulador ? ` · ${routeReturn.usuarioAnulador.nombre}` : ""}
+                      </p>
+                    ))}
+                    {visibleInventory.despacho && canOperate ? (
+                      <div className="space-y-2 border-t pt-3">
+                        {dispatchCanBeCancelled ? (
+                          <>
+                            <Label htmlFor="dispatch-cancellation-reason">Motivo obligatorio para anular</Label>
+                            <Input
+                              id="dispatch-cancellation-reason"
+                              value={dispatchCancellationReason}
+                              onChange={(event) => setDispatchCancellationReason(event.target.value)}
+                              maxLength={255}
+                              placeholder="Ej. Estado del envase capturado incorrectamente"
+                            />
+                            <Button
+                              variant="destructive"
+                              onClick={() => void submitDispatchCancellation()}
+                              disabled={!canUpdate || isSaving || dispatchCancellationReason.trim().length < 3}
+                            >
+                              Anular despacho y volver a capturar
+                            </Button>
+                            {!canUpdate ? (
+                              <p className="text-xs text-muted-foreground">Tu rol no tiene permiso para anular despachos.</p>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">
+                                Solo se permite antes de ventas, devoluciones, ajustes o cierre. La reversión queda auditada.
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">
+                            El despacho ya tiene movimientos posteriores; no se puede anular para proteger ventas, devoluciones y liquidaciones.
+                          </p>
+                        )}
+                      </div>
+                    ) : null}
+                    {visibleInventory.devolucion && canOperate ? (
+                      <div className="space-y-2 border-t pt-3">
+                        {returnCanBeCancelled ? (
+                          <>
+                            <Label htmlFor="return-cancellation-reason">Motivo obligatorio para corregir la recepción</Label>
+                            <Input
+                              id="return-cancellation-reason"
+                              value={returnCancellationReason}
+                              onChange={(event) => setReturnCancellationReason(event.target.value)}
+                              maxLength={255}
+                              placeholder="Ej. Se clasificaron mal los envases vacíos y llenos"
+                            />
+                            <Button
+                              variant="destructive"
+                              onClick={() => void submitReturnCancellation()}
+                              disabled={!canUpdate || isSaving || returnCancellationReason.trim().length < 3}
+                            >
+                              Anular recepción y volver a capturar
+                            </Button>
+                            {!canUpdate ? (
+                              <p className="text-xs text-muted-foreground">Tu rol no tiene permiso para corregir recepciones.</p>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">
+                                La recepción anterior queda en el historial. Solo puede corregirse antes de autorizar diferencias o cerrar la ruta.
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">
+                            No se puede corregir la recepción después de autorizar diferencias o cerrar la ruta.
+                          </p>
+                        )}
+                      </div>
+                    ) : null}
                   </CardContent>
                 </Card>
                 <Card className="rounded-xl">
@@ -651,7 +806,51 @@ export default function RouteOperationsPage() {
                             <TableCell>{isReturnableContainer ? <Input type="number" min="0" step="1" value={returnDraft[line.idInventarioItem]?.cantidadEnvaseLleno ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadEnvaseLleno: event.target.value } }))} className="max-w-24" /> : "—"}</TableCell>
                             <TableCell><Input type="number" min="0" step={isReturnableContainer ? "1" : "0.01"} value={returnDraft[line.idInventarioItem]?.cantidadDanada ?? "0"} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], cantidadDanada: event.target.value } }))} className="max-w-28" /></TableCell>
                             <TableCell>{isReturnableContainer ? <Select value={returnDraft[line.idInventarioItem]?.estadoEnvaseDanado ?? ""} onValueChange={(value) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], estadoEnvaseDanado: value as "VACIO" | "LLENO" } }))}><SelectTrigger className="min-w-28"><SelectValue placeholder="Estado" /></SelectTrigger><SelectContent><SelectItem value="VACIO">Vacío</SelectItem><SelectItem value="LLENO">Lleno</SelectItem></SelectContent></Select> : "—"}</TableCell>
-                            <TableCell><Input value={returnDraft[line.idInventarioItem]?.ubicacionDanada ?? ""} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], ubicacionDanada: event.target.value } }))} maxLength={255} placeholder="Obligatorio si hay unidades dañadas" /></TableCell>
+                            <TableCell>
+                              <div className="min-w-44 space-y-1">
+                                <Select
+                                  value={returnDraft[line.idInventarioItem]?.ubicacionDanada ?? ""}
+                                  onValueChange={(value) =>
+                                    setReturnDraft((previous) => ({
+                                      ...previous,
+                                      [line.idInventarioItem]: {
+                                        ...previous[line.idInventarioItem],
+                                        ubicacionDanada: value as "CUARENTENA" | "OTRA",
+                                      },
+                                    }))
+                                  }
+                                  disabled={
+                                    isSaving ||
+                                    Number(returnDraft[line.idInventarioItem]?.cantidadDanada ?? 0) <= 0
+                                  }
+                                >
+                                  <SelectTrigger aria-label={`Ubicación no vendible de ${line.nombre}`}>
+                                    <SelectValue placeholder="Selecciona ubicación" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="CUARENTENA">Cuarentena</SelectItem>
+                                    <SelectItem value="OTRA">Otra ubicación</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                {returnDraft[line.idInventarioItem]?.ubicacionDanada === "OTRA" ? (
+                                  <Input
+                                    value={returnDraft[line.idInventarioItem]?.ubicacionDanadaDetalle ?? ""}
+                                    onChange={(event) =>
+                                      setReturnDraft((previous) => ({
+                                        ...previous,
+                                        [line.idInventarioItem]: {
+                                          ...previous[line.idInventarioItem],
+                                          ubicacionDanadaDetalle: event.target.value,
+                                        },
+                                      }))
+                                    }
+                                    maxLength={255}
+                                    placeholder="Especifica el lugar"
+                                    aria-label={`Detalle de ubicación no vendible de ${line.nombre}`}
+                                  />
+                                ) : null}
+                              </div>
+                            </TableCell>
                             <TableCell><Input value={returnDraft[line.idInventarioItem]?.observaciones ?? ""} onChange={(event) => setReturnDraft((previous) => ({ ...previous, [line.idInventarioItem]: { ...previous[line.idInventarioItem], observaciones: event.target.value } }))} maxLength={255} /></TableCell>
                           </TableRow>
                           );

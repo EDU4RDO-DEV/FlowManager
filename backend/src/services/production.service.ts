@@ -3,7 +3,11 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
 import { runSerializableTransaction } from '../utils/serializable-transaction';
-import { registerInventoryMovement } from './inventory-movement.service';
+import {
+  ensurePlantEnvaseBucketQuantity,
+  registerInventoryMovement,
+  transferEnvaseBucket,
+} from './inventory-movement.service';
 
 type ListProductionOrdersInput = {
   page?: number;
@@ -366,7 +370,15 @@ export async function confirmProductionOrder(
           orderBy: { Id: 'asc' },
           include: {
             InventarioItem: {
-              select: { Id: true, Nombre: true, Categoria: true, UnidadMedida: true, Existencia: true, Anulado: true },
+              select: {
+                Id: true,
+                Nombre: true,
+                Categoria: true,
+                UnidadMedida: true,
+                Existencia: true,
+                Anulado: true,
+                EsEnvaseRetornable: true,
+              },
             },
           },
         },
@@ -399,6 +411,7 @@ export async function confirmProductionOrder(
         Nombre: true,
         Existencia: true,
         UnidadMedida: true,
+        EsEnvaseRetornable: true,
       },
     });
     if (!finished) {
@@ -417,6 +430,7 @@ export async function confirmProductionOrder(
             Categoria: true,
             UnidadMedida: true,
             Anulado: true,
+            EsEnvaseRetornable: true,
           },
         },
       },
@@ -426,7 +440,11 @@ export async function confirmProductionOrder(
     }
     for (const entry of activeRecipe) {
       const component = entry.InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem;
-      if (component.Anulado || !['MATERIA_PRIMA', 'INSUMO'].includes(component.Categoria)) {
+      if (
+        component.Anulado ||
+        component.EsEnvaseRetornable ||
+        !['MATERIA_PRIMA', 'INSUMO'].includes(component.Categoria)
+      ) {
         throw new Error(`${component.Nombre} no es una materia prima o insumo activo`);
       }
       if (!component.UnidadMedida?.trim()) {
@@ -442,6 +460,9 @@ export async function confirmProductionOrder(
       order.Detalles.length === 0
     ) {
       throw new Error('La orden no tiene una cantidad o receta válida');
+    }
+    if (finished.EsEnvaseRetornable && !Number.isInteger(order.CantidadProducir)) {
+      throw new Error('La producción de envases retornables debe ser una cantidad entera');
     }
     if (finished.UnidadMedida?.trim().toLocaleUpperCase() !== order.UnidadMedidaSnapshot.trim().toLocaleUpperCase()) {
       throw new Error('La unidad del producto terminado cambió; crea una nueva orden');
@@ -465,6 +486,9 @@ export async function confirmProductionOrder(
       }
       if (item.Anulado || !['MATERIA_PRIMA', 'INSUMO'].includes(item.Categoria)) {
         throw new Error(`${item.Nombre} ya no es una materia prima o insumo activo`);
+      }
+      if (item.EsEnvaseRetornable) {
+        throw new Error(`${item.Nombre} es un envase retornable y no debe consumirse como insumo`);
       }
       if (item.UnidadMedida?.trim().toLocaleUpperCase() !== detail.UnidadMedidaSnapshot.trim().toLocaleUpperCase()) {
         throw new Error(`La unidad de ${item.Nombre} cambió; crea una nueva orden`);
@@ -520,6 +544,27 @@ export async function confirmProductionOrder(
       cantidad: order.CantidadProducir,
       nuevaExistencia: nuevaExistenciaFinal,
     });
+    if (finished.EsEnvaseRetornable) {
+      await ensurePlantEnvaseBucketQuantity(tx, {
+        idInventarioItem: finished.Id,
+        idUsuario,
+        estado: 'VACIO',
+        cantidad: order.CantidadProducir,
+        nombre: `Producción orden #${id} - ${finished.Nombre}`,
+        tipoDocumento: 'PROD',
+        documento: id.toString(),
+      });
+      await transferEnvaseBucket(tx, {
+        idInventarioItem: finished.Id,
+        idUsuario,
+        origen: { ubicacion: 'PLANTA', estado: 'VACIO' },
+        destino: { ubicacion: 'PLANTA', estado: 'LLENO' },
+        cantidad: order.CantidadProducir,
+        nombre: `Llenado de envases por producción orden #${id} - ${finished.Nombre}`,
+        tipoDocumento: 'PROD',
+        documento: id.toString(),
+      });
+    }
     const updated = await tx.ordenProduccion.updateMany({
       where: { Id: id, Estado: 'PENDIENTE', Anulado: false },
       data: {

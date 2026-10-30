@@ -103,6 +103,7 @@ export interface CreateAdjustmentPayload {
     idInventarioItem: number;
     tipoAjuste: "ENTRADA" | "SALIDA";
     cantidadAjustada: number;
+    estadoEnvase?: "VACIO" | "LLENO";
   }>;
 }
 

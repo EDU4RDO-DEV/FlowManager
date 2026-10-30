@@ -27,12 +27,14 @@ const sessionId = 84101;
 function mockProductionTransaction(
   componentStock: number,
   serializeTransactions = false,
+  finishedReturnable = false,
+  productionQuantity = 2,
 ) {
   const order = {
     Id: 41,
     IdProductoTerminado: 20,
     NombreProductoTerminadoSnapshot: 'Producto terminado',
-    CantidadProducir: 2,
+    CantidadProducir: productionQuantity,
     UnidadMedidaSnapshot: 'unidad',
     Estado: 'PENDIENTE',
     Anulado: false,
@@ -47,7 +49,7 @@ function mockProductionTransaction(
       IdOrdenProduccion: 41,
       IdInventarioItem: 10,
       CantidadPorUnidad: 1,
-      CantidadTotal: 2,
+      CantidadTotal: productionQuantity,
       UnidadMedidaSnapshot: 'kg',
       InventarioItem: {
         Id: 10,
@@ -56,6 +58,7 @@ function mockProductionTransaction(
         UnidadMedida: 'kg',
         Existencia: componentStock,
         Anulado: false,
+        EsEnvaseRetornable: false,
       },
     }],
   };
@@ -67,6 +70,8 @@ function mockProductionTransaction(
   const physicalBuckets = new Map([
     ['30|PLANTA|VACIO', 4],
     ['30|PLANTA|LLENO', 0],
+    [`20|PLANTA|VACIO`, finishedReturnable ? productionQuantity : 0],
+    ['20|PLANTA|LLENO', 0],
   ]);
   const movements: Array<Record<string, unknown>> = [];
   let transactionQueue: Promise<unknown> = Promise.resolve();
@@ -89,6 +94,7 @@ function mockProductionTransaction(
             EsFabricable: true,
             PermitirReceta: true,
             UnidadMedida: 'unidad',
+            EsEnvaseRetornable: finishedReturnable,
           }),
       update: vi.fn(async (input: { where: { Id: number }; data: { Existencia: number } }) => {
         stock.set(input.where.Id, input.data.Existencia);
@@ -102,6 +108,7 @@ function mockProductionTransaction(
           Categoria: 'MATERIA_PRIMA',
           UnidadMedida: 'kg',
           Anulado: false,
+          EsEnvaseRetornable: false,
         },
       }]),
     },
@@ -512,6 +519,38 @@ describe('Production module', () => {
     expect(physicalBuckets.get('30|PLANTA|VACIO')).toBe(4);
     expect(physicalBuckets.get('30|PLANTA|LLENO')).toBe(0);
     expect(movements.filter((movement) => movement.UbicacionEnvase)).toHaveLength(0);
+  });
+
+  it('moves reusable containers from empty to full without consuming them as recipe inputs', async () => {
+    const { stock, movements, physicalBuckets } = mockProductionTransaction(500, false, true, 200);
+
+    await confirmProductionOrder(41, 101, false);
+
+    expect(stock.get(20)).toBe(205);
+    expect(physicalBuckets.get('20|PLANTA|VACIO')).toBe(0);
+    expect(physicalBuckets.get('20|PLANTA|LLENO')).toBe(200);
+    expect(movements.filter((movement) =>
+      movement.IdInventarioItem === 20 && movement.EstadoEnvase === 'LLENO',
+    )).toHaveLength(1);
+  });
+
+  it('rejects a returnable container configured as a recipe input', async () => {
+    const { tx, movements } = mockProductionTransaction(500);
+    tx.estructuraProducto.findMany.mockResolvedValueOnce([{
+      CantidadRequerida: 1,
+      InventarioItem_EstructuraProducto_IdMateriaPrimaToInventarioItem: {
+        Nombre: 'Garrafón retornable',
+        Categoria: 'MATERIA_PRIMA',
+        UnidadMedida: 'unidad',
+        Anulado: false,
+        EsEnvaseRetornable: true,
+      },
+    }]);
+
+    await expect(confirmProductionOrder(41, 101, false)).rejects.toThrow(
+      'no es una materia prima o insumo activo',
+    );
+    expect(movements).toHaveLength(0);
   });
 
   it('returns inventory movements in the production order detail', async () => {

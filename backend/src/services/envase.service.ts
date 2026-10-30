@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { runSerializableTransaction } from '../utils/serializable-transaction';
 import {
+  ensurePlantEnvaseBucketQuantity,
   getEnvaseBucketQuantity,
   recordEnvaseBucketCount,
   registerEnvaseBucketChange,
@@ -344,8 +345,8 @@ export async function listEnvasePhysicalBalances() {
       balances.get(`${item.Id}:PLANTA:${state}:`)?.cantidad ?? 0;
     const unclassified = Number((
       item.Existencia -
-      balanceForState('VACIO') -
       balanceForState('LLENO') -
+      balanceForState('VACIO') -
       balanceForState('PENDIENTE_CONTEO')
     ).toFixed(2));
     if (unclassified <= 0.009) continue;
@@ -450,8 +451,9 @@ export async function reconcileEnvasePhysicalStock(input: {
     if (classified !== effectivePending) {
       throw new Error(`La clasificación debe sumar exactamente el saldo pendiente (${effectivePending})`);
     }
-    if (input.cantidadDanada > item.Existencia) {
-      throw new Error('El saldo de inventario disponible no cubre la cantidad dañada');
+    const quantityRemovedFromSellableStock = input.cantidadVacia + input.cantidadDanada;
+    if (quantityRemovedFromSellableStock > item.Existencia) {
+      throw new Error('El saldo vendible no cubre las unidades clasificadas como vacías o dañadas');
     }
 
     if (unclassified > 0) {
@@ -485,8 +487,8 @@ export async function reconcileEnvasePhysicalStock(input: {
       });
     }
 
-    if (input.cantidadDanada > 0) {
-      const nuevaExistencia = Number((item.Existencia - input.cantidadDanada).toFixed(2));
+    if (quantityRemovedFromSellableStock > 0) {
+      const nuevaExistencia = Number((item.Existencia - quantityRemovedFromSellableStock).toFixed(2));
       await tx.inventarioItem.update({
         where: { Id: item.Id },
         data: { Existencia: nuevaExistencia },
@@ -496,10 +498,10 @@ export async function reconcileEnvasePhysicalStock(input: {
         idUsuario: input.idUsuario,
         tipoDocumento: 'ENVCL',
         documento: input.idInventarioItem.toString(),
-        nombre: `Segregación de envases dañados - ${item.Nombre}`,
+        nombre: `Reclasificación de producto vendible a envase vacío/dañado - ${item.Nombre}`,
         tipoMovimiento: false,
         existenciaAnterior: item.Existencia,
-        cantidad: input.cantidadDanada,
+        cantidad: quantityRemovedFromSellableStock,
         nuevaExistencia,
       });
     }
@@ -546,8 +548,8 @@ async function recordEnvasePhysicalCount(input: RecordEnvasePhysicalCountInput) 
         select: { Id: true },
       });
       if (!route) throw new Error('La sesión de ruta debe estar EN_CURSO');
-      const dispatch = await tx.despachoRuta.findUnique({
-        where: { IdRutaSesion: input.idRutaSesion },
+      const dispatch = await tx.despachoRuta.findFirst({
+        where: { IdRutaSesion: input.idRutaSesion, Anulado: false },
         select: { Id: true, Detalles: { where: { IdInventarioItem: item.Id }, select: { Id: true } } },
       });
       if (!dispatch?.Detalles.length) {
@@ -560,6 +562,9 @@ async function recordEnvasePhysicalCount(input: RecordEnvasePhysicalCountInput) 
       : [
           { estado: 'VACIO' as const, cantidad: input.cantidadVacia },
           { estado: 'LLENO' as const, cantidad: input.cantidadLlena },
+          ...(input.ubicacionEnvase === 'PLANTA'
+            ? [{ estado: 'PENDIENTE_CONTEO' as const, cantidad: 0 }]
+            : []),
           ...(input.ubicacionEnvase === 'RUTA'
             ? [{ estado: 'DANADO' as const, cantidad: input.cantidadDanada }]
             : []),
@@ -597,23 +602,6 @@ async function recordEnvasePhysicalCount(input: RecordEnvasePhysicalCountInput) 
       return;
     }
 
-    if (input.ubicacionEnvase === 'PLANTA') {
-      const [pending, empty, full] = await Promise.all([
-        getEnvaseBucketQuantity(tx, item.Id, { ubicacion: 'PLANTA', estado: 'PENDIENTE_CONTEO' }),
-        getEnvaseBucketQuantity(tx, item.Id, { ubicacion: 'PLANTA', estado: 'VACIO' }),
-        getEnvaseBucketQuantity(tx, item.Id, { ubicacion: 'PLANTA', estado: 'LLENO' }),
-      ]);
-      const unclassified = Number((item.Existencia - pending - empty - full).toFixed(2));
-      if (unclassified < -0.009) {
-        throw new Error(
-          `El saldo físico verificado de planta supera la existencia del catálogo de ${item.Nombre}; revisa los movimientos antes de contar`,
-        );
-      }
-      if (pending > 0 || unclassified > 0.009) {
-        throw new Error('Clasifica primero el saldo legado PENDIENTE_CONTEO antes de registrar un nuevo conteo');
-      }
-    }
-
     const priorBalances = new Map<string, number>();
     for (const state of states) {
       priorBalances.set(
@@ -638,10 +626,7 @@ async function recordEnvasePhysicalCount(input: RecordEnvasePhysicalCountInput) 
 
     const deltaExistencia =
       input.ubicacionEnvase === 'PLANTA'
-        ? input.cantidadVacia -
-            (priorBalances.get('VACIO') ?? 0) +
-          input.cantidadLlena -
-            (priorBalances.get('LLENO') ?? 0)
+        ? input.cantidadLlena - item.Existencia
         : 0;
     const nuevaExistencia = Number((item.Existencia + deltaExistencia).toFixed(2));
     if (nuevaExistencia < 0) {
@@ -747,7 +732,23 @@ export async function registrarPrestamoEnvase(input: RegistrarPrestamoInput) {
       });
       if (!route) throw new Error('La sesión de ruta debe estar EN_CURSO');
     }
-    if (ubicacionEnvase === 'PLANTA' && item.Existencia < input.cantidad) {
+    if (input.idVenta !== undefined) {
+      const existingSaleContainer = await tx.detalleVentaEnvase.findFirst({
+        where: {
+          IdInventarioItemEnvase: item.Id,
+          DetalleVenta: { is: { IdVenta: input.idVenta, Anulado: false } },
+        },
+        select: { Modo: true },
+      });
+      if (existingSaleContainer) {
+        throw new Error('La venta ya define la custodia de este envase; no se debe registrar otro préstamo');
+      }
+    }
+    if (
+      ubicacionEnvase === 'PLANTA' &&
+      estadoEnvase === 'LLENO' &&
+      item.Existencia < input.cantidad
+    ) {
       throw new Error(`Stock insuficiente de ${item.Nombre}. Existencia actual ${item.Existencia}`);
     }
     const bucket = {
@@ -755,20 +756,23 @@ export async function registrarPrestamoEnvase(input: RegistrarPrestamoInput) {
       estado: estadoEnvase,
       ...(input.idRutaSesion ? { idRutaSesion: input.idRutaSesion } : {}),
     };
-    const physicalQuantity = await getEnvaseBucketQuantity(tx, item.Id, bucket);
-    if (physicalQuantity < input.cantidad) {
-      const pendingQuantity = ubicacionEnvase === 'PLANTA'
-        ? await getEnvaseBucketQuantity(tx, item.Id, {
-            ubicacion: 'PLANTA',
-            estado: 'PENDIENTE_CONTEO',
-          })
-        : 0;
-      const pendingMessage = pendingQuantity > 0
-        ? ` Hay ${pendingQuantity} pendiente(s) de clasificación en Envases.`
-        : '';
-      throw new Error(
-        `Stock físico verificado insuficiente de ${item.Nombre} (${estadoEnvase}/${ubicacionEnvase}): disponible ${physicalQuantity}, solicitado ${input.cantidad}.${pendingMessage}`,
-      );
+    if (ubicacionEnvase === 'PLANTA') {
+      await ensurePlantEnvaseBucketQuantity(tx, {
+        idInventarioItem: item.Id,
+        idUsuario: input.idUsuario,
+        estado: estadoEnvase,
+        cantidad: input.cantidad,
+        nombre: `Préstamo a cliente #${input.idCliente} - ${item.Nombre}`,
+        tipoDocumento: 'ENVPR',
+        documento: claveSolicitud,
+      });
+    } else {
+      const physicalQuantity = await getEnvaseBucketQuantity(tx, item.Id, bucket);
+      if (physicalQuantity < input.cantidad) {
+        throw new Error(
+          `Stock físico insuficiente de ${item.Nombre} (${estadoEnvase}/${ubicacionEnvase}): disponible ${physicalQuantity}, solicitado ${input.cantidad}`,
+        );
+      }
     }
 
     const saldoExistente = await tx.envaseClienteSaldo.findFirst({
@@ -833,7 +837,7 @@ export async function registrarPrestamoEnvase(input: RegistrarPrestamoInput) {
       idMovimientoEnvase: created.Id,
     });
 
-    if (!input.idRutaSesion) {
+    if (!input.idRutaSesion && estadoEnvase === 'LLENO') {
       const nuevaExistencia = Number((item.Existencia - input.cantidad).toFixed(2));
       await tx.inventarioItem.update({
         where: { Id: input.idInventarioItem },
@@ -977,7 +981,7 @@ export async function registrarDevolucionEnvase(input: RegistrarDevolucionInput)
       idMovimientoEnvase: created.Id,
     });
 
-    if (!input.idRutaSesion && estadoEnvase !== 'DANADO') {
+    if (!input.idRutaSesion && estadoEnvase === 'LLENO') {
       const nuevaExistencia = Number((item.Existencia + input.cantidad).toFixed(2));
       await tx.inventarioItem.update({
         where: { Id: input.idInventarioItem },
@@ -1142,13 +1146,24 @@ export async function registrarBajaEnvase(input: RegistrarBajaEnvaseInput) {
       estado: input.estadoEnvase,
       ...(input.idRutaSesion ? { idRutaSesion: input.idRutaSesion } : {}),
     };
+    if (input.ubicacionEnvase === 'PLANTA' && input.estadoEnvase !== 'DANADO') {
+      await ensurePlantEnvaseBucketQuantity(tx, {
+        idInventarioItem: item.Id,
+        idUsuario: input.idUsuario,
+        estado: input.estadoEnvase,
+        cantidad: input.cantidad,
+        nombre: `Baja de envase - ${item.Nombre}`,
+        tipoDocumento: 'ENVBA',
+        documento: claveSolicitud,
+      });
+    }
     const physicalAvailable = await getEnvaseBucketQuantity(tx, item.Id, bucket);
     if (physicalAvailable < input.cantidad) {
       throw new Error(
         `No hay suficientes envases físicos en ${input.ubicacionEnvase}/${input.estadoEnvase} para dar de baja: disponibles ${physicalAvailable}, solicitados ${input.cantidad}`,
       );
     }
-    const adjustsPlantStock = input.ubicacionEnvase === 'PLANTA' && input.estadoEnvase !== 'DANADO';
+    const adjustsPlantStock = input.ubicacionEnvase === 'PLANTA' && input.estadoEnvase === 'LLENO';
     if (adjustsPlantStock && item.Existencia < input.cantidad) {
       throw new Error(`Stock insuficiente de ${item.Nombre} para registrar la baja`);
     }
@@ -1221,6 +1236,7 @@ type EnvaseMovementForCorrection = {
   Id: number;
   IdCliente: number | null;
   IdInventarioItem: number;
+  IdDetalleVentaEnvase: number | null;
   TipoMovimiento: string;
   EstadoEnvase: string | null;
   UbicacionEnvase: string | null;
@@ -1279,11 +1295,30 @@ async function applyMovementCorrection(
     select: { Existencia: true },
   });
   if (item) {
+    const legacyScalarMovement = movement.IdDetalleVentaEnvase === null &&
+      movement.EstadoEnvase !== 'LLENO'
+      ? await tx.bitacoraInventario.findFirst({
+          where: {
+            IdInventarioItem: movement.IdInventarioItem,
+            TipoDocumento: { in: ['ENVPR', 'ENVDEV', 'ENVBA'] },
+            Documento: movement.Id.toString(),
+            UbicacionEnvase: null,
+            EstadoEnvase: null,
+            Anulado: false,
+          },
+          select: { Id: true },
+        })
+      : null;
     const isPlantStock = movement.UbicacionEnvase === 'PLANTA' || movement.UbicacionEnvase === null;
     const isDamagedQuarantine =
       movement.UbicacionEnvase === 'CUARENTENA' || movement.EstadoEnvase === 'DANADO';
     let originalScalarDelta = 0;
-    if (isPlantStock && !isDamagedQuarantine) {
+    if (
+      movement.IdDetalleVentaEnvase === null &&
+      isPlantStock &&
+      !isDamagedQuarantine &&
+      (movement.EstadoEnvase === 'LLENO' || Boolean(legacyScalarMovement))
+    ) {
       if (movement.TipoMovimiento === 'PRESTAMO' || movement.TipoMovimiento === 'BAJA') {
         originalScalarDelta = -movement.Cantidad;
       } else if (movement.TipoMovimiento === 'DEVOLUCION') {
@@ -1314,7 +1349,12 @@ async function applyMovementCorrection(
     }
   }
 
-  if (movement.EstadoEnvase && movement.UbicacionEnvase && originalPhysicalDelta !== 0) {
+  if (
+    movement.IdDetalleVentaEnvase === null &&
+    movement.EstadoEnvase &&
+    movement.UbicacionEnvase &&
+    originalPhysicalDelta !== 0
+  ) {
     if (movement.IdRutaSesion) {
       const route = await tx.rutaSesion.findFirst({
         where: { Id: movement.IdRutaSesion, Anulado: false },
@@ -1371,6 +1411,7 @@ export async function anulateEnvaseMovementInTransaction(
       IdRutaSesion: true,
       Cantidad: true,
       IdUsuario: true,
+      IdDetalleVentaEnvase: true,
     },
   });
 
@@ -1408,6 +1449,7 @@ export async function restoreMovimientoEnvase(id: number, idUsuarioModificador?:
         IdRutaSesion: true,
         Cantidad: true,
         IdUsuario: true,
+        IdDetalleVentaEnvase: true,
       },
     });
 

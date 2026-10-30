@@ -13,6 +13,10 @@ import type {
   UploadProductImageResult,
   UpdateProductPayload,
 } from "@/types/products";
+import type {
+  ReturnableInventoryBalancesDto,
+  ReturnableInventoryBalancesResponse,
+} from "@/types/envases";
 
 export async function listProducts(filters: ProductFilters = {}): Promise<ProductListResult> {
   const { data } = await api.get<ProductsListResponse>("/api/products", {
@@ -40,6 +44,16 @@ export async function listProducts(filters: ProductFilters = {}): Promise<Produc
       },
     }
   );
+}
+
+export async function listReturnableInventoryBalances(): Promise<ReturnableInventoryBalancesDto> {
+  const { data } = await api.get<ReturnableInventoryBalancesResponse>(
+    "/api/products/returnable-balances",
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al consultar saldos de envases");
+  }
+  return data.data;
 }
 
 export async function getProductById(id: number): Promise<ProductDto> {

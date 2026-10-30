@@ -4,8 +4,8 @@ const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
     usuario: { findFirst: vi.fn() },
     rutaSesion: { findFirst: vi.fn() },
-    despachoRuta: { findUnique: vi.fn() },
-    devolucionRuta: { findUnique: vi.fn() },
+    despachoRuta: { findFirst: vi.fn() },
+    devolucionRuta: { findFirst: vi.fn() },
     devolucionComercial: { findFirst: vi.fn() },
     movimientoEnvase: { findMany: vi.fn(), findFirst: vi.fn() },
     inventarioItem: { findFirst: vi.fn(), update: vi.fn() },
@@ -153,16 +153,16 @@ describe('Fase 23 - VENTA_ANULADA (anulateSale)', () => {
         TipoRegistro: 'VENTA',
         DetalleVenta: [{ Id: 8, IdInventarioItem: 5, Cantidad: 2, Nombre: 'Producto ruta' }],
       }));
-    prismaMock.despachoRuta.findUnique.mockResolvedValue({ Id: 31 });
+    prismaMock.despachoRuta.findFirst.mockResolvedValue({ Id: 31 });
     prismaMock.rutaSesion.findFirst.mockResolvedValue({ Estado: 'EN_CURSO' });
-    prismaMock.devolucionRuta.findUnique.mockResolvedValue(null);
+    prismaMock.devolucionRuta.findFirst.mockResolvedValue(null);
     prismaMock.detalleVenta.updateMany.mockResolvedValueOnce({});
     prismaMock.pagoVenta.updateMany.mockResolvedValueOnce({});
     prismaMock.venta.update.mockResolvedValueOnce({});
     prismaMock.cuentaPorCobrar.updateMany.mockResolvedValueOnce({});
 
     await expect(anulateSale(7, 9)).resolves.toEqual({ anulada: true, felAnulacion: null });
-    expect(prismaMock.despachoRuta.findUnique).toHaveBeenCalledTimes(2);
+    expect(prismaMock.despachoRuta.findFirst).toHaveBeenCalledTimes(2);
   });
 
   it('rejects cancelling a sale that requires FEL when certification identifiers are missing', async () => {
@@ -355,9 +355,9 @@ describe('Fase 23 - VENTA_ANULADA (anulateSale)', () => {
     });
     prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 9 });
     prismaMock.venta.findFirst.mockResolvedValueOnce(sale).mockResolvedValueOnce(sale);
-    prismaMock.despachoRuta.findUnique.mockResolvedValue({ Id: 31 });
+    prismaMock.despachoRuta.findFirst.mockResolvedValue({ Id: 31 });
     prismaMock.rutaSesion.findFirst.mockResolvedValue({ Estado: 'EN_CURSO' });
-    prismaMock.devolucionRuta.findUnique.mockResolvedValue(null);
+    prismaMock.devolucionRuta.findFirst.mockResolvedValue(null);
     prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({
       Id: 5,
       Existencia: 10,
@@ -390,9 +390,9 @@ describe('Fase 23 - VENTA_ANULADA (anulateSale)', () => {
       IdRutaSesion: 12,
       TipoRegistro: 'VENTA',
     }));
-    prismaMock.despachoRuta.findUnique.mockResolvedValueOnce({ Id: 31 });
+    prismaMock.despachoRuta.findFirst.mockResolvedValueOnce({ Id: 31 });
     prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Estado: 'EN_CURSO' });
-    prismaMock.devolucionRuta.findUnique.mockResolvedValueOnce({ Id: 32 });
+    prismaMock.devolucionRuta.findFirst.mockResolvedValueOnce({ Id: 32 });
 
     await expect(anulateSale(7, 9)).rejects.toThrow(
       'No se puede anular una venta después de liquidar o recibir la ruta',

@@ -40,10 +40,12 @@ import { CardSkeleton, TableSkeleton } from "@/app/inventory/_components/invento
 import { getApiErrorMessage } from "@/lib/api";
 import {
   deleteProduct,
+  listReturnableInventoryBalances,
   listAnulatedProducts,
   listProducts,
   restoreProduct,
 } from "@/services/products.service";
+import type { ReturnableInventoryBalancesDto } from "@/types/envases";
 import type { ProductDto } from "@/types/products";
 
 function formatDate(value: string | null): string {
@@ -68,6 +70,8 @@ export default function InventoryPage() {
   const { user } = useAuth();
   const [activeProducts, setActiveProducts] = useState<ProductDto[]>([]);
   const [anulatedProducts, setAnulatedProducts] = useState<ProductDto[]>([]);
+  const [returnableBalances, setReturnableBalances] = useState<ReturnableInventoryBalancesDto | null>(null);
+  const [returnableBalancesError, setReturnableBalancesError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [query, setQuery] = useState("");
@@ -117,6 +121,19 @@ export default function InventoryPage() {
     }
   }, [category, query]);
 
+  const loadReturnableBalances = useCallback(async () => {
+    try {
+      const balances = await listReturnableInventoryBalances();
+      setReturnableBalances(balances);
+      setReturnableBalancesError(null);
+    } catch (error) {
+      const message = getApiErrorMessage(error, "No se pudieron cargar los saldos de envases.");
+      setReturnableBalances(null);
+      setReturnableBalancesError(message);
+      toast.error(message);
+    }
+  }, []);
+
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       void loadData();
@@ -124,6 +141,14 @@ export default function InventoryPage() {
 
     return () => clearTimeout(timeoutId);
   }, [loadData]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void loadReturnableBalances();
+    }, 0);
+
+    return () => clearTimeout(timeoutId);
+  }, [loadReturnableBalances]);
 
   const metrics = useMemo(() => {
     const total = activeProducts.length + anulatedProducts.length;
@@ -143,10 +168,16 @@ export default function InventoryPage() {
     return anulatedProducts.slice(start, start + PAGE_SIZE);
   }, [anulatedProducts, trashPage]);
 
-  useEffect(() => {
-    setActivePage(1);
-    setTrashPage(1);
-  }, [query, category]);
+  const returnableBalancesByProduct = useMemo(() => {
+    return new Map(
+      returnableBalances?.items.map((balance) => [balance.idInventarioItem, balance]) ?? [],
+    );
+  }, [returnableBalances]);
+
+  function refreshData() {
+    void loadData();
+    void loadReturnableBalances();
+  }
 
   async function confirmDeleteProduct() {
     if (!deleteCandidate) return;
@@ -241,7 +272,7 @@ export default function InventoryPage() {
           <div className="flex justify-end gap-3">
             <Button
               variant="outline"
-              onClick={loadData}
+              onClick={refreshData}
               disabled={isLoading}
               className="h-10 px-4 text-sm hover:bg-muted/50 transition-colors"
             >
@@ -272,7 +303,11 @@ export default function InventoryPage() {
                     id="search-products"
                     placeholder="Nombre o proveedor"
                     value={query}
-                    onChange={(event) => setQuery(event.target.value)}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setActivePage(1);
+                      setTrashPage(1);
+                    }}
                     className="bg-background"
                   />
                 </div>
@@ -282,7 +317,11 @@ export default function InventoryPage() {
                   <select
                     id="filter-category"
                     value={category}
-                    onChange={(event) => setCategory(event.target.value as CategoryFilter)}
+                    onChange={(event) => {
+                      setCategory(event.target.value as CategoryFilter);
+                      setActivePage(1);
+                      setTrashPage(1);
+                    }}
                     className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
                   >
                     <option value="">Todas</option>
@@ -309,13 +348,13 @@ export default function InventoryPage() {
 
                 <TabsContent value="activos" className="mt-4">
                   {isLoading && !hasLoadedOnce ? (
-                    <TableSkeleton rows={8} columns={9} />
+                    <TableSkeleton rows={8} columns={10} />
                   ) : activeProducts.length === 0 ? (
                     <InventoryEmptyState
                       title="No hay productos registrados"
                       description="Agrega productos al catalogo para comenzar a gestionar inventario y estructura BOM."
                       actionLabel="Recargar"
-                      onAction={loadData}
+                      onAction={refreshData}
                     />
                   ) : (
                     <div className={cn("transition-opacity duration-300", isLoading ? "opacity-75" : "opacity-100")}>
@@ -328,6 +367,7 @@ export default function InventoryPage() {
                               <TableHead>Categoria</TableHead>
                               <TableHead>Proveedor</TableHead>
                               <TableHead>Existencia</TableHead>
+                              <TableHead>Envases retornables</TableHead>
                               <TableHead>Costo</TableHead>
                               <TableHead>Precio</TableHead>
                               <TableHead>Registro</TableHead>
@@ -350,7 +390,40 @@ export default function InventoryPage() {
                                 </TableCell>
                                 <TableCell>{product.categoria}</TableCell>
                                 <TableCell>{product.proveedor.nombre}</TableCell>
-                                <TableCell>{product.existencia}</TableCell>
+                                <TableCell>
+                                  {product.existencia}
+                                  {product.esEnvaseRetornable ? (
+                                    <p className="text-xs text-muted-foreground">Saldo catálogo vendible</p>
+                                  ) : null}
+                                </TableCell>
+                                <TableCell>
+                                  {!product.esEnvaseRetornable ? (
+                                    <span className="text-muted-foreground">-</span>
+                                  ) : returnableBalancesError ? (
+                                    <span className="text-xs text-destructive">{returnableBalancesError}</span>
+                                  ) : !returnableBalances ? (
+                                    <span className="text-xs text-muted-foreground">Cargando saldos...</span>
+                                  ) : (
+                                    (() => {
+                                      const balances = returnableBalancesByProduct.get(product.id);
+                                      const amount = (value: number) =>
+                                        value.toLocaleString("es-GT", { maximumFractionDigits: 2 });
+                                      return (
+                                        <div className="min-w-52 space-y-1 text-xs">
+                                          <p>Planta: llenos {amount(balances?.plantFull ?? 0)} · vacíos {amount(balances?.plantEmpty ?? 0)}</p>
+                                          <p>En ruta: llenos {amount(balances?.routeFull ?? 0)} · vacíos {amount(balances?.routeEmpty ?? 0)} · dañados {amount(balances?.routeDamaged ?? 0)}</p>
+                                          <p>Con clientes: {amount(balances?.customers ?? 0)}</p>
+                                          <p>Dañados: {amount(balances?.damaged ?? 0)}</p>
+                                          {(balances?.pending ?? 0) > 0 ? (
+                                            <p className="font-medium text-amber-700 dark:text-amber-400">
+                                              Pendiente de determinar: {amount(balances?.pending ?? 0)}
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                      );
+                                    })()
+                                  )}
+                                </TableCell>
                                 <TableCell>{formatMoney(product.costoPromedio)}</TableCell>
                                 <TableCell>
                                   {product.esVendible

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  cancelRouteDispatchSchema,
+  cancelRouteReturnSchema,
+  cancelRouteReturnSchema,
   createRouteAdjustmentSchema,
   createRouteDispatchSchema,
   createRouteReturnSchema,
@@ -33,6 +36,27 @@ describe('route inventory validators', () => {
     expect(createRouteReturnSchema.parse({ detalle: [] }).detalle).toEqual([]);
   });
 
+  it('requires a meaningful reason to cancel a confirmed dispatch', () => {
+    expect(() => cancelRouteDispatchSchema.parse({ motivo: 'ok' })).toThrow();
+    expect(cancelRouteDispatchSchema.parse({ motivo: 'Estado registrado incorrectamente' })).toEqual({
+      motivo: 'Estado registrado incorrectamente',
+    });
+  });
+
+  it('requires a meaningful reason to cancel a route return', () => {
+    expect(() => cancelRouteReturnSchema.parse({ motivo: 'ok' })).toThrow();
+    expect(cancelRouteReturnSchema.parse({ motivo: 'Recepción registrada incorrectamente' })).toEqual({
+      motivo: 'Recepción registrada incorrectamente',
+    });
+  });
+
+  it('requires a meaningful reason to cancel a route return', () => {
+    expect(() => cancelRouteReturnSchema.parse({ motivo: 'ok' })).toThrow();
+    expect(cancelRouteReturnSchema.parse({ motivo: 'Recepción registrada incorrectamente' })).toEqual({
+      motivo: 'Recepción registrada incorrectamente',
+    });
+  });
+
   it('requires a physical location for damaged route-return quantities', () => {
     expect(() => createRouteReturnSchema.parse({
       detalle: [{ idInventarioItem: 3, cantidadRecibida: 2, cantidadDanada: 1 }],
@@ -46,6 +70,29 @@ describe('route inventory validators', () => {
         ubicacionDanada: 'Área no vendible de planta',
       }],
     }).detalle[0]?.ubicacionDanada).toBe('Área no vendible de planta');
+  });
+
+  it('preserves the empty/full state selected for damaged returnable containers', () => {
+    const parsed = createRouteReturnSchema.parse({
+      detalle: [{
+        idInventarioItem: 3,
+        cantidadRecibida: 1,
+        cantidadDanada: 1,
+        estadoEnvaseDanado: 'VACIO',
+        ubicacionDanada: 'Cuarentena',
+      }],
+    });
+
+    expect(parsed.detalle[0]?.estadoEnvaseDanado).toBe('VACIO');
+    expect(() => createRouteReturnSchema.parse({
+      detalle: [{
+        idInventarioItem: 3,
+        cantidadRecibida: 1,
+        cantidadDanada: 1,
+        estadoEnvaseDanado: 'OTRO',
+        ubicacionDanada: 'Cuarentena',
+      }],
+    })).toThrow();
   });
 
   it('requires a documented classification, positive quantity and reason for a route adjustment', () => {

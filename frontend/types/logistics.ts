@@ -98,6 +98,7 @@ export interface RouteInventoryLineDto {
   reservado: number;
   envasePrestado?: number;
   envaseDevuelto?: number;
+  envaseBaja?: number;
   pendienteConciliacion: number;
   disponible: number;
 }
@@ -107,6 +108,13 @@ export interface RouteInventoryDto {
   estado: RutaSesionEstado;
   despacho: { id: number; observaciones: string | null; fechaRegistro: string | null } | null;
   devolucion: { id: number; observaciones: string | null; fechaRegistro: string | null } | null;
+  devolucionesAnuladas?: Array<{
+    id: number;
+    fechaRegistro: string | null;
+    fechaAnulacion: string | null;
+    motivoAnulacion: string | null;
+    usuarioAnulador: { id: number; nombre: string } | null;
+  }>;
   productos: RouteInventoryLineDto[];
   diferenciasPendientes?: RouteInventoryLineDto[];
   conciliada?: boolean;

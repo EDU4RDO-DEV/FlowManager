@@ -11,6 +11,10 @@ import {
   updateProduct,
 } from '../services/product.service';
 import {
+  listEnvaseClienteSaldos,
+  listEnvasePhysicalBalances,
+} from '../services/envase.service';
+import {
   createProductSchema,
   deleteProductBodySchema,
   listProductsQuerySchema,
@@ -69,6 +73,76 @@ export async function listProductsController(req: Request, res: Response) {
       return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
     }
 
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(500).json({ ok: false, message });
+  }
+}
+
+export async function listReturnableInventoryBalancesController(_req: Request, res: Response) {
+  try {
+    const [physical, customers] = await Promise.all([
+      listEnvasePhysicalBalances(),
+      listEnvaseClienteSaldos({ soloConSaldo: true }),
+    ]);
+    const balances = new Map<number, {
+      idInventarioItem: number;
+      plantFull: number;
+      plantEmpty: number;
+      routeFull: number;
+      routeEmpty: number;
+      routeDamaged: number;
+      customers: number;
+      damaged: number;
+      pending: number;
+    }>();
+    const getBalances = (idInventarioItem: number) => {
+      let balance = balances.get(idInventarioItem);
+      if (!balance) {
+        balance = {
+          idInventarioItem,
+          plantFull: 0,
+          plantEmpty: 0,
+          routeFull: 0,
+          routeEmpty: 0,
+          routeDamaged: 0,
+          customers: 0,
+          damaged: 0,
+          pending: 0,
+        };
+        balances.set(idInventarioItem, balance);
+      }
+      return balance;
+    };
+
+    for (const physicalBalance of physical) {
+      const balance = getBalances(physicalBalance.idInventarioItem);
+      if (physicalBalance.estado === 'PENDIENTE_CONTEO') {
+        balance.pending += physicalBalance.cantidad;
+      } else if (physicalBalance.estado === 'DANADO') {
+        balance.damaged += physicalBalance.cantidad;
+        if (physicalBalance.ubicacion === 'RUTA') {
+          balance.routeDamaged += physicalBalance.cantidad;
+        }
+      } else if (physicalBalance.ubicacion === 'PLANTA' && physicalBalance.estado === 'LLENO') {
+        balance.plantFull += physicalBalance.cantidad;
+      } else if (physicalBalance.ubicacion === 'PLANTA' && physicalBalance.estado === 'VACIO') {
+        balance.plantEmpty += physicalBalance.cantidad;
+      } else if (physicalBalance.ubicacion === 'RUTA' && physicalBalance.estado === 'LLENO') {
+        balance.routeFull += physicalBalance.cantidad;
+      } else if (physicalBalance.ubicacion === 'RUTA' && physicalBalance.estado === 'VACIO') {
+        balance.routeEmpty += physicalBalance.cantidad;
+      }
+    }
+
+    for (const customerBalance of customers) {
+      getBalances(customerBalance.idInventarioItem).customers += customerBalance.cantidadPrestada;
+    }
+
+    return res.status(200).json({
+      ok: true,
+      data: { items: [...balances.values()] },
+    });
+  } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno';
     return res.status(500).json({ ok: false, message });
   }

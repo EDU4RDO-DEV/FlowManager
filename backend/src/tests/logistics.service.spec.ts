@@ -37,7 +37,7 @@ describe('Fase 10 - logística: sincronización de estado de vehículo', () => {
     prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({
       Id: 1,
       IdVehiculo: 5,
-      DespachoRuta: null,
+      DespachoRuta: [],
       Venta: [],
     });
     prismaMock.rutaSesion.update.mockResolvedValueOnce({});
@@ -57,7 +57,7 @@ describe('Fase 10 - logística: sincronización de estado de vehículo', () => {
     prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({
       Id: 1,
       IdVehiculo: 5,
-      DespachoRuta: null,
+      DespachoRuta: [],
       Venta: [],
     });
     prismaMock.rutaSesion.update.mockResolvedValueOnce({});

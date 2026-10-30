@@ -38,9 +38,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { getApiErrorMessage } from "@/lib/api";
+import { hasModulePermission } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { createAdjustment } from "@/services/adjustments.service";
+import { listEnvasePhysicalBalances } from "@/services/envases.service";
 import { listProducts } from "@/services/products.service";
+import type { EnvasePhysicalBalanceDto } from "@/types/envases";
 import type { ProductDto } from "@/types/products";
 
 type AdjustmentLine = {
@@ -48,6 +51,7 @@ type AdjustmentLine = {
   idInventarioItem: number | "";
   tipoAjuste: "ENTRADA" | "SALIDA";
   cantidad: string;
+  estadoEnvase: "VACIO" | "LLENO" | "";
 };
 
 const ADJUSTMENT_NAME_OPTIONS = [
@@ -64,7 +68,9 @@ type AdjustmentNameOption = (typeof ADJUSTMENT_NAME_OPTIONS)[number];
 export default function CreateAdjustmentPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const canReadEnvaseBalances = hasModulePermission(user, "envases", "read");
   const [products, setProducts] = useState<ProductDto[]>([]);
+  const [envaseBalances, setEnvaseBalances] = useState<EnvasePhysicalBalanceDto[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [nombreAjuste, setNombreAjuste] = useState<AdjustmentNameOption | "">("");
   const [observacion, setObservacion] = useState("");
@@ -74,6 +80,7 @@ export default function CreateAdjustmentPage() {
       idInventarioItem: "",
       tipoAjuste: "ENTRADA",
       cantidad: "",
+      estadoEnvase: "",
     },
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -88,6 +95,7 @@ export default function CreateAdjustmentPage() {
 
         if (firstPage.pagination.totalPages <= 1) {
           setProducts(firstPage.items);
+          if (canReadEnvaseBalances) setEnvaseBalances(await listEnvasePhysicalBalances());
           return;
         }
 
@@ -101,6 +109,7 @@ export default function CreateAdjustmentPage() {
           ...firstPage.items,
           ...restPages.flatMap((pageResult) => pageResult.items),
         ]);
+        if (canReadEnvaseBalances) setEnvaseBalances(await listEnvasePhysicalBalances());
       } catch (error) {
         toast.error(getApiErrorMessage(error, "No se pudo cargar los productos"));
       } finally {
@@ -109,7 +118,7 @@ export default function CreateAdjustmentPage() {
     }
 
     void loadProducts();
-  }, []);
+  }, [canReadEnvaseBalances]);
 
   const productById = useMemo(() => {
     return new Map(products.map((product) => [product.id, product]));
@@ -119,6 +128,12 @@ export default function CreateAdjustmentPage() {
     const currentStock = new Map<number, number>(
       products.map((product) => [product.id, product.existencia]),
     );
+    const physicalStock = new Map<string, number>();
+    for (const balance of envaseBalances) {
+      if (balance.ubicacion !== "PLANTA") continue;
+      const key = `${balance.idInventarioItem}:${balance.estado}`;
+      physicalStock.set(key, (physicalStock.get(key) ?? 0) + balance.cantidad);
+    }
     const warnings = new Map<number, string>();
 
     for (const line of lines) {
@@ -128,16 +143,45 @@ export default function CreateAdjustmentPage() {
       const cantidadNum = Number(line.cantidad);
       if (!Number.isFinite(cantidadNum) || cantidadNum <= 0) continue;
 
+      const product = productById.get(itemId);
+      if (product?.esEnvaseRetornable) {
+        if (!line.estadoEnvase) continue;
+        if (!canReadEnvaseBalances) {
+          warnings.set(line.id, "Se requiere permiso de lectura de envases para validar el saldo físico.");
+          continue;
+        }
+        const stateKey = `${itemId}:${line.estadoEnvase}`;
+        const stateStock = physicalStock.get(stateKey) ?? 0;
+        const nextStateStock = line.tipoAjuste === "ENTRADA"
+          ? stateStock + cantidadNum
+          : stateStock - cantidadNum;
+        const scalarStock = currentStock.get(itemId) ?? 0;
+        const nextScalarStock = line.estadoEnvase === "LLENO"
+          ? (line.tipoAjuste === "ENTRADA" ? scalarStock + cantidadNum : scalarStock - cantidadNum)
+          : scalarStock;
+
+        if (nextStateStock < 0 || nextScalarStock < 0) {
+          warnings.set(
+            line.id,
+            line.estadoEnvase === "LLENO" && nextScalarStock < 0
+              ? `Stock lleno vendible insuficiente para ${product.nombre}. Disponible: ${scalarStock.toFixed(2)}`
+              : nextStateStock < 0
+                ? `Stock físico ${line.estadoEnvase} insuficiente para ${product.nombre}. Disponible clasificado: ${stateStock}. Clasifica primero el saldo pendiente.`
+                : `Stock físico ${line.estadoEnvase} insuficiente para ${product.nombre}. Disponible: ${stateStock}`,
+          );
+        }
+        physicalStock.set(stateKey, Math.max(0, nextStateStock));
+        if (line.estadoEnvase === "LLENO") currentStock.set(itemId, nextScalarStock);
+        continue;
+      }
+
       const stock = currentStock.get(itemId);
       if (stock === undefined) continue;
-
-      const nextStock =
-        line.tipoAjuste === "ENTRADA" ? stock + cantidadNum : stock - cantidadNum;
-
+      const nextStock = line.tipoAjuste === "ENTRADA" ? stock + cantidadNum : stock - cantidadNum;
       if (nextStock < 0) {
         warnings.set(
           line.id,
-          `Stock insuficiente para ${productById.get(itemId)?.nombre ?? "item"}. Disponible: ${stock.toFixed(2)}`,
+          `Stock insuficiente para ${product?.nombre ?? "item"}. Disponible: ${stock.toFixed(2)}`,
         );
       }
 
@@ -145,7 +189,7 @@ export default function CreateAdjustmentPage() {
     }
 
     return warnings;
-  }, [lines, productById, products]);
+  }, [canReadEnvaseBalances, envaseBalances, lines, productById, products]);
 
   const isFormValid = useMemo(() => {
     if (!user) return false;
@@ -158,10 +202,14 @@ export default function CreateAdjustmentPage() {
       if (line.idInventarioItem === "") return false;
       const cantidadNum = Number(line.cantidad);
       if (!Number.isFinite(cantidadNum) || cantidadNum <= 0) return false;
+      const product = productById.get(line.idInventarioItem);
+      if (product?.esEnvaseRetornable && (!line.estadoEnvase || !Number.isInteger(cantidadNum))) {
+        return false;
+      }
     }
 
     return true;
-  }, [lines, nombreAjuste, observacion, stockWarnings.size, user]);
+  }, [lines, nombreAjuste, observacion, productById, stockWarnings.size, user]);
 
   function updateLine(lineId: number, patch: Partial<AdjustmentLine>) {
     setLines((prev) => prev.map((line) => (line.id === lineId ? { ...line, ...patch } : line)));
@@ -175,6 +223,7 @@ export default function CreateAdjustmentPage() {
         idInventarioItem: "",
         tipoAjuste: "ENTRADA",
         cantidad: "",
+        estadoEnvase: "",
       },
     ]);
   }
@@ -198,6 +247,7 @@ export default function CreateAdjustmentPage() {
       idInventarioItem: line.idInventarioItem as number,
       tipoAjuste: line.tipoAjuste,
       cantidadAjustada: Number(line.cantidad),
+      ...(line.estadoEnvase ? { estadoEnvase: line.estadoEnvase } : {}),
     }));
 
     setIsSubmitting(true);
@@ -267,7 +317,28 @@ export default function CreateAdjustmentPage() {
                   line.idInventarioItem !== "" ? productById.get(line.idInventarioItem) ?? null : null;
                 const selectedProductName = product?.nombre ?? "Seleccionar producto";
                 const cantidadNum = Number(line.cantidad);
-                const currentStock = product?.existencia ?? 0;
+                const physicalStateStock = product?.esEnvaseRetornable && line.estadoEnvase
+                  && canReadEnvaseBalances
+                  ? envaseBalances
+                      .filter((balance) =>
+                        balance.idInventarioItem === product.id &&
+                        balance.ubicacion === "PLANTA" &&
+                        balance.estado === line.estadoEnvase,
+                      )
+                      .reduce((sum, balance) => sum + balance.cantidad, 0)
+                  : null;
+                const pendingStock = product?.esEnvaseRetornable
+                  ? envaseBalances
+                      .filter((balance) =>
+                        balance.idInventarioItem === product.id &&
+                        balance.ubicacion === "PLANTA" &&
+                        balance.estado === "PENDIENTE_CONTEO",
+                      )
+                      .reduce((sum, balance) => sum + balance.cantidad, 0)
+                  : 0;
+                const currentStock = product?.esEnvaseRetornable
+                  ? physicalStateStock ?? 0
+                  : product?.existencia ?? 0;
                 const nextStock =
                   line.tipoAjuste === "ENTRADA"
                     ? currentStock + (Number.isFinite(cantidadNum) ? cantidadNum : 0)
@@ -317,7 +388,10 @@ export default function CreateAdjustmentPage() {
                                       key={prod.id}
                                       value={`${prod.nombre} ${prod.id} ${prod.existencia}`}
                                       onSelect={() => {
-                                        updateLine(line.id, { idInventarioItem: prod.id });
+                                        updateLine(line.id, {
+                                          idInventarioItem: prod.id,
+                                          estadoEnvase: "",
+                                        });
                                         setOpenProductLineId(null);
                                         setProductSearch("");
                                       }}
@@ -372,13 +446,33 @@ export default function CreateAdjustmentPage() {
                         </Select>
                       </div>
 
+                      {product?.esEnvaseRetornable ? (
+                        <div className="space-y-1">
+                          <Label htmlFor={`item-envase-state-${line.id}`}>Estado</Label>
+                          <Select
+                            value={line.estadoEnvase}
+                            onValueChange={(value) =>
+                              updateLine(line.id, { estadoEnvase: value as "VACIO" | "LLENO" })
+                            }
+                          >
+                            <SelectTrigger id={`item-envase-state-${line.id}`} className="h-10">
+                              <SelectValue placeholder="Selecciona estado" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="LLENO">Lleno (producto vendible)</SelectItem>
+                              <SelectItem value="VACIO">Vacío (envase reutilizable)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ) : null}
+
                       <div className="space-y-1">
                         <Label htmlFor={`item-cantidad-${line.id}`}>Cantidad</Label>
                         <Input
                           id={`item-cantidad-${line.id}`}
                           type="number"
                           min="0"
-                          step="0.01"
+                          step={product?.esEnvaseRetornable ? "1" : "0.01"}
                           placeholder="0.00"
                           value={line.cantidad}
                           onChange={(event) => updateLine(line.id, { cantidad: event.target.value })}
@@ -387,14 +481,29 @@ export default function CreateAdjustmentPage() {
                       </div>
 
                       <div className="space-y-1">
-                        <Label>Stock actual</Label>
+                        <Label>
+                          {product?.esEnvaseRetornable
+                            ? `Saldo clasificado ${line.estadoEnvase || "físico"} en planta`
+                            : "Stock actual"}
+                        </Label>
                         <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm">
-                          <span className="font-mono font-semibold">{currentStock.toFixed(2)}</span>
+                          <span className="font-mono font-semibold">
+                            {physicalStateStock === null && product?.esEnvaseRetornable
+                              ? "—"
+                              : currentStock.toFixed(2)}
+                          </span>
                         </div>
+                        {product?.esEnvaseRetornable && pendingStock > 0 ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-400">
+                            Pendiente de clasificar (no disponible para este ajuste): {pendingStock}
+                          </p>
+                        ) : null}
                       </div>
 
                       <div className="space-y-1">
-                        <Label>Nuevo stock</Label>
+                        <Label>
+                          {product?.esEnvaseRetornable ? "Nuevo saldo físico" : "Nuevo stock"}
+                        </Label>
                         <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm">
                           <span
                             className={`font-mono font-semibold ${warning ? "text-red-600" : "text-emerald-700"}`}
@@ -416,6 +525,11 @@ export default function CreateAdjustmentPage() {
                         Quitar
                       </Button>
                     </div>
+                    {product?.esEnvaseRetornable ? (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Los ajustes de LLENO sincronizan la existencia vendible; VACÍO solo modifica el saldo físico de envases en planta.
+                      </p>
+                    ) : null}
 
                     {warning ? <p className="mt-2 text-xs text-red-600">{warning}</p> : null}
                   </div>

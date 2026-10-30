@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { runSerializableTransaction } from '../utils/serializable-transaction';
 import {
+  ensurePlantEnvaseBucketQuantity,
   getEnvaseBucketQuantity,
   registerInventoryMovement,
   transferEnvaseBucket,
@@ -41,10 +42,17 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
       Id: true,
       Estado: true,
       DespachoRuta: {
+        where: { Anulado: false },
+        orderBy: { FechaRegistro: 'desc' },
+        take: 1,
         include: { Detalles: true },
       },
       DevolucionRuta: {
-        include: { Detalles: true },
+        orderBy: { FechaRegistro: 'desc' },
+        include: {
+          Detalles: true,
+          UsuarioAnulador: { select: { Id: true, Nombre: true } },
+        },
       },
       AjustesRuta: true,
       Venta: {
@@ -65,6 +73,7 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
           IdInventarioItem: true,
           TipoMovimiento: true,
           Cantidad: true,
+          IdDetalleVentaEnvase: true,
         },
       },
     },
@@ -151,7 +160,8 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
   }
 
   const returnedByItem = new Map<number, { cantidad: number; danada: number }>();
-  for (const detail of session.DevolucionRuta?.Detalles ?? []) {
+  const activeReturn = session.DevolucionRuta.find((routeReturn) => !routeReturn.Anulado) ?? null;
+  for (const detail of activeReturn?.Detalles ?? []) {
     returnedByItem.set(detail.IdInventarioItem, {
       cantidad: detail.CantidadRecibida,
       danada: detail.CantidadDanada,
@@ -170,6 +180,13 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
   const envaseReturnedByItem = new Map<number, number>();
   const envaseRetiredByItem = new Map<number, number>();
   for (const movement of session.MovimientosEnvaseCliente) {
+    if (
+      movement.TipoMovimiento === 'PRESTAMO' &&
+      movement.IdDetalleVentaEnvase !== null &&
+      movement.IdDetalleVentaEnvase !== undefined
+    ) {
+      continue;
+    }
     const target = movement.TipoMovimiento === 'PRESTAMO'
       ? envaseLoanedByItem
       : movement.TipoMovimiento === 'BAJA'
@@ -181,7 +198,8 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
     );
   }
 
-  const lines = (session.DespachoRuta?.Detalles ?? []).map((detail) => {
+  const activeDispatch = session.DespachoRuta[0] ?? null;
+  const lines = (activeDispatch?.Detalles ?? []).map((detail) => {
     const sold = soldByItem.get(detail.IdInventarioItem) ?? 0;
     const commercialReturn = commercialReturnByItem.get(detail.IdInventarioItem);
     const commercialReturned = commercialReturn?.cantidad ?? 0;
@@ -220,8 +238,8 @@ async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion: number
 
   return {
     session,
-    despacho: session.DespachoRuta,
-    devolucion: session.DevolucionRuta,
+    despacho: activeDispatch,
+    devolucion: activeReturn,
     lines,
   };
 }
@@ -268,6 +286,17 @@ export async function getRouteInventory(idRutaSesion: number) {
             fechaRegistro: result.devolucion.FechaRegistro,
           }
         : null,
+      devolucionesAnuladas: result.session.DevolucionRuta
+        .filter((routeReturn) => routeReturn.Anulado)
+        .map((routeReturn) => ({
+          id: routeReturn.Id,
+          fechaRegistro: routeReturn.FechaRegistro,
+          fechaAnulacion: routeReturn.FechaAnulacion,
+          motivoAnulacion: routeReturn.MotivoAnulacion,
+          usuarioAnulador: routeReturn.UsuarioAnulador
+            ? { id: routeReturn.UsuarioAnulador.Id, nombre: routeReturn.UsuarioAnulador.Nombre }
+            : null,
+        })),
       productos: result.lines,
     };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -300,7 +329,10 @@ export async function createRouteDispatch(
     if (session.Venta.length > 0) {
       throw new Error('No se puede despachar una sesión que ya tiene ventas registradas');
     }
-    if (await tx.despachoRuta.findUnique({ where: { IdRutaSesion: idRutaSesion }, select: { Id: true } })) {
+    if (await tx.despachoRuta.findFirst({
+      where: { IdRutaSesion: idRutaSesion, Anulado: false },
+      select: { Id: true },
+    })) {
       throw new Error('La sesión ya tiene un despacho confirmado');
     }
 
@@ -328,7 +360,7 @@ export async function createRouteDispatch(
       if (!product.EsVendible) {
         throw new Error(`No se puede despachar ${product.Nombre}: el artículo no está habilitado para la venta`);
       }
-      if (product.Existencia < detail.cantidad) {
+      if ((!product.EsEnvaseRetornable || detail.estadoEnvase === 'LLENO') && product.Existencia < detail.cantidad) {
         throw new Error(
           `Stock insuficiente para ${product.Nombre}. Existencia actual ${product.Existencia}, requerida ${detail.cantidad}`,
         );
@@ -337,22 +369,15 @@ export async function createRouteDispatch(
         if (!detail.estadoEnvase || !Number.isInteger(detail.cantidad)) {
           throw new Error(`Indica el estado y una cantidad entera para el envase ${product.Nombre}`);
         }
-        const available = await getEnvaseBucketQuantity(tx, product.Id, {
-          ubicacion: 'PLANTA',
+        await ensurePlantEnvaseBucketQuantity(tx, {
+          idInventarioItem: product.Id,
+          idUsuario,
           estado: detail.estadoEnvase,
+          cantidad: detail.cantidad,
+          nombre: `Despacho ruta #${idRutaSesion} - ${product.Nombre}`,
+          tipoDocumento: 'DES',
+          documento: idRutaSesion.toString(),
         });
-        if (available < detail.cantidad) {
-          const pending = await getEnvaseBucketQuantity(tx, product.Id, {
-            ubicacion: 'PLANTA',
-            estado: 'PENDIENTE_CONTEO',
-          });
-          const pendingMessage = pending > 0
-            ? ` Hay ${pending} pendiente(s) de clasificación en Envases.`
-            : '';
-          throw new Error(
-            `Stock físico verificado insuficiente de ${product.Nombre} (${detail.estadoEnvase}/PLANTA): disponible ${available}, solicitado ${detail.cantidad}.${pendingMessage}`,
-          );
-        }
       } else if (detail.estadoEnvase) {
         throw new Error(`${product.Nombre} no está configurado como envase retornable`);
       }
@@ -387,22 +412,25 @@ export async function createRouteDispatch(
       if (!product) {
         throw new Error(`InventarioItem ${detail.idInventarioItem} no existe o está anulado`);
       }
-      const remaining = roundQuantity(product.Existencia - detail.cantidad);
-      await tx.inventarioItem.update({
-        where: { Id: product.Id },
-        data: { Existencia: remaining },
-      });
-      await registerInventoryMovement(tx, {
-        idInventarioItem: product.Id,
-        idUsuario,
-        tipoDocumento: 'DES',
-        documento: dispatch.Id.toString(),
-        nombre: `Despacho ruta #${idRutaSesion} - ${product.Nombre}`,
-        tipoMovimiento: false,
-        existenciaAnterior: product.Existencia,
-        cantidad: detail.cantidad,
-        nuevaExistencia: remaining,
-      });
+      if (!product.EsEnvaseRetornable || detail.estadoEnvase === 'LLENO') {
+        const remaining = roundQuantity(product.Existencia - detail.cantidad);
+        await tx.inventarioItem.update({
+          where: { Id: product.Id },
+          data: { Existencia: remaining },
+        });
+        await registerInventoryMovement(tx, {
+          idInventarioItem: product.Id,
+          idUsuario,
+          tipoDocumento: 'DES',
+          documento: dispatch.Id.toString(),
+          nombre: `Despacho ruta #${idRutaSesion} - ${product.Nombre}`,
+          tipoMovimiento: false,
+          existenciaAnterior: product.Existencia,
+          cantidad: detail.cantidad,
+          nuevaExistencia: remaining,
+        });
+        product.Existencia = remaining;
+      }
       if (product.EsEnvaseRetornable) {
         await transferEnvaseBucket(tx, {
           idInventarioItem: product.Id,
@@ -418,6 +446,142 @@ export async function createRouteDispatch(
     }
 
     return dispatch;
+  });
+}
+
+export async function cancelRouteDispatch(
+  idRutaSesion: number,
+  idUsuario: number,
+  motivo: string,
+) {
+  return runSerializableTransaction(async (tx) => {
+    await expireProformaReservations(tx, idRutaSesion);
+    const session = await tx.rutaSesion.findFirst({
+      where: { Id: idRutaSesion, Anulado: false },
+      select: {
+        Id: true,
+        Estado: true,
+        Venta: {
+          where: { Anulado: false, TipoRegistro: 'VENTA' },
+          select: { Id: true },
+          take: 1,
+        },
+        DevolucionRuta: { where: { Anulado: false }, select: { Id: true }, take: 1 },
+        AjustesRuta: { select: { Id: true }, take: 1 },
+        MovimientosEnvaseCliente: {
+          where: {
+            Anulado: false,
+            TipoMovimiento: { in: ['PRESTAMO', 'DEVOLUCION', 'DEVOLUCION_DANADA', 'BAJA'] },
+          },
+          select: { Id: true },
+          take: 1,
+        },
+      },
+    });
+    if (!session) {
+      throw new Error('RutaSesion no existe');
+    }
+    if (session.Estado !== 'EN_CURSO') {
+      throw new Error('La sesión debe estar EN_CURSO para anular el despacho');
+    }
+    if (
+      session.Venta.length > 0 ||
+      session.DevolucionRuta.length > 0 ||
+      session.AjustesRuta.length > 0 ||
+      session.MovimientosEnvaseCliente.length > 0
+    ) {
+      throw new Error('No se puede anular el despacho después de registrar ventas, devoluciones, ajustes o movimientos de envases');
+    }
+
+    const activeReservations = await tx.reservaProforma.count({
+      where: {
+        Estado: 'ACTIVA',
+        Venta: {
+          is: {
+            IdRutaSesion: idRutaSesion,
+            Anulado: false,
+            TipoRegistro: 'PROFORMA',
+          },
+        },
+      },
+    });
+    if (activeReservations > 0) {
+      throw new Error('No se puede anular el despacho mientras existan proformas reservadas');
+    }
+
+    const dispatch = await tx.despachoRuta.findFirst({
+      where: { IdRutaSesion: idRutaSesion, Anulado: false },
+      include: { Detalles: true },
+    });
+    if (!dispatch) {
+      throw new Error('La sesión no tiene un despacho activo para anular');
+    }
+
+    const products = await tx.inventarioItem.findMany({
+      where: {
+        Id: { in: dispatch.Detalles.map((detail) => detail.IdInventarioItem) },
+        Anulado: false,
+      },
+      select: {
+        Id: true,
+        Nombre: true,
+        Existencia: true,
+        EsEnvaseRetornable: true,
+      },
+    });
+    const productsById = new Map(products.map((product) => [product.Id, product]));
+
+    for (const detail of dispatch.Detalles) {
+      const product = productsById.get(detail.IdInventarioItem);
+      if (!product) {
+        throw new Error(`InventarioItem ${detail.IdInventarioItem} no existe o está anulado`);
+      }
+      if (!product.EsEnvaseRetornable || detail.EstadoEnvase === 'LLENO') {
+        const remaining = roundQuantity(product.Existencia + detail.Cantidad);
+        await tx.inventarioItem.update({
+          where: { Id: product.Id },
+          data: { Existencia: remaining },
+        });
+        await registerInventoryMovement(tx, {
+          idInventarioItem: product.Id,
+          idUsuario,
+          tipoDocumento: 'ANU',
+          documento: dispatch.Id.toString(),
+          nombre: `Anulación despacho ruta #${idRutaSesion} - ${product.Nombre}`,
+          tipoMovimiento: true,
+          existenciaAnterior: product.Existencia,
+          cantidad: detail.Cantidad,
+          nuevaExistencia: remaining,
+        });
+        product.Existencia = remaining;
+      }
+      if (product.EsEnvaseRetornable) {
+        if (detail.EstadoEnvase !== 'VACIO' && detail.EstadoEnvase !== 'LLENO') {
+          throw new Error(`No se puede restaurar el estado del envase de ${product.Nombre}`);
+        }
+        await transferEnvaseBucket(tx, {
+          idInventarioItem: product.Id,
+          idUsuario,
+          origen: { ubicacion: 'RUTA', estado: detail.EstadoEnvase, idRutaSesion },
+          destino: { ubicacion: 'PLANTA', estado: detail.EstadoEnvase },
+          cantidad: detail.Cantidad,
+          nombre: `Anulación despacho ruta #${idRutaSesion} - ${product.Nombre}`,
+          tipoDocumento: 'ANU',
+          documento: dispatch.Id.toString(),
+        });
+      }
+    }
+
+    await tx.despachoRuta.update({
+      where: { Id: dispatch.Id },
+      data: {
+        Anulado: true,
+        IdUsuarioAnulador: idUsuario,
+        FechaAnulacion: new Date(),
+        MotivoAnulacion: motivo,
+      },
+    });
+    return { idDespacho: dispatch.Id, anulada: true };
   });
 }
 
@@ -516,13 +680,59 @@ export async function createRouteReturn(
   });
 }
 
+export async function cancelRouteReturn(
+  idRutaSesion: number,
+  idUsuario: number,
+  motivo: string,
+) {
+  return runSerializableTransaction(async (tx) => {
+    const session = await tx.rutaSesion.findFirst({
+      where: { Id: idRutaSesion, Anulado: false },
+      select: {
+        Id: true,
+        Estado: true,
+        AjustesRuta: { select: { Id: true }, take: 1 },
+      },
+    });
+    if (!session) {
+      throw new Error('RutaSesion no existe');
+    }
+    if (session.Estado !== 'EN_CURSO') {
+      throw new Error('La sesión debe estar EN_CURSO para anular la devolución');
+    }
+    if (session.AjustesRuta.length > 0) {
+      throw new Error('No se puede anular la devolución después de autorizar diferencias');
+    }
+
+    const routeReturn = await tx.devolucionRuta.findFirst({
+      where: { IdRutaSesion: idRutaSesion, Anulado: false },
+      select: { Id: true },
+    });
+    if (!routeReturn) {
+      throw new Error('La sesión no tiene una devolución activa para anular');
+    }
+
+    await tx.devolucionRuta.update({
+      where: { Id: routeReturn.Id },
+      data: {
+        Anulado: true,
+        IdUsuarioAnulador: idUsuario,
+        FechaAnulacion: new Date(),
+        MotivoAnulacion: motivo,
+      },
+    });
+
+    return { idDevolucion: routeReturn.Id, anulada: true };
+  });
+}
+
 export async function transferVerifiedRouteReturnToPlant(
   tx: RouteInventoryClient,
   idRutaSesion: number,
   idUsuario: number,
 ) {
-  const routeReturn = await tx.devolucionRuta.findUnique({
-    where: { IdRutaSesion: idRutaSesion },
+  const routeReturn = await tx.devolucionRuta.findFirst({
+    where: { IdRutaSesion: idRutaSesion, Anulado: false },
     select: {
       Id: true,
       Detalles: {
@@ -558,7 +768,9 @@ export async function transferVerifiedRouteReturnToPlant(
       throw new Error(`InventarioItem ${idInventarioItem} no existe o está anulado`);
     }
 
-    const sellableQuantity = roundQuantity(line.CantidadRecibida - line.CantidadDanada);
+    const sellableQuantity = product.EsEnvaseRetornable
+      ? line.CantidadEnvaseLleno
+      : roundQuantity(line.CantidadRecibida - line.CantidadDanada);
     if (sellableQuantity > 0) {
       const newExistence = roundQuantity(product.Existencia + sellableQuantity);
       await tx.inventarioItem.update({

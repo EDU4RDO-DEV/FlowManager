@@ -45,6 +45,12 @@ export const createRouteDispatchSchema = z.object({
     .superRefine(uniqueItems),
 });
 
+export const cancelRouteDispatchSchema = z.object({
+  motivo: z.string().trim().min(3).max(255),
+});
+
+export const cancelRouteReturnSchema = cancelRouteDispatchSchema;
+
 export const createRouteReturnSchema = z.object({
   observaciones: z.string().trim().max(255).optional(),
   detalle: z
@@ -55,6 +61,7 @@ export const createRouteReturnSchema = z.object({
         cantidadDanada: z.number().finite().min(0).default(0),
         cantidadEnvaseVacio: z.number().finite().min(0).default(0),
         cantidadEnvaseLleno: z.number().finite().min(0).default(0),
+        estadoEnvaseDanado: z.enum(['VACIO', 'LLENO']).optional(),
         observaciones: z.string().trim().max(255).optional(),
         ubicacionDanada: z.string().trim().min(1).max(255).optional(),
       }).superRefine((detail, ctx) => {

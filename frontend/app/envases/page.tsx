@@ -34,12 +34,11 @@ import {
   listEnvasePhysicalBalances,
   listEnvaseSaldos,
   listMovimientosEnvase,
-  registerEnvasePhysicalCount,
+  reconcileEnvasePhysicalStock,
   registrarBajaEnvase,
   registrarDevolucionEnvase,
   registrarPerdidaEnvase,
   registrarPrestamoEnvase,
-  reconcileEnvasePhysicalStock,
   restoreMovimientoEnvase,
 } from "@/services/envases.service";
 import { listProducts } from "@/services/products.service";
@@ -61,6 +60,14 @@ type FormState = {
   ubicacionEnvase: "PLANTA" | "RUTA" | "CUARENTENA";
   idRutaSesion: string;
   observaciones: string;
+};
+
+type ClassificationCandidate = {
+  item: ProductDto;
+  pending: number;
+  cantidadLlena: number;
+  cantidadVacia: number;
+  cantidadDanada: number;
 };
 
 const EMPTY_FORM: FormState = {
@@ -86,27 +93,18 @@ export default function EnvasesPage() {
   const [clientes, setClientes] = useState<ClientDto[]>([]);
   const [envaseItems, setEnvaseItems] = useState<ProductDto[]>([]);
   const [physicalBalances, setPhysicalBalances] = useState<EnvasePhysicalBalanceDto[]>([]);
-  const [reconcileForm, setReconcileForm] = useState({
-    idInventarioItem: "",
-    cantidadVacia: "",
-    cantidadLlena: "",
-    cantidadDanada: "",
-  });
-  const [physicalCountForm, setPhysicalCountForm] = useState({
-    idInventarioItem: "",
-    ubicacionEnvase: "PLANTA" as "PLANTA" | "RUTA" | "CUARENTENA",
-    idRutaSesion: "",
-    cantidadVacia: "",
-    cantidadLlena: "",
-    cantidadDanada: "",
-    observaciones: "",
-  });
   const [query, setQuery] = useState("");
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [anulateCandidate, setAnulateCandidate] = useState<MovimientoEnvaseDto | null>(null);
+  const [classificationItemId, setClassificationItemId] = useState("");
+  const [classificationFull, setClassificationFull] = useState("");
+  const [classificationEmpty, setClassificationEmpty] = useState("");
+  const [classificationDamaged, setClassificationDamaged] = useState("0");
+  const [classificationCandidate, setClassificationCandidate] =
+    useState<ClassificationCandidate | null>(null);
 
   async function loadData() {
     try {
@@ -170,12 +168,88 @@ export default function EnvasesPage() {
     };
   }, [movimientos, saldos]);
 
-  const pendingBalances = useMemo(
-    () => physicalBalances.filter(
-      (balance) => balance.ubicacion === "PLANTA" && balance.estado === "PENDIENTE_CONTEO" && balance.cantidad > 0,
-    ),
-    [physicalBalances],
+  const pendingPlantBalances = useMemo(() => {
+    const pendingByItem = new Map<number, number>();
+    for (const balance of physicalBalances) {
+      if (
+        balance.ubicacion === "PLANTA" &&
+        balance.estado === "PENDIENTE_CONTEO" &&
+        balance.cantidad > 0
+      ) {
+        pendingByItem.set(
+          balance.idInventarioItem,
+          (pendingByItem.get(balance.idInventarioItem) ?? 0) + balance.cantidad,
+        );
+      }
+    }
+    return [...pendingByItem.entries()]
+      .map(([id, pending]) => ({
+        item: envaseItems.find((item) => item.id === id),
+        pending,
+      }))
+      .filter((entry): entry is { item: ProductDto; pending: number } => Boolean(entry.item));
+  }, [envaseItems, physicalBalances]);
+
+  const effectiveClassificationItemId = pendingPlantBalances.some(
+    (balance) => String(balance.item.id) === classificationItemId,
+  )
+    ? classificationItemId
+    : pendingPlantBalances[0]
+      ? String(pendingPlantBalances[0].item.id)
+      : "";
+  const selectedClassification = pendingPlantBalances.find(
+    (balance) => String(balance.item.id) === effectiveClassificationItemId,
   );
+
+  function requestClassificationConfirmation() {
+    if (!selectedClassification) return;
+    const cantidadLlena = Number(classificationFull);
+    const cantidadVacia = Number(classificationEmpty);
+    const cantidadDanada = Number(classificationDamaged);
+    if ([cantidadLlena, cantidadVacia, cantidadDanada].some((quantity) =>
+      !Number.isInteger(quantity) || quantity < 0
+    )) {
+      toast.error("Las cantidades deben ser enteros no negativos.");
+      return;
+    }
+    if (cantidadLlena + cantidadVacia + cantidadDanada !== selectedClassification.pending) {
+      toast.error(
+        `La clasificación debe sumar exactamente ${selectedClassification.pending} unidades pendientes.`,
+      );
+      return;
+    }
+    setClassificationCandidate({
+      ...selectedClassification,
+      cantidadLlena,
+      cantidadVacia,
+      cantidadDanada,
+    });
+  }
+
+  async function confirmClassification() {
+    if (!classificationCandidate) return;
+    try {
+      setIsSaving(true);
+      await reconcileEnvasePhysicalStock({
+        idInventarioItem: classificationCandidate.item.id,
+        cantidadLlena: classificationCandidate.cantidadLlena,
+        cantidadVacia: classificationCandidate.cantidadVacia,
+        cantidadDanada: classificationCandidate.cantidadDanada,
+        observaciones: "Clasificación inicial de saldo físico legado confirmada por el operador",
+      });
+      toast.success("Clasificación registrada. La existencia del catálogo no se volvió a incrementar.");
+      setClassificationCandidate(null);
+      setClassificationFull("");
+      setClassificationEmpty("");
+      setClassificationDamaged("0");
+      await loadData();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo clasificar el saldo pendiente."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   const selectedItemStock = useMemo(() => {
     const item = envaseItems.find((candidate) => String(candidate.id) === form.idInventarioItem);
     if (!item || form.tipoMovimiento === "PERDIDA") return null;
@@ -198,112 +272,29 @@ export default function EnvasesPage() {
       candidate.estado === "PENDIENTE_CONTEO" &&
       candidate.idRutaSesion === null,
     )?.cantidad ?? 0;
-    const plantTracked = physicalBalances
+    const fullAndPendingTracked = physicalBalances
       .filter((candidate) =>
         candidate.idInventarioItem === item.id &&
         candidate.ubicacion === "PLANTA" &&
-        ["VACIO", "LLENO", "PENDIENTE_CONTEO"].includes(candidate.estado),
+      ["LLENO", "VACIO", "PENDIENTE_CONTEO"].includes(candidate.estado),
       )
       .reduce((sum, candidate) => sum + candidate.cantidad, 0);
+    const unclassifiedFull = location === "PLANTA" && form.estadoEnvase === "LLENO"
+      ? Math.max(0, item.existencia - fullAndPendingTracked)
+      : 0;
 
     return {
       item,
       location,
-      quantity: balance?.cantidad ?? 0,
+      quantity: (balance?.cantidad ?? 0) + (location === "PLANTA" ? pending : 0) + unclassifiedFull,
+      classifiedQuantity: balance?.cantidad ?? 0,
       pending,
-      unclassified: item.existencia - plantTracked,
+      unclassified: unclassifiedFull,
     };
   }, [envaseItems, form, physicalBalances]);
 
   function resetForm() {
     setForm(EMPTY_FORM);
-  }
-
-  async function submitPhysicalReconciliation() {
-    const idInventarioItem = Number(reconcileForm.idInventarioItem);
-    const pending = pendingBalances.find((item) => item.idInventarioItem === idInventarioItem);
-    const counts = {
-      cantidadVacia: Number(reconcileForm.cantidadVacia || 0),
-      cantidadLlena: Number(reconcileForm.cantidadLlena || 0),
-      cantidadDanada: Number(reconcileForm.cantidadDanada || 0),
-    };
-    if (!pending) {
-      toast.error("Selecciona una existencia pendiente de conteo");
-      return;
-    }
-    if (
-      Object.values(counts).some((count) => !Number.isInteger(count) || count < 0) ||
-      counts.cantidadVacia + counts.cantidadLlena + counts.cantidadDanada !== pending.cantidad
-    ) {
-      toast.error(`La clasificación debe sumar exactamente ${pending.cantidad} unidades`);
-      return;
-    }
-
-    try {
-      setIsSaving(true);
-      await reconcileEnvasePhysicalStock({ idInventarioItem, ...counts });
-      toast.success("Existencia física conciliada; los dañados quedaron segregados");
-      setReconcileForm({ idInventarioItem: "", cantidadVacia: "", cantidadLlena: "", cantidadDanada: "" });
-      await loadData();
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "No se pudo conciliar la existencia física"));
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function submitPhysicalCount(regularize: boolean) {
-    const idInventarioItem = Number(physicalCountForm.idInventarioItem);
-    const idRutaSesion = Number(physicalCountForm.idRutaSesion);
-    if (
-      !idInventarioItem ||
-      (physicalCountForm.ubicacionEnvase === "RUTA" && !idRutaSesion) ||
-      !physicalCountForm.observaciones.trim()
-    ) {
-      toast.error("Selecciona el envase, completa la ubicación y registra observaciones");
-      return;
-    }
-
-    const payload = {
-      idInventarioItem,
-      ubicacionEnvase: physicalCountForm.ubicacionEnvase,
-      ...(physicalCountForm.ubicacionEnvase === "RUTA" ? { idRutaSesion } : {}),
-      cantidadVacia: Number(physicalCountForm.cantidadVacia || 0),
-      cantidadLlena: Number(physicalCountForm.cantidadLlena || 0),
-      cantidadDanada: Number(physicalCountForm.cantidadDanada || 0),
-      observaciones: physicalCountForm.observaciones.trim(),
-    };
-    if (
-      [payload.cantidadVacia, payload.cantidadLlena, payload.cantidadDanada]
-        .some((quantity) => !Number.isInteger(quantity) || quantity < 0)
-    ) {
-      toast.error("Las cantidades deben ser enteros no negativos");
-      return;
-    }
-
-    try {
-      setIsSaving(true);
-      await registerEnvasePhysicalCount(payload, regularize);
-      toast.success(
-        regularize
-          ? "Conteo registrado y diferencia regularizada con autorización"
-          : "Conteo físico registrado",
-      );
-      setPhysicalCountForm({
-        idInventarioItem: "",
-        ubicacionEnvase: "PLANTA",
-        idRutaSesion: "",
-        cantidadVacia: "",
-        cantidadLlena: "",
-        cantidadDanada: "",
-        observaciones: "",
-      });
-      await loadData();
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "No se pudo registrar el conteo físico"));
-    } finally {
-      setIsSaving(false);
-    }
   }
 
   async function submitMovimiento() {
@@ -337,7 +328,7 @@ export default function EnvasesPage() {
       selectedItemStock &&
       ["PRESTAMO", "BAJA"].includes(form.tipoMovimiento) &&
       selectedItemStock.location === "PLANTA" &&
-      form.estadoEnvase !== "DANADO" &&
+      form.estadoEnvase === "LLENO" &&
       requestedQuantity > selectedItemStock.item.existencia
     ) {
       toast.error(
@@ -600,18 +591,15 @@ export default function EnvasesPage() {
               {selectedItemStock ? (
                 <div className="rounded-md border bg-muted/30 p-3 text-sm">
                   <p>
-                    Stock físico registrado para {selectedItemStock.location}/{form.estadoEnvase}:{" "}
-                    <strong>{selectedItemStock.quantity}</strong>. Existencia general en catálogo:{" "}
-                    <strong>{selectedItemStock.item.existencia}</strong>. Pendiente de clasificación en planta:{" "}
-                    <strong>{selectedItemStock.pending}</strong>.
+                    Saldo ya clasificado en {selectedItemStock.location}/{form.estadoEnvase}:{" "}
+                    <strong>{selectedItemStock.classifiedQuantity}</strong>. Existencia vendible del catálogo:{" "}
+                    <strong>{selectedItemStock.item.existencia}</strong>.
                   </p>
-                  {selectedItemStock.unclassified > 0 ? (
+                  {selectedItemStock.pending > 0 || selectedItemStock.unclassified > 0 ? (
                     <p className="mt-1 text-amber-700 dark:text-amber-400">
-                      Hay {selectedItemStock.unclassified} unidad(es) de catálogo aún sin clasificación física. Confirma el conteo real y clasifícalas en la sección de existencias pendientes; esa clasificación no vuelve a sumar el saldo al catálogo.
-                    </p>
-                  ) : selectedItemStock.unclassified < 0 ? (
-                    <p className="mt-1 text-destructive">
-                      El saldo físico de planta supera la existencia del catálogo por {Math.abs(selectedItemStock.unclassified)}. Revisa los movimientos antes de registrar otra operación.
+                      Pendiente de clasificar: {selectedItemStock.pending + selectedItemStock.unclassified}. Una operación
+                      explícita en el estado seleccionado podrá clasificar solo las unidades solicitadas; no representa
+                      saldo ya confirmado como {form.estadoEnvase}.
                     </p>
                   ) : null}
                 </div>
@@ -660,144 +648,102 @@ export default function EnvasesPage() {
 
           <Card className="rounded-xl">
             <CardContent className="space-y-4 p-4">
+              {pendingPlantBalances.length > 0 ? (
+                <section className="space-y-4 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
+                  <div>
+                    <h2 className="text-lg font-semibold">Clasificar saldo pendiente de planta</h2>
+                    <p className="text-sm text-muted-foreground">
+                      La clasificación mueve el saldo pendiente a sus estados físicos sin crear existencias nuevas.
+                      Las cantidades deben coincidir exactamente con el saldo pendiente.
+                    </p>
+                    {!canUpdate ? (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Tu rol necesita permiso de actualización de envases para clasificar saldos.
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="classification-item">Producto y saldo pendiente</Label>
+                      <select
+                        id="classification-item"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={effectiveClassificationItemId}
+                        onChange={(event) => {
+                          setClassificationItemId(event.target.value);
+                          setClassificationFull("");
+                          setClassificationEmpty("");
+                          setClassificationDamaged("0");
+                        }}
+                        disabled={isSaving}
+                      >
+                        {pendingPlantBalances.map(({ item, pending }) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nombre} · pendiente {pending}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="classification-full">Llenos en planta</Label>
+                      <Input
+                        id="classification-full"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={classificationFull}
+                        onChange={(event) => setClassificationFull(event.target.value)}
+                        disabled={isSaving}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="classification-empty">Vacíos en planta</Label>
+                      <Input
+                        id="classification-empty"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={classificationEmpty}
+                        onChange={(event) => setClassificationEmpty(event.target.value)}
+                        disabled={isSaving}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="classification-damaged">Dañados a cuarentena</Label>
+                      <Input
+                        id="classification-damaged"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={classificationDamaged}
+                        onChange={(event) => setClassificationDamaged(event.target.value)}
+                        disabled={isSaving}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Existencia vendible actual: {selectedClassification?.item.existencia ?? 0}. Los llenos se sincronizan
+                    con esa existencia; los vacíos no la modifican y los dañados se separan de ella.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={requestClassificationConfirmation}
+                    disabled={!canUpdate || isSaving || !selectedClassification}
+                  >
+                    Revisar y confirmar clasificación
+                  </Button>
+                </section>
+              ) : null}
               <div>
                 <h2 className="text-lg font-semibold">Existencia física por estado y ubicación</h2>
                 <p className="text-sm text-muted-foreground">
                   Los envases en custodia de clientes se muestran únicamente en sus saldos, no como stock de planta o ruta.
                 </p>
               </div>
-              <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-2 lg:grid-cols-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="physical-count-item">Envase contado</Label>
-                  <select
-                    id="physical-count-item"
-                    value={physicalCountForm.idInventarioItem}
-                    onChange={(event) => setPhysicalCountForm((prev) => ({ ...prev, idInventarioItem: event.target.value }))}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="">Selecciona un envase</option>
-                    {envaseItems.map((item) => (
-                      <option key={item.id} value={item.id}>{item.nombre}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="physical-count-location">Ubicación del conteo</Label>
-                  <select
-                    id="physical-count-location"
-                    value={physicalCountForm.ubicacionEnvase}
-                    onChange={(event) => setPhysicalCountForm((prev) => ({
-                      ...prev,
-                      ubicacionEnvase: event.target.value as typeof prev.ubicacionEnvase,
-                    }))}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="PLANTA">Planta</option>
-                    <option value="RUTA">Vehículo / ruta</option>
-                    <option value="CUARENTENA">Cuarentena</option>
-                  </select>
-                </div>
-                {physicalCountForm.ubicacionEnvase === "RUTA" ? (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="physical-count-route">ID de sesión de ruta</Label>
-                    <Input
-                      id="physical-count-route"
-                      type="number"
-                      min={1}
-                      value={physicalCountForm.idRutaSesion}
-                      onChange={(event) => setPhysicalCountForm((prev) => ({ ...prev, idRutaSesion: event.target.value }))}
-                    />
-                  </div>
-                ) : null}
-                {(["cantidadVacia", "cantidadLlena", "cantidadDanada"] as const)
-                  .filter((field) => physicalCountForm.ubicacionEnvase === "RUTA" || (
-                    physicalCountForm.ubicacionEnvase === "PLANTA" ? field !== "cantidadDanada" : field === "cantidadDanada"
-                  ))
-                  .map((field) => (
-                    <div key={field} className="space-y-1.5">
-                      <Label htmlFor={`physical-${field}`}>
-                        {field === "cantidadVacia" ? "Garrafones vacíos" : field === "cantidadLlena" ? "Garrafones llenos" : "Garrafones dañados"}
-                      </Label>
-                      <Input
-                        id={`physical-${field}`}
-                        type="number"
-                        min={0}
-                        step={1}
-                        value={physicalCountForm[field]}
-                        onChange={(event) => setPhysicalCountForm((prev) => ({ ...prev, [field]: event.target.value }))}
-                      />
-                    </div>
-                  ))}
-                <div className="space-y-1.5 md:col-span-2 lg:col-span-4">
-                  <Label htmlFor="physical-count-observations">Observaciones y referencia del conteo</Label>
-                  <Input
-                    id="physical-count-observations"
-                    maxLength={200}
-                    value={physicalCountForm.observaciones}
-                    onChange={(event) => setPhysicalCountForm((prev) => ({ ...prev, observaciones: event.target.value }))}
-                  />
-                </div>
-                <div className="flex flex-wrap gap-2 md:col-span-2 lg:col-span-4">
-                  <Button
-                    onClick={() => void submitPhysicalCount(false)}
-                    disabled={!canUpdate || isSaving}
-                    variant="outline"
-                  >
-                    Registrar conteo
-                  </Button>
-                  <Button
-                    onClick={() => void submitPhysicalCount(true)}
-                    disabled={!canDelete || isSaving}
-                    variant="destructive"
-                  >
-                    Regularizar diferencia (autorizado)
-                  </Button>
-                </div>
-              </div>
-              {pendingBalances.length > 0 ? (
-                <div className="grid gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/20 md:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="reconcile-envase">Envase pendiente de conteo</Label>
-                    <select
-                      id="reconcile-envase"
-                      value={reconcileForm.idInventarioItem}
-                      onChange={(event) => setReconcileForm((prev) => ({ ...prev, idInventarioItem: event.target.value }))}
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="">Selecciona saldo</option>
-                      {pendingBalances.map((balance) => (
-                        <option key={balance.idInventarioItem} value={balance.idInventarioItem}>
-                            {balance.nombre}: {balance.cantidad} por contar{balance.esSaldoLegadoPendiente ? " (saldo legado sin clasificar)" : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {(["cantidadVacia", "cantidadLlena", "cantidadDanada"] as const).map((field) => (
-                    <div key={field} className="space-y-1.5">
-                      <Label htmlFor={`reconcile-${field}`}>
-                        {field === "cantidadVacia" ? "Garrafones vacíos" : field === "cantidadLlena" ? "Garrafones llenos" : "Dañados / cuarentena"}
-                      </Label>
-                      <Input
-                        id={`reconcile-${field}`}
-                        type="number"
-                        min={0}
-                        step={1}
-                        value={reconcileForm[field]}
-                        onChange={(event) => setReconcileForm((prev) => ({ ...prev, [field]: event.target.value }))}
-                      />
-                    </div>
-                  ))}
-                  <Button
-                    onClick={() => void submitPhysicalReconciliation()}
-                    disabled={!canUpdate || isSaving || !reconcileForm.idInventarioItem}
-                    className="md:col-span-2"
-                  >
-                    Conciliar conteo físico
-                  </Button>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No hay existencias pendientes de clasificación.</p>
-              )}
+              <p className="text-sm text-muted-foreground">
+                Los saldos por ubicación y estado se actualizan con producción, despacho, devoluciones, ajustes y movimientos de custodia. Los saldos heredados se clasifican al usarse y no requieren una conciliación previa.
+              </p>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -970,6 +916,17 @@ export default function EnvasesPage() {
           description="¿Deseas anular este movimiento? El saldo del cliente se recalculará automáticamente."
           confirmLabel="Anular"
           onConfirm={confirmAnulate}
+        />
+        <ConfirmActionDialog
+          open={classificationCandidate !== null}
+          onOpenChange={(open) => !open && setClassificationCandidate(null)}
+          title="Confirmar clasificación física"
+          description={classificationCandidate
+            ? `Se clasificarán ${classificationCandidate.pending} unidades de ${classificationCandidate.item.nombre}: ${classificationCandidate.cantidadLlena} llenos, ${classificationCandidate.cantidadVacia} vacíos y ${classificationCandidate.cantidadDanada} dañados. No se agregará inventario al saldo de catálogo.`
+            : ""}
+          confirmLabel="Clasificar sin sumar"
+          loading={isSaving}
+          onConfirm={confirmClassification}
         />
       </DashboardShell>
     </RequireAuth>

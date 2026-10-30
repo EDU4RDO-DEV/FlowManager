@@ -137,7 +137,7 @@ describe('logistics vehicle reservation transactions', () => {
         KmInicial: null,
         KmFinal: null,
         Estado: 'PROGRAMADA',
-        DespachoRuta: null,
+        DespachoRuta: [],
         Venta: [],
       })
       .mockResolvedValueOnce({ Id: 71 });
@@ -164,7 +164,7 @@ describe('logistics vehicle reservation transactions', () => {
     prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({
       Id: 70,
       Estado: 'CERRADA',
-      DespachoRuta: { Id: 80 },
+      DespachoRuta: [{ Id: 80 }],
       Venta: [],
     });
 

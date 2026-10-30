@@ -87,15 +87,15 @@ export async function createCommercialReturn(
         throw new Error('La ruta debe estar EN_CURSO para registrar una devolución comercial');
       }
 
-      const dispatch = await tx.despachoRuta.findUnique({
-        where: { IdRutaSesion: sale.IdRutaSesion },
+      const dispatch = await tx.despachoRuta.findFirst({
+        where: { IdRutaSesion: sale.IdRutaSesion, Anulado: false },
         select: { Detalles: { select: { IdInventarioItem: true } } },
       });
       if (!dispatch) {
         throw new Error('No existe un despacho confirmado para la sesión de ruta');
       }
-      if (await tx.devolucionRuta.findUnique({
-        where: { IdRutaSesion: sale.IdRutaSesion },
+      if (await tx.devolucionRuta.findFirst({
+        where: { IdRutaSesion: sale.IdRutaSesion, Anulado: false },
         select: { Id: true },
       })) {
         throw new Error('No se pueden registrar devoluciones comerciales después de confirmar la recepción de ruta');

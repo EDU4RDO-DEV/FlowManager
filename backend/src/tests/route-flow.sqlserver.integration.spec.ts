@@ -819,7 +819,7 @@ integrationDescribe('route module SQL Server integration', () => {
       where: { Id: sessionId },
       select: { Estado: true, DevolucionRuta: { select: { Id: true } } },
     });
-    expect(current.DevolucionRuta).not.toBeNull();
+    expect(current.DevolucionRuta).toHaveLength(1);
     if (current.Estado !== 'CERRADA') await closeSession(sessionId);
     expect(await prisma.bitacoraInventario.count({
       where: { TipoDocumento: 'DEV', IdInventarioItem: itemId },

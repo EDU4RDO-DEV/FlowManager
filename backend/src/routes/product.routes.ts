@@ -6,6 +6,7 @@ import {
   getProductByIdController,
   listAnulatedProductsController,
   listProductsController,
+  listReturnableInventoryBalancesController,
   restoreProductController,
   uploadProductImageController,
   updateProductController,
@@ -16,6 +17,11 @@ import { uploadProductImage } from '../middlewares/upload.middleware';
 const productRouter = Router();
 
 productRouter.get('/', requireModulePermission('inventario', 'read'), listProductsController);
+productRouter.get(
+  '/returnable-balances',
+  requireModulePermission('inventario', 'read'),
+  listReturnableInventoryBalancesController,
+);
 productRouter.get('/anulados', requireModulePermission('inventario', 'read'), listAnulatedProductsController);
 productRouter.get('/:id', requireModulePermission('inventario', 'read'), getProductByIdController);
 productRouter.post(

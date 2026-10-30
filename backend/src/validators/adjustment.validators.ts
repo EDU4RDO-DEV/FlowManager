@@ -60,6 +60,7 @@ export const createAdjustmentSchema = z.object({
           message: 'tipoAjuste debe ser ENTRADA o SALIDA',
         }),
         cantidadAjustada: finitePositiveNumber,
+        estadoEnvase: z.enum(['VACIO', 'LLENO']).optional(),
       }),
     )
     .min(1, 'Debes agregar al menos un item al ajuste'),

@@ -183,16 +183,22 @@ Producción conserva una instantánea de la receta al crear una orden pendiente.
 El flujo reutiliza `RutaSesion`, `Vehiculo`, `Venta.IdRutaSesion`, `InventarioItem.Existencia`
 y `BitacoraInventario`; no duplica las sesiones, las ventas ni los productos. Se agregan
 `DespachoRuta`/`DespachoRutaDetalle`, `DevolucionRuta`/`DevolucionRutaDetalle` y `AjusteRuta`.
-Cada sesión admite un único despacho inicial y una única recepción consolidada. Los detalles
-conservan el nombre y la unidad del producto al despachar; las cantidades no se guardan como
-un inventario por número de vehículo.
+Cada sesión admite un despacho activo y una única recepción activa consolidada. Los detalles conservan
+el nombre y la unidad del producto al despachar; las cantidades no se guardan como un inventario
+por número de vehículo.
+
+Un despacho confirmado puede anularse con motivo obligatorio únicamente mientras la ruta siga
+abierta y no tenga ventas, devoluciones, ajustes, movimientos de envases ni reservas activas de
+proformas. La anulación conserva el despacho original y registra quién, cuándo y por qué lo anuló.
+Restaura el catálogo y los saldos físicos mediante movimientos compensatorios `ANU`, y permite
+capturar un nuevo despacho. Una sesión no puede tener más de un despacho activo.
 
 ```mermaid
 erDiagram
-  RutaSesion ||--o| DespachoRuta : recibe
+  RutaSesion ||--o{ DespachoRuta : conserva
   DespachoRuta ||--|{ DespachoRutaDetalle : contiene
   InventarioItem ||--o{ DespachoRutaDetalle : producto
-  RutaSesion ||--o| DevolucionRuta : liquida
+  RutaSesion ||--o{ DevolucionRuta : conserva
   DevolucionRuta ||--o{ DevolucionRutaDetalle : contiene
   InventarioItem ||--o{ DevolucionRutaDetalle : producto
   RutaSesion ||--o{ Venta : vincula
@@ -221,6 +227,13 @@ Una diferencia restante requiere un ajuste con clasificación, motivo y usuario 
 protege con el permiso `logistica:update`. Una sesión solo pasa a `CERRADA` si el saldo de
 todos los productos quedó conciliado. `RutaSesion.FechaCierre` y `IdUsuarioCierre` guardan la
 fecha y el responsable.
+
+Una recepción de ruta puede anularse con motivo y permiso `despacho:update` mientras la sesión
+siga `EN_CURSO` y no tenga diferencias autorizadas. La recepción y sus detalles se conservan
+marcados como anulados; ventas y movimientos de envases anteriores no se borran ni se revierten.
+Luego puede registrarse una recepción activa corregida. La transferencia a planta ocurre solo
+al cierre, por lo que una recepción anulada antes del cierre no requiere movimientos compensatorios
+de inventario.
 
 Regla aprobada para proformas ligadas a una ruta: `POST /api/ventas` requiere
 `fechaExpiracionProforma` (fecha/hora ISO con zona horaria) y reserva el saldo del vehículo sin
@@ -255,11 +268,30 @@ categoría a los tres valores vigentes. Si encuentra productos heredados con `Ca
 u otra categoría no reconocida, se detiene sin reasignarlos: deben clasificarse explícitamente
 antes de desplegar para no inferir su uso, vendibilidad ni condición retornable.
 
-El inventario físico inicial no se infiere de la existencia del catálogo. Tras identificar el
-artículo retornable, el responsable registra el conteo verificado por ubicación y estado en
-`POST /api/envases/existencias/conteo` (`envases:update`); si el conteo difiere del saldo previo,
-la regularización auditada requiere `POST /api/envases/existencias/regularizar`
-(`envases:delete`). No se debe registrar un saldo inicial hasta completar el conteo físico real.
+Los saldos físicos por ubicación y estado se consultan en `/api/envases/existencias`. La existencia
+del catálogo representa producto vendible lleno; los envases vacíos, dañados, en ruta o bajo
+custodia de clientes se controlan por separado en los movimientos existentes. Los saldos heredados
+sin clasificación aparecen como `PENDIENTE_CONTEO`, calculados como existencia vendible menos los
+saldos físicos ya clasificados de llenos, vacíos y pendientes; la existencia general nunca se
+duplica como saldo inicial de llenos y vacíos. En Envases, `/existencias/reconciliar` permite
+clasificar el saldo pendiente en `LLENO`, `VACIO` y `DANADO` dentro de una transacción: no agrega
+existencias, y los vacíos o dañados clasificados reducen el saldo vendible mientras los llenos lo
+conservan. Los ajustes de salida requieren saldo explícito del estado seleccionado; no consumen
+saldos pendientes ni los de otro estado. En planta, solo los movimientos de `LLENO` sincronizan
+también la existencia vendible; una venta en ruta no la vuelve a descontar porque ya se redujo al
+despachar. Los ajustes físicos se registran desde el módulo existente de ajustes, seleccionando
+`VACIO` o `LLENO`; el estado queda trazado en `BitacoraInventario`. La baja de dañados los separa
+en cuarentena y no los reincorpora como disponibles. El listado de inventario consulta
+`GET /api/products/returnable-balances` (`inventario:read`) para mostrar llenos, vacíos, ruta,
+custodia de clientes, dañados y pendientes desde esos saldos registrados; no deriva vacíos ni
+llenos de la existencia total del producto.
+
+El conteo físico y la regularización auditada permanecen disponibles para corregir diferencias
+reales autorizadas, pero no son un requisito previo para las operaciones normales. Un conteo que
+difiere de los movimientos registrados requiere autorización mediante
+`POST /api/envases/existencias/regularizar` (`envases:delete`); el sistema no modifica saldos de
+ruta ni de custodia de clientes al ajustar la planta. Estos flujos reutilizan las tablas actuales
+y no requieren una migración de esquema.
 
 Las devoluciones comerciales de ventas de ruta se registran en `DevolucionComercial` y
 `DevolucionComercialDetalle`, vinculadas a la venta y sus líneas originales; el cliente y la
@@ -279,7 +311,7 @@ destino del inventario. No se modifican automáticamente pagos, CxC, importes or
 comisiones ni liquidaciones; estos flujos financieros y fiscales permanecen fuera de alcance
 hasta definir sus reglas.
 
-Mejoras operativas aún no soportadas: la sesión permite un despacho inicial y una recepción
+Mejoras operativas aún no soportadas: la sesión permite un despacho activo y una recepción
 consolidada; recargas o recepciones parciales requieren un historial de movimientos por ruta,
 no otra existencia duplicada. `AjusteRuta.IdUsuario` registra al responsable actual, pero no
 separa liquidador y aprobador. El comprobante usa impresión del navegador, no PDF formal. Los
@@ -291,6 +323,7 @@ Endpoints (todos bajo `/api/logistics`, autenticados y con permiso `logistica`):
 - `GET /rutas/sesiones/:id/inventario`
 - `GET /rutas/sesiones/:id/liquidacion`
 - `POST /rutas/sesiones/:id/despacho`
+- `POST /rutas/sesiones/:id/despacho/anular` con motivo obligatorio
 - `POST /rutas/sesiones/:id/devolucion`
 - `POST /rutas/sesiones/:id/ajustes`
 - `PATCH /rutas/:id/sesiones/:idSesion` con `estado: "CERRADA"` para liquidar y cerrar
@@ -299,6 +332,14 @@ La migración `20261015080000_route_dispatch_settlement` es aditiva y no se ejec
 automáticamente. Aplíquela solo mediante Prisma Migrate en una base aprobada. Las pruebas
 unitarias y de integración deben cubrir los movimientos y la concurrencia antes de habilitar
 este flujo en producción.
+
+La migración `20261022100000_route_dispatch_cancellation` agrega trazabilidad de anulación y
+permite conservar despachos anulados junto con uno activo por sesión. Debe aplicarse antes de
+usar el endpoint de anulación; no se ejecuta automáticamente.
+
+La migración `20261023100000_route_return_cancellation` agrega trazabilidad de anulación para
+recepciones y mantiene una sola devolución activa por sesión. Debe aplicarse antes de usar el
+endpoint `POST /rutas/sesiones/:id/devolucion/anular`; no se ejecuta automáticamente.
 
 La migración `20261012110000_production_module` agrega unidades y órdenes, y elimina las restricciones SQL globales de existencia no negativa para permitir el caso autorizado. La API protege las salidas de los demás flujos y verifica el permiso especial al fabricar. Revise la migración en el entorno objetivo antes de aplicarla; no la ejecute contra producción ni una base compartida sin autorización. Aplique las migraciones y ejecute el seed de roles/permisos sólo en un entorno aprobado.
 

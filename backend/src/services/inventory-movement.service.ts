@@ -62,6 +62,93 @@ export async function getEnvaseBucketQuantity(
   return latest?.NuevaExistencia ?? 0;
 }
 
+export async function ensurePlantEnvaseBucketQuantity(
+  tx: Prisma.TransactionClient,
+  input: {
+    idInventarioItem: number;
+    idUsuario: number;
+    estado: 'VACIO' | 'LLENO';
+    cantidad: number;
+    nombre: string;
+    tipoDocumento: string;
+    documento: string;
+  },
+) {
+  const bucket: EnvaseBucket = { ubicacion: 'PLANTA', estado: input.estado };
+  const available = await getEnvaseBucketQuantity(tx, input.idInventarioItem, bucket);
+  const missing = Math.max(0, input.cantidad - available);
+  if (missing === 0) return available;
+
+  const pending = await getEnvaseBucketQuantity(tx, input.idInventarioItem, {
+    ubicacion: 'PLANTA',
+    estado: 'PENDIENTE_CONTEO',
+  });
+  const fromPending = Math.min(pending, missing);
+  let nextAvailable = available;
+  if (fromPending > 0) {
+    await registerEnvaseBucketChange(tx, {
+      idInventarioItem: input.idInventarioItem,
+      idUsuario: input.idUsuario,
+      bucket: { ubicacion: 'PLANTA', estado: 'PENDIENTE_CONTEO' },
+      cantidad: fromPending,
+      entrada: false,
+      nombre: `Clasificación operativa de saldo heredado - ${input.nombre}`,
+      tipoDocumento: input.tipoDocumento,
+      documento: input.documento,
+    });
+    nextAvailable = await registerEnvaseBucketChange(tx, {
+      idInventarioItem: input.idInventarioItem,
+      idUsuario: input.idUsuario,
+      bucket,
+      cantidad: fromPending,
+      entrada: true,
+      nombre: `Clasificación operativa de saldo heredado - ${input.nombre}`,
+      tipoDocumento: input.tipoDocumento,
+      documento: input.documento,
+    });
+  }
+
+  const stillMissing = missing - fromPending;
+  if (stillMissing > 0 && input.estado === 'LLENO') {
+    const item = await tx.inventarioItem.findFirst({
+      where: { Id: input.idInventarioItem, Anulado: false },
+      select: { Existencia: true },
+    });
+    const full = await getEnvaseBucketQuantity(tx, input.idInventarioItem, bucket);
+    const remainingPending = pending - fromPending;
+    const empty = await getEnvaseBucketQuantity(tx, input.idInventarioItem, {
+      ubicacion: 'PLANTA',
+      estado: 'VACIO',
+    });
+    const unclassifiedFull = Math.max(
+      0,
+      item ? item.Existencia - full - empty - remainingPending : 0,
+    );
+    if (unclassifiedFull >= stillMissing) {
+      nextAvailable = await registerEnvaseBucketChange(tx, {
+        idInventarioItem: input.idInventarioItem,
+        idUsuario: input.idUsuario,
+        bucket,
+        cantidad: stillMissing,
+        entrada: true,
+        nombre: `Clasificación de existencia vendible heredada - ${input.nombre}`,
+        tipoDocumento: input.tipoDocumento,
+        documento: input.documento,
+      });
+    } else {
+      throw new Error(
+        `Stock físico insuficiente en LLENO/PLANTA: disponible ${available + fromPending + unclassifiedFull}, solicitado ${input.cantidad}`,
+      );
+    }
+  } else if (stillMissing > 0) {
+    throw new Error(
+      `Stock físico insuficiente en VACIO/PLANTA: disponible ${available + fromPending}, solicitado ${input.cantidad}`,
+    );
+  }
+
+  return nextAvailable;
+}
+
 export async function registerEnvaseBucketChange(
   tx: Prisma.TransactionClient,
   input: RegisterEnvaseBucketChangeInput,

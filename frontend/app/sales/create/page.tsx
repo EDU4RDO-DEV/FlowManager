@@ -68,6 +68,7 @@ type DetailRow = {
   cantidad: number;
   precioUnitario: number;
   estadoEnvase: "VACIO" | "LLENO" | "";
+  modoEnvase: "CLIENTE_PROPIO" | "PRESTAMO_EMPRESA" | "";
 };
 
 function toMoney(value: number): string {
@@ -237,6 +238,7 @@ export default function CreateSalePage() {
             cantidad: 1,
             precioUnitario,
             estadoEnvase: "",
+            modoEnvase: "",
           },
         ];
       });
@@ -418,8 +420,8 @@ export default function CreateSalePage() {
 
   function updateRow(
     idInventarioItem: number,
-    field: "cantidad" | "precioUnitario" | "estadoEnvase",
-    value: number | "VACIO" | "LLENO" | "",
+    field: "cantidad" | "precioUnitario" | "estadoEnvase" | "modoEnvase",
+    value: number | "VACIO" | "LLENO" | "CLIENTE_PROPIO" | "PRESTAMO_EMPRESA" | "",
   ) {
     setDetalle((prev) =>
       prev.map((row) =>
@@ -468,6 +470,13 @@ export default function CreateSalePage() {
       const product = products.find((item) => item.id === row.idInventarioItem);
       if (product?.esEnvaseRetornable && !row.estadoEnvase) {
         return `Indica si el envase que vendes (${row.nombre}) está vacío o lleno`;
+      }
+      if (
+        tipoRegistro === "VENTA" &&
+        product?.esEnvaseRetornable &&
+        !row.modoEnvase
+      ) {
+        return `Indica si el envase de ${row.nombre} es propio del cliente o préstamo de la empresa`;
       }
     }
 
@@ -522,6 +531,7 @@ export default function CreateSalePage() {
         cantidad: Number(row.cantidad),
         precioUnitario: Number(row.precioUnitario.toFixed(2)),
         ...(row.estadoEnvase ? { estadoEnvase: row.estadoEnvase } : {}),
+        ...(row.modoEnvase ? { modoEnvase: row.modoEnvase } : {}),
       };
     });
 
@@ -951,6 +961,23 @@ export default function CreateSalePage() {
                           <SelectContent>
                             <SelectItem value="VACIO">Vacío</SelectItem>
                             <SelectItem value="LLENO">Lleno</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : null}
+                    {product?.esEnvaseRetornable && tipoRegistro === "VENTA" ? (
+                      <div className="space-y-1">
+                        <Label>Custodia del envase</Label>
+                        <Select
+                          value={row.modoEnvase}
+                          onValueChange={(value) =>
+                            updateRow(row.idInventarioItem, "modoEnvase", value as "CLIENTE_PROPIO" | "PRESTAMO_EMPRESA")
+                          }
+                        >
+                          <SelectTrigger><SelectValue placeholder="Selecciona custodia" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PRESTAMO_EMPRESA">Préstamo de la empresa</SelectItem>
+                            <SelectItem value="CLIENTE_PROPIO">Envase propio del cliente</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

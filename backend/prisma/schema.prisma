@@ -282,14 +282,21 @@ model ReservaProformaDetalle {
 }
 
 model DespachoRuta {
-  Id            Int                   @id(map: "PK_DespachoRuta") @default(autoincrement())
-  IdRutaSesion  Int                   @unique(map: "UQ_DespachoRuta_RutaSesion")
-  IdUsuario     Int
-  Observaciones String?               @db.VarChar(255)
-  FechaRegistro DateTime?             @default(now(), map: "DF_DespachoRuta_FechaRegistro") @db.DateTime
-  RutaSesion    RutaSesion            @relation(fields: [IdRutaSesion], references: [Id], onUpdate: NoAction, map: "FK_DespachoRuta_RutaSesion")
-  Usuario       Usuario               @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_DespachoRuta_Usuario")
-  Detalles      DespachoRutaDetalle[]
+  Id                Int                   @id(map: "PK_DespachoRuta") @default(autoincrement())
+  IdRutaSesion      Int
+  IdUsuario         Int
+  Observaciones     String?               @db.VarChar(255)
+  FechaRegistro     DateTime?             @default(now(), map: "DF_DespachoRuta_FechaRegistro") @db.DateTime
+  Anulado           Boolean               @default(false, map: "DF_DespachoRuta_Anulado")
+  IdUsuarioAnulador Int?
+  FechaAnulacion    DateTime?             @db.DateTime
+  MotivoAnulacion   String?               @db.VarChar(255)
+  RutaSesion        RutaSesion            @relation(fields: [IdRutaSesion], references: [Id], onUpdate: NoAction, map: "FK_DespachoRuta_RutaSesion")
+  Usuario           Usuario               @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_DespachoRuta_Usuario")
+  UsuarioAnulador   Usuario?              @relation("DespachoRuta_UsuarioAnulador", fields: [IdUsuarioAnulador], references: [Id], onUpdate: NoAction, map: "FK_DespachoRuta_UsuarioAnulador")
+  Detalles          DespachoRutaDetalle[]
+
+  @@index([IdRutaSesion, Anulado], map: "IX_DespachoRuta_IdRutaSesion_Anulado")
 }
 
 model DespachoRutaDetalle {
@@ -308,14 +315,21 @@ model DespachoRutaDetalle {
 }
 
 model DevolucionRuta {
-  Id            Int                     @id(map: "PK_DevolucionRuta") @default(autoincrement())
-  IdRutaSesion  Int                     @unique(map: "UQ_DevolucionRuta_RutaSesion")
-  IdUsuario     Int
-  Observaciones String?                 @db.VarChar(255)
-  FechaRegistro DateTime?               @default(now(), map: "DF_DevolucionRuta_FechaRegistro") @db.DateTime
-  RutaSesion    RutaSesion              @relation(fields: [IdRutaSesion], references: [Id], onUpdate: NoAction, map: "FK_DevolucionRuta_RutaSesion")
-  Usuario       Usuario                 @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_DevolucionRuta_Usuario")
-  Detalles      DevolucionRutaDetalle[]
+  Id                Int                     @id(map: "PK_DevolucionRuta") @default(autoincrement())
+  IdRutaSesion      Int
+  IdUsuario         Int
+  Observaciones     String?                 @db.VarChar(255)
+  FechaRegistro     DateTime?               @default(now(), map: "DF_DevolucionRuta_FechaRegistro") @db.DateTime
+  Anulado           Boolean                 @default(false, map: "DF_DevolucionRuta_Anulado")
+  IdUsuarioAnulador Int?
+  FechaAnulacion    DateTime?               @db.DateTime
+  MotivoAnulacion   String?                 @db.VarChar(255)
+  RutaSesion        RutaSesion              @relation(fields: [IdRutaSesion], references: [Id], onUpdate: NoAction, map: "FK_DevolucionRuta_RutaSesion")
+  Usuario           Usuario                 @relation(fields: [IdUsuario], references: [Id], onUpdate: NoAction, map: "FK_DevolucionRuta_Usuario")
+  UsuarioAnulador   Usuario?                @relation("DevolucionRuta_UsuarioAnulador", fields: [IdUsuarioAnulador], references: [Id], onDelete: NoAction, onUpdate: NoAction, map: "FK_DevolucionRuta_UsuarioAnulador")
+  Detalles          DevolucionRutaDetalle[]
+
+  @@index([IdRutaSesion, Anulado], map: "IX_DevolucionRuta_RutaSesion_Anulado")
 }
 
 model DevolucionRutaDetalle {
@@ -1021,8 +1035,8 @@ model RutaSesion {
   Vehiculo                                      Vehiculo             @relation(fields: [IdVehiculo], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Vehiculo")
   Usuario_RutaSesion_IdUsuarioVendedorToUsuario Usuario              @relation("RutaSesion_IdUsuarioVendedorToUsuario", fields: [IdUsuarioVendedor], references: [Id], onUpdate: NoAction, map: "FK_RutaSesion_Vendedor")
   Venta                                         Venta[]
-  DespachoRuta                                  DespachoRuta?
-  DevolucionRuta                                DevolucionRuta?
+  DespachoRuta                                  DespachoRuta[]
+  DevolucionRuta                                DevolucionRuta[]
   AjustesRuta                                   AjusteRuta[]
   MovimientosEnvaseInventario                   BitacoraInventario[]
   MovimientosEnvaseCliente                      MovimientoEnvase[]
@@ -1122,7 +1136,9 @@ model Usuario {
   SolicitudPagoIdempotente                                          SolicitudPagoIdempotente[]
   OrdenesProduccion                                                 OrdenProduccion[]
   DespachosRuta                                                     DespachoRuta[]
+  DespachosRutaAnulados                                             DespachoRuta[]             @relation("DespachoRuta_UsuarioAnulador")
   DevolucionesRuta                                                  DevolucionRuta[]
+  DevolucionesRutaAnuladas                                          DevolucionRuta[]           @relation("DevolucionRuta_UsuarioAnulador")
   DevolucionesComercialesAutorizadas                                DevolucionComercial[]      @relation("DevolucionComercial_Autorizador")
   AjustesRuta                                                       AjusteRuta[]
   ReservasProformaCreadas                                           ReservaProforma[]          @relation("ReservaProforma_Creador")
@@ -1224,7 +1240,7 @@ model Venta {
   IdRutaSesion              Int?
   IdTalonario               Int?
   NumeroVenta               Int                        @unique(map: "UQ_Venta_NumeroVenta")
-  ClaveSolicitud            String                     @default(dbgenerated("newid()"), map: "DF_Venta_ClaveSolicitud") @unique(map: "UQ_Venta_ClaveSolicitud") @db.UniqueIdentifier
+  ClaveSolicitud            String                     @unique(map: "UQ_Venta_ClaveSolicitud") @default(dbgenerated("newid()"), map: "DF_Venta_ClaveSolicitud") @db.UniqueIdentifier
   HuellaSolicitud           String?                    @db.Char(64)
   NumeroProForma            Int?
   TipoRegistro              String                     @db.VarChar(20)
@@ -1238,8 +1254,8 @@ model Venta {
   QrFel                     String?                    @db.VarChar(Max)
   RutaPdfFel                String?                    @db.VarChar(255)
   FechaEmisionFel           DateTime?                  @db.DateTime
-  RutaPdfFelAnulacion        String?                    @db.VarChar(255)
-  FechaAnulacionFel          DateTime?                  @db.DateTime
+  RutaPdfFelAnulacion       String?                    @db.VarChar(255)
+  FechaAnulacionFel         DateTime?                  @db.DateTime
   NitFacturado              String?                    @db.VarChar(255)
   NombreClienteFacturado    String?                    @db.VarChar(255)
   DireccionClienteFacturado String?                    @db.VarChar(255)
@@ -1301,7 +1317,7 @@ model MovimientoEnvase {
   IdVenta              Int?
   IdDetalleVentaEnvase Int?
   IdRutaSesion         Int?
-  ClaveSolicitud       String               @default(dbgenerated("newid()"), map: "DF_MovimientoEnvase_ClaveSolicitud") @unique(map: "UQ_MovimientoEnvase_ClaveSolicitud") @db.UniqueIdentifier
+  ClaveSolicitud       String               @unique(map: "UQ_MovimientoEnvase_ClaveSolicitud") @default(dbgenerated("newid()"), map: "DF_MovimientoEnvase_ClaveSolicitud") @db.UniqueIdentifier
   HuellaSolicitud      String?              @db.Char(64)
   IdUsuario            Int
   TipoMovimiento       String               @db.VarChar(20)

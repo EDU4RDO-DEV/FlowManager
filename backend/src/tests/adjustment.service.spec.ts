@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock, registerInventoryMovementMock } = vi.hoisted(() => ({
+const {
+  prismaMock,
+  registerInventoryMovementMock,
+  registerEnvaseBucketChangeMock,
+  getEnvaseBucketQuantityMock,
+} = vi.hoisted(() => ({
   prismaMock: {
     ajusteInventario: {
       findFirst: vi.fn(),
@@ -10,6 +15,7 @@ const { prismaMock, registerInventoryMovementMock } = vi.hoisted(() => ({
       update: vi.fn(),
     },
     bitacoraInventario: {
+      findFirst: vi.fn(),
       findMany: vi.fn(),
     },
     usuario: {
@@ -23,6 +29,8 @@ const { prismaMock, registerInventoryMovementMock } = vi.hoisted(() => ({
     $transaction: vi.fn(),
   },
   registerInventoryMovementMock: vi.fn(),
+  registerEnvaseBucketChangeMock: vi.fn(),
+  getEnvaseBucketQuantityMock: vi.fn(),
 }));
 
 vi.mock('../config/prisma', () => ({
@@ -30,6 +38,8 @@ vi.mock('../config/prisma', () => ({
 }));
 
 vi.mock('../services/inventory-movement.service', () => ({
+  getEnvaseBucketQuantity: getEnvaseBucketQuantityMock,
+  registerEnvaseBucketChange: registerEnvaseBucketChangeMock,
   registerInventoryMovement: registerInventoryMovementMock,
 }));
 
@@ -360,6 +370,150 @@ describe('adjustment.service business rules', () => {
     expect(result).toMatchObject({ numeroAjuste: 13, totalItems: 2 });
     expect(result.items.map((item) => item.numeroAjuste)).toEqual([13, 13]);
     expect(registerInventoryMovementMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('adjusts empty returnable containers without changing sellable product stock', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 4 });
+    prismaMock.ajusteInventario.findFirst.mockResolvedValueOnce({ NumeroAjuste: 12 });
+    prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
+      { Id: 30, Existencia: 20, EsEnvaseRetornable: true },
+    ]);
+    getEnvaseBucketQuantityMock.mockResolvedValueOnce(3);
+    prismaMock.ajusteInventario.create.mockResolvedValueOnce({
+      Id: 350,
+      IdInventarioItem: 30,
+      IdUsuario: 4,
+      TipoAjuste: 'SALIDA',
+      NumeroAjuste: 13,
+      CantidadAjustada: 3,
+      NombreAjuste: 'AJUSTE POR CONTEO',
+      Observacion: 'Conteo de garrafones vacíos',
+      FechaRegistro: new Date('2026-10-20T01:00:00.000Z'),
+      Anulado: false,
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
+      InventarioItem: {
+        Id: 30,
+        Nombre: 'Garrafón retornable',
+        Categoria: 'PRODUCTO_TERMINADO',
+        Existencia: 20,
+        Anulado: false,
+      },
+    });
+
+    await createAdjustment({
+      idUsuario: 4,
+      nombreAjuste: 'AJUSTE POR CONTEO',
+      observacion: 'Conteo de garrafones vacíos',
+      items: [{
+        idInventarioItem: 30,
+        tipoAjuste: 'SALIDA',
+        cantidadAjustada: 3,
+        estadoEnvase: 'VACIO',
+      }],
+    });
+
+    expect(prismaMock.inventarioItem.update).not.toHaveBeenCalled();
+    expect(registerInventoryMovementMock).not.toHaveBeenCalled();
+    expect(getEnvaseBucketQuantityMock).toHaveBeenCalledWith(
+      prismaMock,
+      30,
+      { ubicacion: 'PLANTA', estado: 'VACIO' },
+    );
+    expect(registerEnvaseBucketChangeMock).toHaveBeenCalledWith(
+      prismaMock,
+      expect.objectContaining({
+        bucket: { ubicacion: 'PLANTA', estado: 'VACIO' },
+        cantidad: 3,
+        entrada: false,
+      }),
+    );
+  });
+
+  it('adjusts full returnable stock only when the explicit physical balance is sufficient', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 4 });
+    prismaMock.ajusteInventario.findFirst.mockResolvedValueOnce({ NumeroAjuste: 12 });
+    prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
+      { Id: 30, Existencia: 20, EsEnvaseRetornable: true },
+    ]);
+    getEnvaseBucketQuantityMock.mockResolvedValueOnce(20);
+    prismaMock.ajusteInventario.create.mockResolvedValueOnce({
+      Id: 351,
+      IdInventarioItem: 30,
+      IdUsuario: 4,
+      TipoAjuste: 'SALIDA',
+      NumeroAjuste: 13,
+      CantidadAjustada: 20,
+      NombreAjuste: 'AJUSTE POR CONTEO',
+      Observacion: 'Conteo de garrafones llenos',
+      FechaRegistro: new Date('2026-10-20T01:00:00.000Z'),
+      Anulado: false,
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
+      InventarioItem: {
+        Id: 30,
+        Nombre: 'Garrafón retornable',
+        Categoria: 'PRODUCTO_TERMINADO',
+        Existencia: 20,
+        Anulado: false,
+      },
+    });
+
+    await createAdjustment({
+      idUsuario: 4,
+      nombreAjuste: 'AJUSTE POR CONTEO',
+      observacion: 'Conteo de garrafones llenos',
+      items: [{
+        idInventarioItem: 30,
+        tipoAjuste: 'SALIDA',
+        cantidadAjustada: 20,
+        estadoEnvase: 'LLENO',
+      }],
+    });
+
+    expect(getEnvaseBucketQuantityMock).toHaveBeenCalledWith(
+      prismaMock,
+      30,
+      { ubicacion: 'PLANTA', estado: 'LLENO' },
+    );
+    expect(prismaMock.inventarioItem.update).toHaveBeenCalledWith({
+      where: { Id: 30 },
+      data: { Existencia: 0 },
+    });
+    expect(registerInventoryMovementMock).toHaveBeenCalledOnce();
+    expect(registerEnvaseBucketChangeMock).toHaveBeenCalledWith(
+      prismaMock,
+      expect.objectContaining({
+        bucket: { ubicacion: 'PLANTA', estado: 'LLENO' },
+        cantidad: 20,
+        entrada: false,
+      }),
+    );
+  });
+
+  it('blocks an outgoing returnable adjustment while the stock is unclassified', async () => {
+    prismaMock.usuario.findFirst.mockResolvedValueOnce({ Id: 4 });
+    prismaMock.ajusteInventario.findFirst.mockResolvedValueOnce({ NumeroAjuste: 12 });
+    prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
+      { Id: 30, Existencia: 200, EsEnvaseRetornable: true },
+    ]);
+    getEnvaseBucketQuantityMock.mockResolvedValueOnce(0);
+
+    await expect(createAdjustment({
+      idUsuario: 4,
+      nombreAjuste: 'AJUSTE POR CONTEO',
+      observacion: 'Salida de llenos sin clasificación',
+      items: [{
+        idInventarioItem: 30,
+        tipoAjuste: 'SALIDA',
+        cantidadAjustada: 150,
+        estadoEnvase: 'LLENO',
+      }],
+    })).rejects.toThrow('Clasifica primero el saldo pendiente');
+
+    expect(prismaMock.ajusteInventario.create).not.toHaveBeenCalled();
+    expect(prismaMock.inventarioItem.update).not.toHaveBeenCalled();
+    expect(registerEnvaseBucketChangeMock).not.toHaveBeenCalled();
   });
 
   it('deleteAdjustment validates auditing user before stock operations', async () => {

@@ -3,6 +3,8 @@ import { Request, Response } from 'express';
 import { ZodError } from 'zod';
 
 import {
+  cancelRouteDispatch,
+  cancelRouteReturn,
   createRouteAdjustment,
   createRouteDispatch,
   createRouteReturn,
@@ -12,6 +14,8 @@ import {
 import { listEnvasePlantBucketBalances } from '../services/envase.service';
 import { listProducts } from '../services/product.service';
 import {
+  cancelRouteDispatchSchema,
+  cancelRouteReturnSchema,
   createRouteAdjustmentSchema,
   createRouteDispatchSchema,
   createRouteReturnSchema,
@@ -51,6 +55,8 @@ function handleError(error: unknown, res: Response) {
   if (
     message.includes('debe estar EN_CURSO') ||
     message.includes('ya tiene') ||
+    message.includes('anular') ||
+    message.includes('restaurar el estado del envase') ||
     message.includes('No se puede despachar') ||
     message.includes('Stock insuficiente') ||
     message.includes('Stock físico verificado insuficiente') ||
@@ -100,13 +106,16 @@ export async function listDispatchProductsController(req: Request, res: Response
         const vacio = states?.get('VACIO') ?? 0;
         const lleno = states?.get('LLENO') ?? 0;
         const pending = states?.get('PENDIENTE_CONTEO') ?? 0;
-        const difference = Number((product.existencia - vacio - lleno - pending).toFixed(2));
+        const difference = Number((product.existencia - lleno).toFixed(2));
+        const unclassifiedCatalogBalance = Number(
+          (product.existencia - vacio - lleno - pending).toFixed(2),
+        );
         return {
           ...product,
           stockEnvasePlanta: {
             vacio,
             lleno,
-            pendienteClasificacion: pending + Math.max(0, difference),
+            pendienteClasificacion: pending + Math.max(0, unclassifiedCatalogBalance),
             diferenciaCatalogo: difference,
           },
         };
@@ -139,6 +148,40 @@ export async function createRouteDispatchController(req: Request, res: Response)
     const input = createRouteDispatchSchema.parse(req.body);
     const data = await createRouteDispatch(id, idUsuario, input);
     return res.status(201).json({ ok: true, data, message: 'Despacho de ruta confirmado' });
+  } catch (error) {
+    return handleError(error, res);
+  }
+}
+
+export async function cancelRouteDispatchController(req: Request, res: Response) {
+  try {
+    const idUsuario = req.auth?.userId;
+    if (!idUsuario) return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
+    const { id } = routeInventoryIdParamsSchema.parse(req.params);
+    const input = cancelRouteDispatchSchema.parse(req.body);
+    const data = await cancelRouteDispatch(id, idUsuario, input.motivo);
+    return res.status(200).json({
+      ok: true,
+      data,
+      message: 'Despacho anulado con reversión auditada; puede registrarse nuevamente',
+    });
+  } catch (error) {
+    return handleError(error, res);
+  }
+}
+
+export async function cancelRouteReturnController(req: Request, res: Response) {
+  try {
+    const idUsuario = req.auth?.userId;
+    if (!idUsuario) return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
+    const { id } = routeInventoryIdParamsSchema.parse(req.params);
+    const input = cancelRouteReturnSchema.parse(req.body);
+    const data = await cancelRouteReturn(id, idUsuario, input.motivo);
+    return res.status(200).json({
+      ok: true,
+      data,
+      message: 'Devolución anulada con trazabilidad; puede registrarse nuevamente',
+    });
   } catch (error) {
     return handleError(error, res);
   }

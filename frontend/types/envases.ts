@@ -69,6 +69,22 @@ export interface EnvasePhysicalBalanceDto {
   esSaldoLegadoPendiente?: boolean;
 }
 
+export interface ReturnableInventoryBalancesDto {
+  items: Array<{
+    idInventarioItem: number;
+    plantFull: number;
+    plantEmpty: number;
+    routeFull: number;
+    routeEmpty: number;
+    routeDamaged: number;
+    customers: number;
+    damaged: number;
+    pending: number;
+  }>;
+}
+
+export type ReturnableInventoryBalancesResponse = ApiResponse<ReturnableInventoryBalancesDto>;
+
 export type EnvasesListResponse<T> = ApiResponse<T[]>;
 
 export type RegistrarPrestamoPayload = {
@@ -91,6 +107,7 @@ export type ReconcileEnvasePhysicalStockPayload = {
   cantidadVacia: number;
   cantidadLlena: number;
   cantidadDanada: number;
+  observaciones: string;
 };
 
 export type EnvasePhysicalCountPayload = {

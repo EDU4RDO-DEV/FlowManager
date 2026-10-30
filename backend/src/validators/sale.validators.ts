@@ -21,6 +21,7 @@ const saleDetailItemSchema = z.object({
   precioUnitario: finitePositiveNumber.optional(),
   esBonificacion: z.boolean().optional().default(false),
   estadoEnvase: z.enum(['VACIO', 'LLENO']).optional(),
+  modoEnvase: z.enum(['CLIENTE_PROPIO', 'PRESTAMO_EMPRESA']).optional(),
 });
 
 const salePaymentSchema = z

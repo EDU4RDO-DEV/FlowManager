@@ -236,6 +236,7 @@ export interface CreateSaleDetailPayload {
   precioUnitario?: number;
   esBonificacion?: boolean;
   estadoEnvase?: "VACIO" | "LLENO";
+  modoEnvase?: "CLIENTE_PROPIO" | "PRESTAMO_EMPRESA";
 }
 
 export interface SalePaymentPayload {

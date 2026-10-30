@@ -6,6 +6,7 @@ import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
 import { anulateFelInvoice, emitFelInvoice } from './fel.service';
 import { anulateEnvaseMovementInTransaction } from './envase.service';
 import {
+  ensurePlantEnvaseBucketQuantity,
   registerEnvaseBucketChange,
   registerInventoryMovement,
 } from './inventory-movement.service';
@@ -36,6 +37,7 @@ type CreateSaleDetailInput = {
   precioUnitario?: number;
   esBonificacion?: boolean;
   estadoEnvase?: 'VACIO' | 'LLENO';
+  modoEnvase?: 'CLIENTE_PROPIO' | 'PRESTAMO_EMPRESA';
 };
 
 type SalePaymentInput = {
@@ -1126,18 +1128,35 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
           if (!Number.isInteger(detail.cantidad)) {
             throw new Error(`La cantidad de envases vendidos para ${item.nombre} debe ser entera`);
           }
+          if (input.tipoRegistro === 'VENTA' && !detail.modoEnvase) {
+            throw new Error(`Indica si el envase de ${item.nombre} es propio del cliente o préstamo de la empresa`);
+          }
+          if (detail.modoEnvase && input.tipoRegistro !== 'VENTA') {
+            throw new Error(`La custodia del envase solo se define al confirmar la venta de ${item.nombre}`);
+          }
         } else if (detail.estadoEnvase) {
           throw new Error(`El artículo ${item.nombre} no es un envase retornable`);
+        } else if (detail.modoEnvase) {
+          throw new Error(`El artículo ${item.nombre} no tiene custodia de envase retornable`);
         }
       }
 
       const requiredByItem = new Map<number, number>();
+      const requiredProductStockByItem = new Map<number, number>();
       for (const detail of mergedDetails) {
         const current = requiredByItem.get(detail.idInventarioItem) ?? 0;
         requiredByItem.set(detail.idInventarioItem, Number((current + detail.cantidad).toFixed(2)));
+        const product = itemCache.get(detail.idInventarioItem);
+        if (!product || !product.esEnvaseRetornable || detail.estadoEnvase === 'LLENO') {
+          const required = requiredProductStockByItem.get(detail.idInventarioItem) ?? 0;
+          requiredProductStockByItem.set(
+            detail.idInventarioItem,
+            Number((required + detail.cantidad).toFixed(2)),
+          );
+        }
       }
 
-      for (const [idItem, requiredQty] of requiredByItem) {
+      for (const [idItem, requiredQty] of requiredProductStockByItem) {
         const item = itemCache.get(idItem);
         if (!item) {
           throw new Error(`InventarioItem ${idItem} no existe o está anulado`);
@@ -1184,6 +1203,7 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
         precioUnitario: number;
         esBonificacion: boolean;
         estadoEnvase?: 'VACIO' | 'LLENO';
+        modoEnvase?: 'CLIENTE_PROPIO' | 'PRESTAMO_EMPRESA';
       }> = [];
 
       for (const detail of mergedDetails) {
@@ -1204,6 +1224,7 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
           precioUnitario: Number(resolvedPrice.toFixed(2)),
           esBonificacion: Boolean(detail.esBonificacion),
           estadoEnvase: detail.estadoEnvase,
+          modoEnvase: detail.modoEnvase,
         });
       }
 
@@ -1283,7 +1304,23 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
           throw new Error(`InventarioItem ${detail.idInventarioItem} no existe o está anulado`);
         }
 
-        if (!(input.idRutaSesion && (input.tipoRegistro === 'VENTA' || input.tipoRegistro === 'PROFORMA'))) {
+        if (item.esEnvaseRetornable && !input.idRutaSesion) {
+          await ensurePlantEnvaseBucketQuantity(tx, {
+            idInventarioItem: item.id,
+            idUsuario: input.idUsuario,
+            estado: detail.estadoEnvase!,
+            cantidad: detail.cantidad,
+            nombre: `Venta #${createdSale.NumeroVenta} - ${detail.nombre}`,
+            tipoDocumento: 'VEN',
+            documento: createdSale.Id.toString(),
+          });
+        }
+
+        const changesSellableStock = !item.esEnvaseRetornable || detail.estadoEnvase === 'LLENO';
+        if (
+          changesSellableStock &&
+          !(input.idRutaSesion && (input.tipoRegistro === 'VENTA' || input.tipoRegistro === 'PROFORMA'))
+        ) {
           const existenciaAnterior = item.existencia;
           const nuevaExistencia = Number((existenciaAnterior - detail.cantidad).toFixed(2));
 
@@ -1309,7 +1346,63 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
           item.existencia = nuevaExistencia;
         }
 
-        if (item.esEnvaseRetornable) {
+        if (item.esEnvaseRetornable && !isRouteProforma) {
+          let idMovimientoEnvase: number | undefined;
+          if (input.tipoRegistro === 'VENTA') {
+            const detailEnvase = await tx.detalleVentaEnvase.create({
+              data: {
+                IdDetalleVenta: createdDetail.Id,
+                IdInventarioItemEnvase: item.id,
+                Modo: detail.modoEnvase!,
+                Cantidad: detail.cantidad,
+              },
+              select: { Id: true },
+            });
+
+            if (detail.modoEnvase === 'PRESTAMO_EMPRESA') {
+              const saldoExistente = await tx.envaseClienteSaldo.findFirst({
+                where: { IdCliente: input.idCliente, IdInventarioItem: item.id },
+                select: { Id: true, CantidadPrestada: true },
+              });
+              const saldoAnterior = saldoExistente?.CantidadPrestada ?? 0;
+              const saldoNuevo = Number((saldoAnterior + detail.cantidad).toFixed(2));
+              if (saldoExistente) {
+                await tx.envaseClienteSaldo.update({
+                  where: { Id: saldoExistente.Id },
+                  data: { CantidadPrestada: saldoNuevo, FechaActualizacion: fechaOperacion },
+                });
+              } else {
+                await tx.envaseClienteSaldo.create({
+                  data: {
+                    IdCliente: input.idCliente,
+                    IdInventarioItem: item.id,
+                    CantidadPrestada: saldoNuevo,
+                  },
+                });
+              }
+              const movement = await tx.movimientoEnvase.create({
+                data: {
+                  IdInventarioItem: item.id,
+                  IdCliente: input.idCliente,
+                  IdVenta: createdSale.Id,
+                  IdDetalleVentaEnvase: detailEnvase.Id,
+                  IdRutaSesion: input.idRutaSesion,
+                  IdUsuario: input.idUsuario,
+                  TipoMovimiento: 'PRESTAMO',
+                  EstadoEnvase: detail.estadoEnvase,
+                  UbicacionEnvase: input.idRutaSesion ? 'RUTA' : 'PLANTA',
+                  Cantidad: detail.cantidad,
+                  SaldoAnterior: saldoAnterior,
+                  SaldoNuevo: saldoNuevo,
+                  Observaciones: `Préstamo generado desde venta #${createdSale.NumeroVenta}`,
+                  Anulado: false,
+                },
+                select: { Id: true },
+              });
+              idMovimientoEnvase = movement.Id;
+            }
+          }
+
           const sourceBucket = {
             ubicacion: input.idRutaSesion ? 'RUTA' as const : 'PLANTA' as const,
             estado: detail.estadoEnvase!,
@@ -1326,6 +1419,7 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
             documento: createdSale.Id.toString(),
             idRutaSesion: input.idRutaSesion,
             idDetalleVenta: createdDetail.Id,
+            idMovimientoEnvase,
           });
         }
       }
@@ -1770,8 +1864,8 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
   }
 
   if (sale.IdRutaSesion && sale.TipoRegistro === 'VENTA') {
-    const routeDispatch = await prisma.despachoRuta.findUnique({
-      where: { IdRutaSesion: sale.IdRutaSesion },
+    const routeDispatch = await prisma.despachoRuta.findFirst({
+      where: { IdRutaSesion: sale.IdRutaSesion, Anulado: false },
       select: { Id: true },
     });
     if (routeDispatch) {
@@ -1779,8 +1873,8 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
         where: { Id: sale.IdRutaSesion },
         select: { Estado: true },
       });
-      const routeReturn = await prisma.devolucionRuta.findUnique({
-        where: { IdRutaSesion: sale.IdRutaSesion },
+      const routeReturn = await prisma.devolucionRuta.findFirst({
+        where: { IdRutaSesion: sale.IdRutaSesion, Anulado: false },
         select: { Id: true },
       });
       if (route?.Estado === 'CERRADA' || routeReturn) {
@@ -1907,8 +2001,8 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
 
     const routeDispatch =
       saleToAnulate.IdRutaSesion && saleToAnulate.TipoRegistro === 'VENTA'
-        ? await tx.despachoRuta.findUnique({
-            where: { IdRutaSesion: saleToAnulate.IdRutaSesion },
+        ? await tx.despachoRuta.findFirst({
+            where: { IdRutaSesion: saleToAnulate.IdRutaSesion, Anulado: false },
             select: { Id: true },
           })
         : null;
@@ -1922,8 +2016,8 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
         where: { Id: saleToAnulate.IdRutaSesion! },
         select: { Estado: true },
       });
-      const routeReturn = await tx.devolucionRuta.findUnique({
-        where: { IdRutaSesion: saleToAnulate.IdRutaSesion! },
+      const routeReturn = await tx.devolucionRuta.findFirst({
+        where: { IdRutaSesion: saleToAnulate.IdRutaSesion!, Anulado: false },
         select: { Id: true },
       });
       if (route?.Estado === 'CERRADA' || routeReturn) {
@@ -2031,7 +2125,10 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
         });
       }
 
-      if (saleWasDeductedFromRoute) {
+      if (
+        saleWasDeductedFromRoute ||
+        (item.EsEnvaseRetornable && detail.EstadoEnvase !== 'LLENO')
+      ) {
         continue;
       }
 

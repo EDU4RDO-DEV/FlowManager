@@ -1000,7 +1000,7 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
       throw new Error('La sesión está cerrada y no admite modificaciones');
     }
 
-    const hasOperationalRecords = Boolean(existing.DespachoRuta || existing.Venta.length);
+    const hasOperationalRecords = existing.DespachoRuta.length > 0 || existing.Venta.length > 0;
     if (
       hasOperationalRecords &&
       (input.idRuta !== undefined ||
@@ -1110,7 +1110,7 @@ export async function deleteRutaSesion(id: number, idUsuarioAnulador: number) {
     if (!existing) {
       throw new Error('RutaSesion no existe');
     }
-    if (existing.DespachoRuta || existing.Venta.length) {
+    if (existing.DespachoRuta.length > 0 || existing.Venta.length > 0) {
       throw new Error('No se puede anular una sesión con operaciones de inventario o ventas');
     }
 
