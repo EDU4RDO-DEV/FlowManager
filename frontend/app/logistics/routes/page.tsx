@@ -43,8 +43,11 @@ import {
   restoreRutaSesion,
   updateRuta,
   updateRutaSesion,
+  closeJornada,
+  createJornada,
+  listJornadas,
 } from "@/services/logistics.service";
-import type { RutaDto, RutaSesionDto, RutaSesionEstado, VehiculoDto } from "@/types/logistics";
+import type { JornadaDto, RutaDto, RutaSesionDto, RutaSesionEstado, VehiculoDto } from "@/types/logistics";
 
 const SESSION_STATES: RutaSesionEstado[] = ["PROGRAMADA", "EN_CURSO", "CERRADA"];
 
@@ -58,10 +61,17 @@ type SessionFormState = {
   idVehiculo: string;
   idUsuarioChofer: string;
   idUsuarioVendedor: string;
+  idJornada: string;
   fechaSesion: string;
   kmInicial: string;
   kmFinal: string;
   estado: RutaSesionEstado;
+};
+
+type JornadaFormState = {
+  fecha: string;
+  idUsuarioResponsable: string;
+  observaciones: string;
 };
 
 const EMPTY_ROUTE_FORM: RouteFormState = {
@@ -74,10 +84,17 @@ const EMPTY_SESSION_FORM: SessionFormState = {
   idVehiculo: "",
   idUsuarioChofer: "",
   idUsuarioVendedor: "",
+  idJornada: "",
   fechaSesion: "",
   kmInicial: "",
   kmFinal: "",
   estado: "PROGRAMADA",
+};
+
+const EMPTY_JORNADA_FORM: JornadaFormState = {
+  fecha: "",
+  idUsuarioResponsable: "",
+  observaciones: "",
 };
 
 function formatDate(value: string) {
@@ -98,31 +115,37 @@ export default function LogisticsRoutesPage() {
   const [trashSessions, setTrashSessions] = useState<RutaSesionDto[]>([]);
   const [vehicles, setVehicles] = useState<VehiculoDto[]>([]);
   const [employees, setEmployees] = useState<Array<{ userId: number; nombre: string }>>([]);
+  const [jornadas, setJornadas] = useState<JornadaDto[]>([]);
   const [routeForm, setRouteForm] = useState<RouteFormState>(EMPTY_ROUTE_FORM);
   const [sessionForm, setSessionForm] = useState<SessionFormState>(EMPTY_SESSION_FORM);
+  const [jornadaForm, setJornadaForm] = useState<JornadaFormState>(EMPTY_JORNADA_FORM);
   const [editingRouteId, setEditingRouteId] = useState<number | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSavingJornada, setIsSavingJornada] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [routeDeleteCandidate, setRouteDeleteCandidate] = useState<RutaDto | null>(null);
   const [sessionDeleteCandidate, setSessionDeleteCandidate] = useState<RutaSesionDto | null>(null);
+  const [jornadaCloseCandidate, setJornadaCloseCandidate] = useState<JornadaDto | null>(null);
 
   async function loadData() {
     setIsLoading(true);
     try {
-      const [activeRoutes, removedRoutes, activeSessions, removedSessions, availableVehicles, employeeList] = await Promise.all([
+      const [activeRoutes, removedRoutes, activeSessions, removedSessions, availableVehicles, employeeList, loadedJornadas] = await Promise.all([
         listRutas({ anulado: false }),
         listRutas({ anulado: true }),
         listRutaSesiones({ anulado: false }),
         listRutaSesiones({ anulado: true }),
         listVehiculos({ anulado: false }),
         listEmployees(),
+        listJornadas({ anulado: false }),
       ]);
 
       setRoutes(activeRoutes);
       setTrashRoutes(removedRoutes);
       setSessions(activeSessions);
       setTrashSessions(removedSessions);
+      setJornadas(loadedJornadas);
       setVehicles(availableVehicles);
       setEmployees(getLogisticsEmployeeOptions(employeeList));
     } catch (error) {
@@ -170,11 +193,50 @@ export default function LogisticsRoutesPage() {
       idVehiculo: String(item.idVehiculo),
       idUsuarioChofer: String(item.idUsuarioChofer),
       idUsuarioVendedor: String(item.idUsuarioVendedor),
+      idJornada: item.idJornada === null ? "" : String(item.idJornada),
       fechaSesion: item.fechaSesion.slice(0, 10),
       kmInicial: item.kmInicial === null ? "" : String(item.kmInicial),
       kmFinal: item.kmFinal === null ? "" : String(item.kmFinal),
       estado: item.estado,
     });
+  }
+
+  function resetJornadaForm() {
+    setJornadaForm(EMPTY_JORNADA_FORM);
+  }
+
+  async function saveJornada() {
+    if (!jornadaForm.fecha) {
+      toast.error("Selecciona la fecha de la jornada");
+      return;
+    }
+    setIsSavingJornada(true);
+    try {
+      const created = await createJornada({
+        fecha: jornadaForm.fecha,
+        idUsuarioResponsable: jornadaForm.idUsuarioResponsable ? Number(jornadaForm.idUsuarioResponsable) : undefined,
+        observaciones: jornadaForm.observaciones || undefined,
+      });
+      setJornadas((prev) => [created, ...prev]);
+      toast.success("Jornada creada correctamente");
+      resetJornadaForm();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo crear la jornada"));
+    } finally {
+      setIsSavingJornada(false);
+    }
+  }
+
+  async function confirmCloseJornada() {
+    if (!jornadaCloseCandidate) return;
+    try {
+      const closed = await closeJornada(jornadaCloseCandidate.id);
+      setJornadas((prev) => prev.map((item) => (item.id === closed.id ? closed : item)));
+      toast.success("Jornada cerrada correctamente");
+      setJornadaCloseCandidate(null);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo cerrar la jornada"));
+    }
   }
 
   async function saveRoute() {
@@ -209,6 +271,7 @@ export default function LogisticsRoutesPage() {
           idVehiculo: Number(sessionForm.idVehiculo),
           idUsuarioChofer: Number(sessionForm.idUsuarioChofer),
           idUsuarioVendedor: Number(sessionForm.idUsuarioVendedor),
+          idJornada: sessionForm.idJornada ? Number(sessionForm.idJornada) : null,
           fechaSesion: sessionForm.fechaSesion,
           kmInicial: sessionForm.kmInicial ? Number(sessionForm.kmInicial) : null,
           kmFinal: sessionForm.kmFinal ? Number(sessionForm.kmFinal) : null,
@@ -224,6 +287,7 @@ export default function LogisticsRoutesPage() {
           idVehiculo: Number(sessionForm.idVehiculo),
           idUsuarioChofer: Number(sessionForm.idUsuarioChofer),
           idUsuarioVendedor: Number(sessionForm.idUsuarioVendedor),
+          idJornada: sessionForm.idJornada ? Number(sessionForm.idJornada) : undefined,
           fechaSesion: sessionForm.fechaSesion,
           kmInicial: sessionForm.kmInicial ? Number(sessionForm.kmInicial) : undefined,
           kmFinal: sessionForm.kmFinal ? Number(sessionForm.kmFinal) : undefined,
@@ -320,6 +384,7 @@ export default function LogisticsRoutesPage() {
                 <TabsTrigger value="vista-general">Vista general</TabsTrigger>
                 <TabsTrigger value="rutas">Rutas ({routes.length})</TabsTrigger>
                 <TabsTrigger value="sesiones">Sesiones ({sessions.length})</TabsTrigger>
+                <TabsTrigger value="jornadas">Jornadas ({jornadas.length})</TabsTrigger>
               </TabsList>
 
             <TabsContent value="vista-general" className="space-y-4">
@@ -599,6 +664,28 @@ export default function LogisticsRoutesPage() {
                         ))}
                       </select>
                     </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="session-jornada">Jornada (opcional)</Label>
+                      <select
+                        id="session-jornada"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={sessionForm.idJornada}
+                        onChange={(event) => setSessionForm((prev) => ({ ...prev, idJornada: event.target.value }))}
+                      >
+                        <option value="">Sin jornada</option>
+                        {jornadas
+                          .filter((item) => item.estado === "ABIERTA")
+                          .map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {formatDate(item.fecha)} ({item.rutaSesiones.length} sesiones)
+                            </option>
+                          ))}
+                      </select>
+                      <p className="text-xs text-muted-foreground">
+                        Agrupa esta sesión con otros vehículos de la misma jornada operativa.
+                      </p>
+                    </div>
                   </div>
 
                   <div className="flex flex-wrap gap-2">
@@ -712,6 +799,132 @@ export default function LogisticsRoutesPage() {
                 </CardContent>
               </Card>
               </TabsContent>
+
+              <TabsContent value="jornadas">
+                <Card className="rounded-xl">
+                  <CardContent className="space-y-4 p-4">
+                    <div>
+                      <h2 className="text-lg font-semibold">Jornadas de distribución</h2>
+                      <p className="text-sm text-muted-foreground">
+                        Agrupa varias sesiones de ruta (vehículos) de un mismo día operativo. No modifica sesiones
+                        históricas; solo las sesiones nuevas o editadas pueden vincularse.
+                      </p>
+                    </div>
+                    {isLoading && !hasLoadedOnce ? <LogisticsTableSkeleton rows={3} /> : null}
+
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="jornada-fecha">Fecha</Label>
+                        <Input
+                          id="jornada-fecha"
+                          type="date"
+                          value={jornadaForm.fecha}
+                          onChange={(event) => setJornadaForm((prev) => ({ ...prev, fecha: event.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="jornada-responsable">Responsable (opcional)</Label>
+                        <select
+                          id="jornada-responsable"
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          value={jornadaForm.idUsuarioResponsable}
+                          onChange={(event) =>
+                            setJornadaForm((prev) => ({ ...prev, idUsuarioResponsable: event.target.value }))
+                          }
+                        >
+                          <option value="">Sin asignar</option>
+                          {employees.map((item) => (
+                            <option key={item.userId} value={item.userId}>
+                              {item.nombre}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="jornada-observaciones">Observaciones (opcional)</Label>
+                        <Input
+                          id="jornada-observaciones"
+                          value={jornadaForm.observaciones}
+                          maxLength={255}
+                          onChange={(event) =>
+                            setJornadaForm((prev) => ({ ...prev, observaciones: event.target.value }))
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <Button
+                      onClick={() => void saveJornada()}
+                      disabled={!canCreate || isSavingJornada || !jornadaForm.fecha}
+                      className="bg-sky-600 text-white hover:bg-sky-700"
+                    >
+                      {isSavingJornada ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                      Crear jornada
+                    </Button>
+                    {!canCreate ? (
+                      <p className="text-xs text-muted-foreground">Tu rol no tiene permiso para crear jornadas.</p>
+                    ) : null}
+
+                    {jornadas.length === 0 ? (
+                      <LogisticsEmptyState
+                        title="Sin jornadas registradas"
+                        description="Crea la primera jornada para agrupar los vehículos que operan el mismo día."
+                        actionLabel="Crear jornada"
+                        onAction={() => document.getElementById("jornada-fecha")?.focus()}
+                      />
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Fecha</TableHead>
+                            <TableHead>Estado</TableHead>
+                            <TableHead>Sesiones vinculadas</TableHead>
+                            <TableHead>Responsable</TableHead>
+                            <TableHead className="text-right">Acciones</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {jornadas.map((item) => (
+                            <TableRow key={item.id}>
+                              <TableCell className="font-medium">{formatDate(item.fecha)}</TableCell>
+                              <TableCell>{item.estado}</TableCell>
+                              <TableCell>
+                                {item.rutaSesiones.length === 0 ? (
+                                  <span className="text-xs text-muted-foreground">Sin sesiones vinculadas</span>
+                                ) : (
+                                  <ul className="space-y-0.5 text-xs text-muted-foreground">
+                                    {item.rutaSesiones.map((sesion) => {
+                                      const vehiculo = vehicles.find((vehicle) => vehicle.id === sesion.idVehiculo);
+                                      return (
+                                        <li key={sesion.id}>
+                                          {vehiculo?.placa ?? `Vehículo ${sesion.idVehiculo}`} · {sesion.estado}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {employees.find((emp) => emp.userId === item.idUsuarioResponsable)?.nombre ?? "-"}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={!canUpdate || item.estado !== "ABIERTA"}
+                                  onClick={() => setJornadaCloseCandidate(item)}
+                                >
+                                  Cerrar jornada
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
             </div>
           </Tabs>
         </div>
@@ -743,6 +956,21 @@ export default function LogisticsRoutesPage() {
         title="Anular sesión de ruta"
         description="Se retirará la sesión del flujo operativo y liberará disponibilidad según corresponda."
         confirmLabel="Anular"
+        cancelLabel="Cancelar"
+        loading={false}
+      />
+
+      <ConfirmActionDialog
+        open={Boolean(jornadaCloseCandidate)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setJornadaCloseCandidate(null);
+          }
+        }}
+        onConfirm={confirmCloseJornada}
+        title="Cerrar jornada"
+        description="Solo puede cerrarse si todas sus sesiones vinculadas ya están CERRADA. No afecta sesiones históricas."
+        confirmLabel="Cerrar jornada"
         cancelLabel="Cancelar"
         loading={false}
       />

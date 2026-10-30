@@ -27,19 +27,51 @@ import {
   closeRouteSession,
   cancelRouteDispatch,
   cancelRouteReturn,
+  cancelVehicleTransfer,
+  confirmVehicleTransfer,
   createRouteAdjustment,
   createRouteDispatch,
   createRouteReturn,
+  createVehicleHandoff,
+  createVehicleTransfer,
   getRouteSettlement,
   listDispatchProducts,
   listDispatchRutaSesiones,
+  listRutas,
+  listVehicleTransfers,
+  listVehiculos,
+  rejectVehicleTransfer,
 } from "@/services/logistics.service";
-import type { DispatchProductDto, RouteInventoryDto, RutaSesionDto } from "@/types/logistics";
+import { getLogisticsEmployeeOptions } from "@/lib/logistics-employee-options";
+import { listEmployees } from "@/services/employees.service";
+import type {
+  DispatchProductDto,
+  RouteInventoryDto,
+  RutaDto,
+  RutaSesionDto,
+  TransferenciaVehiculoDto,
+  TransferDetailLineInput,
+  VehicleHandoffResultDto,
+  VehiculoDto,
+} from "@/types/logistics";
 
 type DispatchDraft = {
   idInventarioItem: number;
   cantidad: string;
   estadoEnvase: "VACIO" | "LLENO" | "";
+};
+type TransferDraft = {
+  idInventarioItem: number;
+  cantidad: string;
+  estadoEnvase: "VACIO" | "LLENO" | "";
+};
+type HandoffFormState = {
+  idRuta: string;
+  idVehiculo: string;
+  idUsuarioChofer: string;
+  idUsuarioVendedor: string;
+  kmInicialEntrante: string;
+  motivo: string;
 };
 type ReturnDraft = {
   cantidadRecibida: string;
@@ -98,6 +130,31 @@ export default function RouteOperationsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Fase 2 - Distribución: transferencias parciales y relevo con custodia compartida.
+  const [transfers, setTransfers] = useState<TransferenciaVehiculoDto[]>([]);
+  const [transferDestinoId, setTransferDestinoId] = useState("");
+  const [transferDraft, setTransferDraft] = useState<TransferDraft[]>([]);
+  const [transferProductId, setTransferProductId] = useState("");
+  const [transferMotivo, setTransferMotivo] = useState("");
+  const [transferRejectReason, setTransferRejectReason] = useState<Record<number, string>>({});
+  const [transferCancelReason, setTransferCancelReason] = useState<Record<number, string>>({});
+  const [isSavingTransfer, setIsSavingTransfer] = useState(false);
+  const [routesCatalog, setRoutesCatalog] = useState<RutaDto[]>([]);
+  const [vehiclesCatalog, setVehiclesCatalog] = useState<VehiculoDto[]>([]);
+  const [employeeOptions, setEmployeeOptions] = useState<Array<{ userId: number; nombre: string }>>([]);
+  const [handoffForm, setHandoffForm] = useState<HandoffFormState>({
+    idRuta: "",
+    idVehiculo: "",
+    idUsuarioChofer: "",
+    idUsuarioVendedor: "",
+    kmInicialEntrante: "",
+    motivo: "",
+  });
+  const [handoffDraft, setHandoffDraft] = useState<TransferDraft[]>([]);
+  const [handoffProductId, setHandoffProductId] = useState("");
+  const [isSavingHandoff, setIsSavingHandoff] = useState(false);
+  const [handoffResult, setHandoffResult] = useState<VehicleHandoffResultDto | null>(null);
+
   const selectedSession = useMemo(
     () => sessions.find((session) => String(session.id) === selectedSessionId) ?? null,
     [sessions, selectedSessionId],
@@ -121,12 +178,18 @@ export default function RouteOperationsPage() {
 
   const loadSessionsAndProducts = useCallback(async () => {
     try {
-      const [loadedSessions, productResult] = await Promise.all([
+      const [loadedSessions, productResult, loadedRoutes, loadedVehicles, employeeList] = await Promise.all([
         listDispatchRutaSesiones({ anulado: false }),
         loadAllDispatchProducts(),
+        listRutas({ anulado: false }),
+        listVehiculos({ anulado: false }),
+        listEmployees(),
       ]);
       setSessions(loadedSessions);
       setProducts(productResult);
+      setRoutesCatalog(loadedRoutes);
+      setVehiclesCatalog(loadedVehicles);
+      setEmployeeOptions(getLogisticsEmployeeOptions(employeeList));
       setSelectedSessionId((previous) =>
         previous && loadedSessions.some((session) => String(session.id) === previous)
           ? previous
@@ -136,6 +199,16 @@ export default function RouteOperationsPage() {
       toast.error(getApiErrorMessage(error, "No se pudo cargar la información de rutas"));
     } finally {
       setIsLoading(false);
+    }
+  }, []);
+
+  const loadTransfers = useCallback(async (idRutaSesion: number) => {
+    try {
+      const loaded = await listVehicleTransfers({ idRutaSesion });
+      setTransfers(loaded);
+    } catch (error) {
+      setTransfers([]);
+      toast.error(getApiErrorMessage(error, "No se pudo consultar las transferencias de la sesión"));
     }
   }, []);
 
@@ -163,6 +236,12 @@ export default function RouteOperationsPage() {
     return () => window.clearTimeout(timer);
   }, [selectedSessionId, loadInventory]);
 
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    const timer = window.setTimeout(() => void loadTransfers(Number(selectedSessionId)), 0);
+    return () => window.clearTimeout(timer);
+  }, [selectedSessionId, loadTransfers]);
+
   const productById = useMemo(
     () => new Map(products.map((product) => [product.id, product])),
     [products],
@@ -177,15 +256,43 @@ export default function RouteOperationsPage() {
     });
   }, [dispatchDraft, dispatchSearch, products]);
 
+  const transferDestinoOptions = useMemo(
+    () => sessions.filter((session) => session.estado === "EN_CURSO" && session.id !== selectedSession?.id),
+    [sessions, selectedSession],
+  );
+  const transferProductOptions = useMemo(
+    () => products.filter((product) => !transferDraft.some((line) => line.idInventarioItem === product.id)),
+    [products, transferDraft],
+  );
+  const handoffProductOptions = useMemo(
+    () => products.filter((product) => !handoffDraft.some((line) => line.idInventarioItem === product.id)),
+    [products, handoffDraft],
+  );
+  const handoffVehicleOptions = useMemo(
+    () => vehiclesCatalog.filter((vehicle) => vehicle.id !== selectedSession?.idVehiculo),
+    [vehiclesCatalog, selectedSession],
+  );
+  const sessionLabelById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const session of sessions) {
+      map.set(session.id, `${session.vehiculo?.placa ?? `Vehículo ${session.idVehiculo}`} · ${formatDate(session.fechaSesion)}`);
+    }
+    return map;
+  }, [sessions]);
+
   async function refreshCurrentRoute() {
     setIsLoading(true);
     await loadSessionsAndProducts();
-    if (selectedSessionId) await loadInventory(Number(selectedSessionId));
+    if (selectedSessionId) {
+      await loadInventory(Number(selectedSessionId));
+      await loadTransfers(Number(selectedSessionId));
+    }
   }
 
   function selectRouteSession(id: string) {
     setSelectedSessionId(id);
     setInventory(null);
+    setTransfers([]);
     setReturnDraft({});
     setDispatchCancellationReason("");
     setReturnCancellationReason("");
@@ -193,6 +300,19 @@ export default function RouteOperationsPage() {
     setDispatchDraft([]);
     setDispatchNotes("");
     setReturnNotes("");
+    setTransferDraft([]);
+    setTransferDestinoId("");
+    setTransferMotivo("");
+    setHandoffDraft([]);
+    setHandoffForm({
+      idRuta: "",
+      idVehiculo: "",
+      idUsuarioChofer: "",
+      idUsuarioVendedor: "",
+      kmInicialEntrante: "",
+      motivo: "",
+    });
+    setHandoffResult(null);
   }
 
   function addDispatchProduct() {
@@ -404,6 +524,170 @@ export default function RouteOperationsPage() {
       toast.error(getApiErrorMessage(error, "No se pudo autorizar la diferencia"));
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  // Fase 2 - Distribución: transferencias parciales entre vehículos (D-DIST-04).
+  // El backend valida disponibilidad dentro de una transacción SERIALIZABLE; aquí solo
+  // se capturan los datos, sin duplicar esa regla de negocio.
+  function addTransferProduct() {
+    const id = Number(transferProductId);
+    if (!id || transferDraft.some((line) => line.idInventarioItem === id)) return;
+    setTransferDraft((previous) => [...previous, { idInventarioItem: id, cantidad: "", estadoEnvase: "" }]);
+    setTransferProductId("");
+  }
+
+  function buildTransferDetail(draft: TransferDraft[]): TransferDetailLineInput[] {
+    return draft.map((line) => ({
+      idInventarioItem: line.idInventarioItem,
+      cantidad: Number(line.cantidad),
+      ...(line.estadoEnvase ? { estadoEnvase: line.estadoEnvase } : {}),
+    }));
+  }
+
+  async function submitTransfer() {
+    if (!selectedSession) return;
+    const destinoId = Number(transferDestinoId);
+    if (!destinoId) {
+      toast.error("Selecciona la sesión de vehículo destino");
+      return;
+    }
+    if (transferDraft.length === 0 || transferDraft.some((line) => !Number(line.cantidad) || Number(line.cantidad) <= 0)) {
+      toast.error("Agrega al menos un producto con cantidad mayor a cero");
+      return;
+    }
+    if (transferMotivo.trim().length < 3) {
+      toast.error("Indica el motivo de la transferencia (mínimo 3 caracteres)");
+      return;
+    }
+
+    setIsSavingTransfer(true);
+    try {
+      await createVehicleTransfer({
+        idRutaSesionOrigen: selectedSession.id,
+        idRutaSesionDestino: destinoId,
+        motivo: transferMotivo.trim(),
+        detalle: buildTransferDetail(transferDraft),
+      });
+      toast.success("Transferencia registrada en estado PENDIENTE; el destino debe confirmarla");
+      setTransferDraft([]);
+      setTransferDestinoId("");
+      setTransferMotivo("");
+      await loadTransfers(selectedSession.id);
+      await loadInventory(selectedSession.id);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo registrar la transferencia"));
+    } finally {
+      setIsSavingTransfer(false);
+    }
+  }
+
+  async function submitConfirmTransfer(transfer: TransferenciaVehiculoDto) {
+    if (!selectedSession) return;
+    setIsSavingTransfer(true);
+    try {
+      await confirmVehicleTransfer(transfer.id);
+      toast.success("Transferencia confirmada; el inventario ya está disponible en este vehículo");
+      await loadTransfers(selectedSession.id);
+      await loadInventory(selectedSession.id);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo confirmar la transferencia"));
+    } finally {
+      setIsSavingTransfer(false);
+    }
+  }
+
+  async function submitRejectTransfer(transfer: TransferenciaVehiculoDto) {
+    if (!selectedSession) return;
+    setIsSavingTransfer(true);
+    try {
+      await rejectVehicleTransfer(transfer.id, { motivo: transferRejectReason[transfer.id]?.trim() || undefined });
+      toast.success("Transferencia rechazada; el inventario permanece en el vehículo de origen");
+      setTransferRejectReason((previous) => ({ ...previous, [transfer.id]: "" }));
+      await loadTransfers(selectedSession.id);
+      await loadInventory(selectedSession.id);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo rechazar la transferencia"));
+    } finally {
+      setIsSavingTransfer(false);
+    }
+  }
+
+  async function submitCancelTransfer(transfer: TransferenciaVehiculoDto) {
+    if (!selectedSession) return;
+    const motivo = transferCancelReason[transfer.id]?.trim() ?? "";
+    if (motivo.length < 3) {
+      toast.error("Indica el motivo de anulación (mínimo 3 caracteres)");
+      return;
+    }
+    setIsSavingTransfer(true);
+    try {
+      await cancelVehicleTransfer(transfer.id, { motivo });
+      toast.success("Transferencia anulada");
+      setTransferCancelReason((previous) => ({ ...previous, [transfer.id]: "" }));
+      await loadTransfers(selectedSession.id);
+      await loadInventory(selectedSession.id);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo anular la transferencia"));
+    } finally {
+      setIsSavingTransfer(false);
+    }
+  }
+
+  // Fase 2 - Distribución: relevo de vehículo con custodia compartida (D-DIST-02/03).
+  // La sesión saliente NO se cierra desde aquí; sigue operando hasta que su inventario
+  // pendiente llegue a cero y se cierre por el flujo normal.
+  function addHandoffProduct() {
+    const id = Number(handoffProductId);
+    if (!id || handoffDraft.some((line) => line.idInventarioItem === id)) return;
+    setHandoffDraft((previous) => [...previous, { idInventarioItem: id, cantidad: "", estadoEnvase: "" }]);
+    setHandoffProductId("");
+  }
+
+  async function submitHandoff() {
+    if (!selectedSession) return;
+    if (!handoffForm.idRuta || !handoffForm.idVehiculo || !handoffForm.idUsuarioChofer || !handoffForm.idUsuarioVendedor) {
+      toast.error("Completa ruta, vehículo, chofer y vendedor de la sesión entrante");
+      return;
+    }
+    if (handoffForm.motivo.trim().length < 3) {
+      toast.error("Indica el motivo del relevo (mínimo 3 caracteres)");
+      return;
+    }
+    if (handoffDraft.some((line) => !Number(line.cantidad) || Number(line.cantidad) <= 0)) {
+      toast.error("Cada producto a transferir debe tener una cantidad mayor a cero");
+      return;
+    }
+
+    setIsSavingHandoff(true);
+    try {
+      const result = await createVehicleHandoff(selectedSession.id, {
+        motivo: handoffForm.motivo.trim(),
+        idRuta: Number(handoffForm.idRuta),
+        idVehiculo: Number(handoffForm.idVehiculo),
+        idUsuarioChofer: Number(handoffForm.idUsuarioChofer),
+        idUsuarioVendedor: Number(handoffForm.idUsuarioVendedor),
+        kmInicialEntrante: Number(handoffForm.kmInicialEntrante || 0),
+        ...(handoffDraft.length > 0 ? { detalle: buildTransferDetail(handoffDraft) } : {}),
+      });
+      setHandoffResult(result);
+      toast.success(`Relevo registrado; nueva sesión #${result.sesionEntrante.id} EN_CURSO`);
+      setHandoffDraft([]);
+      setHandoffForm({
+        idRuta: "",
+        idVehiculo: "",
+        idUsuarioChofer: "",
+        idUsuarioVendedor: "",
+        kmInicialEntrante: "",
+        motivo: "",
+      });
+      await loadSessionsAndProducts();
+      await loadInventory(selectedSession.id);
+      await loadTransfers(selectedSession.id);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo registrar el relevo"));
+    } finally {
+      setIsSavingHandoff(false);
     }
   }
 
@@ -636,13 +920,15 @@ export default function RouteOperationsPage() {
                 </Card>
               </section>
 
-              {!visibleInventory.despacho && canOperate ? (
+              {canOperate ? (
                 <Card className="rounded-xl">
                   <CardContent className="space-y-4 p-4">
                     <div>
-                      <h2 className="text-lg font-semibold">Despacho inicial</h2>
+                      <h2 className="text-lg font-semibold">{visibleInventory.despacho ? "Nuevo despacho (reabastecimiento)" : "Despacho inicial"}</h2>
                       <p className="text-sm text-muted-foreground">
-                        Confirma una sola carga por sesión. El servidor valida y descuenta la existencia de planta en una transacción.
+                        Puedes confirmar más de un despacho por sesión (reabastecimiento tras regresar a planta); se
+                        suman al disponible del vehículo. El servidor valida y descuenta la existencia de planta en
+                        una transacción.
                         {!canCreate ? " Tu rol no tiene permiso para crear despachos." : ""}
                       </p>
                     </div>
@@ -754,7 +1040,7 @@ export default function RouteOperationsPage() {
                   <CardContent className="space-y-3 p-4">
                     <div>
                       <h2 className="text-lg font-semibold">Inventario y liquidación por producto</h2>
-                      <p className="text-sm text-muted-foreground">Las devoluciones vendibles aumentan el saldo del vehículo; las no vendibles se concilian físicamente, pero no quedan disponibles para reventa.</p>
+                      <p className="text-sm text-muted-foreground">Las devoluciones vendibles aumentan el saldo del vehículo; las no vendibles se concilian físicamente, pero no quedan disponibles para reventa. &quot;Transferido&quot; refleja la custodia actual frente a otros vehículos (D-DIST-02/03/04).</p>
                     </div>
                     <Table>
                       <TableHeader>
@@ -762,7 +1048,9 @@ export default function RouteOperationsPage() {
                           <TableHead>Producto</TableHead><TableHead>Despachado</TableHead><TableHead>Vendido</TableHead>
                           <TableHead>Dev. comercial</TableHead><TableHead>No vendible</TableHead>
                           <TableHead>Devuelto</TableHead><TableHead>Dañado</TableHead><TableHead>Ajustado</TableHead>
-                          <TableHead>Reservado</TableHead><TableHead>Disponible</TableHead>
+                          <TableHead>Reservado</TableHead>
+                          <TableHead>Transferido (salida)</TableHead><TableHead>Transferido (entrada)</TableHead>
+                          <TableHead>Disponible</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -774,6 +1062,8 @@ export default function RouteOperationsPage() {
                             <TableCell>{line.devuelto}</TableCell><TableCell>{line.danado}</TableCell>
                             <TableCell>{line.ajustado}</TableCell>
                             <TableCell>{line.reservado}</TableCell>
+                            <TableCell>{line.transferidoSaliente ?? 0}</TableCell>
+                            <TableCell>{line.transferidoRecibido ?? 0}</TableCell>
                             <TableCell className={line.disponible > 0.009 ? "font-semibold text-amber-700" : ""}>{line.disponible}</TableCell>
                           </TableRow>
                         ))}
@@ -783,13 +1073,377 @@ export default function RouteOperationsPage() {
                 </Card>
               ) : null}
 
-              {visibleInventory.despacho && !visibleInventory.devolucion && canOperate ? (
+              {canOperate ? (
+                <Card className="rounded-xl">
+                  <CardContent className="space-y-4 p-4">
+                    <div>
+                      <h2 className="text-lg font-semibold">Transferencias parciales entre vehículos</h2>
+                      <p className="text-sm text-muted-foreground">
+                        Mueve parte del inventario disponible de este vehículo a otra sesión EN_CURSO. Queda PENDIENTE
+                        hasta que el vehículo destino la confirme; mientras tanto ya no está disponible en el origen.
+                        {!canCreate ? " Tu rol no tiene permiso para crear transferencias." : ""}
+                      </p>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label>Sesión destino (vehículo)</Label>
+                        <Select value={transferDestinoId} onValueChange={setTransferDestinoId}>
+                          <SelectTrigger><SelectValue placeholder="Selecciona un vehículo EN_CURSO" /></SelectTrigger>
+                          <SelectContent>
+                            {transferDestinoOptions.map((session) => (
+                              <SelectItem key={session.id} value={String(session.id)}>
+                                {session.vehiculo?.placa ?? `Vehículo ${session.idVehiculo}`} · {session.ruta?.nombre ?? `Ruta ${session.idRuta}`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Producto a transferir</Label>
+                        <div className="flex gap-2">
+                          <Select value={transferProductId} onValueChange={setTransferProductId}>
+                            <SelectTrigger><SelectValue placeholder="Selecciona producto" /></SelectTrigger>
+                            <SelectContent>
+                              {transferProductOptions.map((product) => (
+                                <SelectItem key={product.id} value={String(product.id)}>{product.nombre}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button type="button" variant="outline" onClick={addTransferProduct} disabled={!transferProductId}>
+                            Agregar
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {transferDraft.length > 0 ? (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Producto</TableHead>
+                            <TableHead>Cantidad</TableHead>
+                            <TableHead>Estado envase</TableHead>
+                            <TableHead className="text-right">Quitar</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {transferDraft.map((line, index) => {
+                            const product = productById.get(line.idInventarioItem);
+                            return (
+                              <TableRow key={line.idInventarioItem}>
+                                <TableCell>{product?.nombre ?? line.idInventarioItem}</TableCell>
+                                <TableCell>
+                                  <Input
+                                    type="number" min="0" step="0.01" className="max-w-28"
+                                    value={line.cantidad}
+                                    onChange={(event) => setTransferDraft((previous) => previous.map((item, itemIndex) => itemIndex === index ? { ...item, cantidad: event.target.value } : item))}
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  {product?.esEnvaseRetornable ? (
+                                    <Select
+                                      value={line.estadoEnvase}
+                                      onValueChange={(value) => setTransferDraft((previous) => previous.map((item, itemIndex) => itemIndex === index ? { ...item, estadoEnvase: value as "VACIO" | "LLENO" } : item))}
+                                    >
+                                      <SelectTrigger className="min-w-28"><SelectValue placeholder="Estado" /></SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="VACIO">Vacío</SelectItem>
+                                        <SelectItem value="LLENO">Lleno</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  ) : "—"}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Button variant="outline" size="sm" onClick={() => setTransferDraft((previous) => previous.filter((_, itemIndex) => itemIndex !== index))}>
+                                    Quitar
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    ) : <p className="text-sm text-muted-foreground">Agrega los productos que se transferirán.</p>}
+
+                    <Textarea value={transferMotivo} onChange={(event) => setTransferMotivo(event.target.value)} maxLength={255} placeholder="Motivo de la transferencia" />
+                    <Button onClick={() => void submitTransfer()} disabled={!canCreate || isSavingTransfer || transferDraft.length === 0 || !transferDestinoId}>
+                      {isSavingTransfer ? <Loader2 className="size-4 animate-spin" /> : null} Registrar transferencia
+                    </Button>
+
+                    {transfers.length > 0 ? (
+                      <div className="space-y-2 border-t pt-3">
+                        <h3 className="text-sm font-semibold">Transferencias de esta sesión</h3>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Origen</TableHead><TableHead>Destino</TableHead><TableHead>Estado</TableHead>
+                              <TableHead>Detalle</TableHead><TableHead>Motivo</TableHead>
+                              <TableHead className="text-right">Acciones</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {transfers.map((transfer) => {
+                              const isDestino = transfer.idRutaSesionDestino === selectedSession.id;
+                              const isOrigen = transfer.idRutaSesionOrigen === selectedSession.id;
+                              const isPending = transfer.estadoConfirmacion === "PENDIENTE";
+                              return (
+                                <TableRow key={transfer.id}>
+                                  <TableCell>{sessionLabelById.get(transfer.idRutaSesionOrigen) ?? `#${transfer.idRutaSesionOrigen}`}</TableCell>
+                                  <TableCell>{sessionLabelById.get(transfer.idRutaSesionDestino) ?? `#${transfer.idRutaSesionDestino}`}</TableCell>
+                                  <TableCell>
+                                    <Badge variant={transfer.estadoConfirmacion === "CONFIRMADA" ? "default" : transfer.estadoConfirmacion === "RECHAZADA" ? "destructive" : "secondary"}>
+                                      {transfer.estadoConfirmacion}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    <ul className="text-xs text-muted-foreground">
+                                      {transfer.detalle.map((item) => (
+                                        <li key={item.idInventarioItem}>{item.nombre}: {item.cantidad}{item.estadoEnvase ? ` (${item.estadoEnvase})` : ""}</li>
+                                      ))}
+                                    </ul>
+                                  </TableCell>
+                                  <TableCell className="max-w-56 text-xs text-muted-foreground">{transfer.motivo}</TableCell>
+                                  <TableCell className="text-right">
+                                    {isPending && isDestino ? (
+                                      <div className="flex flex-col items-end gap-1">
+                                        <Button size="sm" disabled={!canUpdate || isSavingTransfer} onClick={() => void submitConfirmTransfer(transfer)}>
+                                          Confirmar recepción
+                                        </Button>
+                                        <div className="flex gap-1">
+                                          <Input
+                                            className="h-8 max-w-40 text-xs"
+                                            placeholder="Motivo de rechazo"
+                                            value={transferRejectReason[transfer.id] ?? ""}
+                                            onChange={(event) => setTransferRejectReason((previous) => ({ ...previous, [transfer.id]: event.target.value }))}
+                                          />
+                                          <Button size="sm" variant="destructive" disabled={!canUpdate || isSavingTransfer} onClick={() => void submitRejectTransfer(transfer)}>
+                                            Rechazar
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                    {isPending && isOrigen ? (
+                                      <div className="flex flex-col items-end gap-1">
+                                        <Input
+                                          className="h-8 max-w-40 text-xs"
+                                          placeholder="Motivo de anulación"
+                                          value={transferCancelReason[transfer.id] ?? ""}
+                                          onChange={(event) => setTransferCancelReason((previous) => ({ ...previous, [transfer.id]: event.target.value }))}
+                                        />
+                                        <Button size="sm" variant="outline" disabled={!canUpdate || isSavingTransfer} onClick={() => void submitCancelTransfer(transfer)}>
+                                          Anular transferencia
+                                        </Button>
+                                      </div>
+                                    ) : null}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {canOperate ? (
+                <Card className="rounded-xl">
+                  <CardContent className="space-y-4 p-4">
+                    <div>
+                      <h2 className="text-lg font-semibold">Relevo de vehículo (custodia compartida)</h2>
+                      <p className="text-sm text-muted-foreground">
+                        Sustituye este vehículo por otro sin cerrar la sesión actual: ambos pueden seguir operando.
+                        Indica solo lo que se transfiera ahora; el resto permanece bajo custodia de este vehículo
+                        hasta transferirse después o hasta cerrar esta sesión por el flujo normal.
+                        {!canCreate ? " Tu rol no tiene permiso para registrar relevos." : ""}
+                      </p>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                      <div className="space-y-1.5">
+                        <Label>Ruta de la sesión entrante</Label>
+                        <select
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          value={handoffForm.idRuta}
+                          onChange={(event) => setHandoffForm((prev) => ({ ...prev, idRuta: event.target.value }))}
+                        >
+                          <option value="">Seleccionar</option>
+                          {routesCatalog.map((item) => (
+                            <option key={item.id} value={item.id}>{item.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Vehículo entrante</Label>
+                        <select
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          value={handoffForm.idVehiculo}
+                          onChange={(event) => setHandoffForm((prev) => ({ ...prev, idVehiculo: event.target.value }))}
+                        >
+                          <option value="">Seleccionar</option>
+                          {handoffVehicleOptions.map((item) => (
+                            <option key={item.id} value={item.id}>{item.placa} - {item.marca}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Chofer entrante</Label>
+                        <select
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          value={handoffForm.idUsuarioChofer}
+                          onChange={(event) => setHandoffForm((prev) => ({ ...prev, idUsuarioChofer: event.target.value }))}
+                        >
+                          <option value="">Seleccionar</option>
+                          {employeeOptions.map((item) => (
+                            <option key={item.userId} value={item.userId}>{item.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Vendedor entrante</Label>
+                        <select
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          value={handoffForm.idUsuarioVendedor}
+                          onChange={(event) => setHandoffForm((prev) => ({ ...prev, idUsuarioVendedor: event.target.value }))}
+                        >
+                          <option value="">Seleccionar</option>
+                          {employeeOptions.map((item) => (
+                            <option key={item.userId} value={item.userId}>{item.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Km inicial entrante</Label>
+                        <Input
+                          type="number" min="0"
+                          value={handoffForm.kmInicialEntrante}
+                          onChange={(event) => setHandoffForm((prev) => ({ ...prev, kmInicialEntrante: event.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1.5 md:col-span-2 lg:col-span-3">
+                        <Label>Motivo del relevo</Label>
+                        <Input
+                          value={handoffForm.motivo} maxLength={255}
+                          onChange={(event) => setHandoffForm((prev) => ({ ...prev, motivo: event.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Inventario a transferir ahora (opcional; el resto queda en este vehículo)</Label>
+                      <div className="flex gap-2">
+                        <Select value={handoffProductId} onValueChange={setHandoffProductId}>
+                          <SelectTrigger><SelectValue placeholder="Selecciona producto" /></SelectTrigger>
+                          <SelectContent>
+                            {handoffProductOptions.map((product) => (
+                              <SelectItem key={product.id} value={String(product.id)}>{product.nombre}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button type="button" variant="outline" onClick={addHandoffProduct} disabled={!handoffProductId}>
+                          Agregar
+                        </Button>
+                      </div>
+                      {handoffDraft.length > 0 ? (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Producto</TableHead><TableHead>Cantidad</TableHead>
+                              <TableHead>Estado envase</TableHead><TableHead className="text-right">Quitar</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {handoffDraft.map((line, index) => {
+                              const product = productById.get(line.idInventarioItem);
+                              return (
+                                <TableRow key={line.idInventarioItem}>
+                                  <TableCell>{product?.nombre ?? line.idInventarioItem}</TableCell>
+                                  <TableCell>
+                                    <Input
+                                      type="number" min="0" step="0.01" className="max-w-28"
+                                      value={line.cantidad}
+                                      onChange={(event) => setHandoffDraft((previous) => previous.map((item, itemIndex) => itemIndex === index ? { ...item, cantidad: event.target.value } : item))}
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    {product?.esEnvaseRetornable ? (
+                                      <Select
+                                        value={line.estadoEnvase}
+                                        onValueChange={(value) => setHandoffDraft((previous) => previous.map((item, itemIndex) => itemIndex === index ? { ...item, estadoEnvase: value as "VACIO" | "LLENO" } : item))}
+                                      >
+                                        <SelectTrigger className="min-w-28"><SelectValue placeholder="Estado" /></SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="VACIO">Vacío</SelectItem>
+                                          <SelectItem value="LLENO">Lleno</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    ) : "—"}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <Button variant="outline" size="sm" onClick={() => setHandoffDraft((previous) => previous.filter((_, itemIndex) => itemIndex !== index))}>
+                                      Quitar
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      ) : null}
+                    </div>
+
+                    <Button onClick={() => void submitHandoff()} disabled={!canCreate || isSavingHandoff}>
+                      {isSavingHandoff ? <Loader2 className="size-4 animate-spin" /> : null} Registrar relevo
+                    </Button>
+
+                    {handoffResult ? (
+                      <div className="space-y-3 border-t pt-3">
+                        <h3 className="text-sm font-semibold">
+                          Resultado: nueva sesión #{handoffResult.sesionEntrante.id} ({handoffResult.sesionEntrante.estado})
+                        </h3>
+                        {handoffResult.transferenciaInventario ? (
+                          <p className="text-xs text-muted-foreground">
+                            Transferencia #{handoffResult.transferenciaInventario.id} ({handoffResult.transferenciaInventario.estadoConfirmacion}):{" "}
+                            {handoffResult.transferenciaInventario.detalle.map((item) => `${item.nombre}: ${item.cantidad}`).join(", ")}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No se transfirió inventario de inmediato; todo permanece en el vehículo saliente.</p>
+                        )}
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground">Custodia vehículo saliente (sesión #{handoffResult.custodia.saliente.idRutaSesion})</p>
+                            <ul className="text-xs text-muted-foreground">
+                              {handoffResult.custodia.saliente.productos.map((line) => (
+                                <li key={line.idInventarioItem}>{line.nombre}: disponible {line.disponible}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground">Custodia vehículo entrante (sesión #{handoffResult.custodia.entrante.idRutaSesion})</p>
+                            <ul className="text-xs text-muted-foreground">
+                              {handoffResult.custodia.entrante.productos.map((line) => (
+                                <li key={line.idInventarioItem}>{line.nombre}: disponible {line.disponible}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {visibleInventory.despacho && canOperate ? (
                 <Card className="rounded-xl">
                   <CardContent className="space-y-4 p-4">
                     <div>
                       <h2 className="text-lg font-semibold">Recepción de devolución</h2>
                       <p className="text-sm text-muted-foreground">
-                        Registra lo recibido físicamente, incluidos los productos devueltos por clientes que permanecen en el vehículo. Solo lo vendible se traslada a planta al cerrar.
+                        Puedes registrar varias devoluciones por sesión (por ejemplo, un conteo intermedio seguido de
+                        reabastecimiento y la devolución final del día). Solo lo vendible se traslada a planta al
+                        cerrar la sesión.
                         {!canCreate ? " Tu rol no tiene permiso para registrar devoluciones." : ""}
                       </p>
                     </div>

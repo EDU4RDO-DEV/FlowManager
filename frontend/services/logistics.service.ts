@@ -2,22 +2,31 @@ import { api } from "@/lib/api";
 import type { ApiResponse } from "@/types/auth";
 import type {
   CreateGastoVehiculoPayload,
+  CreateJornadaPayload,
   CreateMantenimientoPayload,
   CreateRutaPayload,
   CreateRutaSesionPayload,
+  CreateVehicleHandoffPayload,
+  CreateVehicleTransferPayload,
   CreateVehiculoPayload,
   DispatchProductListResult,
   GastoVehiculoDto,
+  JornadaDto,
+  JornadaEstado,
   LogisticsListResponse,
   MantenimientoVehiculoDto,
+  RejectOrCancelTransferPayload,
   RutaDto,
   RutaSesionDto,
   RouteInventoryDto,
+  TransferenciaEstadoConfirmacion,
+  TransferenciaVehiculoDto,
   UpdateGastoVehiculoPayload,
   UpdateMantenimientoPayload,
   UpdateRutaPayload,
   UpdateRutaSesionPayload,
   UpdateVehiculoPayload,
+  VehicleHandoffResultDto,
   VehiculoDto,
 } from "@/types/logistics";
 
@@ -434,3 +443,129 @@ export async function restoreMantenimiento(
   }
   return data.data;
 }
+
+// Fase 2 - Distribución: Jornadas (D-DIST-01)
+
+export async function listJornadas(params?: {
+  anulado?: boolean;
+  estado?: JornadaEstado;
+}): Promise<JornadaDto[]> {
+  const { data } = await api.get<LogisticsListResponse<JornadaDto>>("/api/logistics/jornadas", {
+    params: {
+      ...(params?.anulado !== undefined ? { anulado: String(params.anulado) } : {}),
+      ...(params?.estado ? { estado: params.estado } : {}),
+    },
+  });
+  return data.data ?? [];
+}
+
+export async function getJornadaById(id: number): Promise<JornadaDto> {
+  const { data } = await api.get<ApiResponse<JornadaDto>>(`/api/logistics/jornadas/${id}`);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al consultar la jornada");
+  }
+  return data.data;
+}
+
+export async function createJornada(payload: CreateJornadaPayload): Promise<JornadaDto> {
+  const { data } = await api.post<ApiResponse<JornadaDto>>("/api/logistics/jornadas", payload);
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al crear la jornada");
+  }
+  return data.data;
+}
+
+export async function closeJornada(id: number): Promise<JornadaDto> {
+  const { data } = await api.patch<ApiResponse<JornadaDto>>(`/api/logistics/jornadas/${id}/cerrar`, {});
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al cerrar la jornada");
+  }
+  return data.data;
+}
+
+// Fase 2 - Distribución: transferencias entre vehículos (D-DIST-04)
+
+export async function listVehicleTransfers(params?: {
+  idRutaSesion?: number;
+  estadoConfirmacion?: TransferenciaEstadoConfirmacion;
+}): Promise<TransferenciaVehiculoDto[]> {
+  const { data } = await api.get<LogisticsListResponse<TransferenciaVehiculoDto>>(
+    "/api/logistics/transferencias",
+    {
+      params: {
+        ...(params?.idRutaSesion !== undefined ? { idRutaSesion: params.idRutaSesion } : {}),
+        ...(params?.estadoConfirmacion ? { estadoConfirmacion: params.estadoConfirmacion } : {}),
+      },
+    },
+  );
+  return data.data ?? [];
+}
+
+export async function createVehicleTransfer(
+  payload: CreateVehicleTransferPayload,
+): Promise<TransferenciaVehiculoDto> {
+  const { data } = await api.post<ApiResponse<TransferenciaVehiculoDto>>(
+    "/api/logistics/transferencias",
+    payload,
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al crear la transferencia");
+  }
+  return data.data;
+}
+
+export async function confirmVehicleTransfer(id: number): Promise<TransferenciaVehiculoDto> {
+  const { data } = await api.patch<ApiResponse<TransferenciaVehiculoDto>>(
+    `/api/logistics/transferencias/${id}/confirmar`,
+    {},
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al confirmar la transferencia");
+  }
+  return data.data;
+}
+
+export async function rejectVehicleTransfer(
+  id: number,
+  payload?: RejectOrCancelTransferPayload,
+): Promise<TransferenciaVehiculoDto> {
+  const { data } = await api.patch<ApiResponse<TransferenciaVehiculoDto>>(
+    `/api/logistics/transferencias/${id}/rechazar`,
+    payload ?? {},
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al rechazar la transferencia");
+  }
+  return data.data;
+}
+
+export async function cancelVehicleTransfer(
+  id: number,
+  payload: Required<RejectOrCancelTransferPayload>,
+): Promise<TransferenciaVehiculoDto> {
+  const { data } = await api.patch<ApiResponse<TransferenciaVehiculoDto>>(
+    `/api/logistics/transferencias/${id}/anular`,
+    payload,
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al anular la transferencia");
+  }
+  return data.data;
+}
+
+// Fase 2 - Distribución: relevo de vehículo con custodia compartida (D-DIST-02/03)
+
+export async function createVehicleHandoff(
+  idRutaSesionSaliente: number,
+  payload: CreateVehicleHandoffPayload,
+): Promise<VehicleHandoffResultDto> {
+  const { data } = await api.post<ApiResponse<VehicleHandoffResultDto>>(
+    `/api/logistics/rutas/sesiones/${idRutaSesionSaliente}/relevo`,
+    payload,
+  );
+  if (!data.data) {
+    throw new Error(data.message || "Respuesta invalida al registrar el relevo");
+  }
+  return data.data;
+}
+

@@ -49,6 +49,7 @@ export interface RutaSesionDto {
   idVehiculo: number;
   idUsuarioChofer: number;
   idUsuarioVendedor: number;
+  idJornada: number | null;
   fechaSesion: string;
   kmInicial: number | null;
   kmFinal: number | null;
@@ -99,6 +100,8 @@ export interface RouteInventoryLineDto {
   envasePrestado?: number;
   envaseDevuelto?: number;
   envaseBaja?: number;
+  transferidoSaliente?: number;
+  transferidoRecibido?: number;
   pendienteConciliacion: number;
   disponible: number;
 }
@@ -189,6 +192,7 @@ export type CreateRutaSesionPayload = {
   idVehiculo: number;
   idUsuarioChofer: number;
   idUsuarioVendedor: number;
+  idJornada?: number;
   fechaSesion: string;
   kmInicial?: number;
   kmFinal?: number;
@@ -200,6 +204,7 @@ export type UpdateRutaSesionPayload = {
   idVehiculo?: number;
   idUsuarioChofer?: number;
   idUsuarioVendedor?: number;
+  idJornada?: number | null;
   fechaSesion?: string;
   kmInicial?: number | null;
   kmFinal?: number | null;
@@ -299,3 +304,106 @@ export type UpdateMantenimientoPayload = {
   rutaImagen?: string | null;
   idUsuarioModificador?: number;
 };
+
+// Fase 2 - Distribución (D-DIST-01, D-DIST-04, D-DIST-02/03, D-DIST-06)
+
+export type JornadaEstado = "ABIERTA" | "CERRADA";
+
+export interface JornadaDto {
+  id: number;
+  fecha: string;
+  estado: JornadaEstado;
+  idUsuarioResponsable: number | null;
+  observaciones: string | null;
+  fechaRegistro: string | null;
+  idUsuarioModificador: number | null;
+  fechaModificacion: string | null;
+  anulado: boolean;
+  idUsuarioAnulador: number | null;
+  fechaAnulacion: string | null;
+  rutaSesiones: Array<{
+    id: number;
+    idVehiculo: number;
+    idUsuarioChofer: number;
+    idUsuarioVendedor: number;
+    estado: RutaSesionEstado;
+  }>;
+}
+
+export type CreateJornadaPayload = {
+  fecha: string;
+  idUsuarioResponsable?: number;
+  observaciones?: string;
+};
+
+export type TransferenciaEstadoConfirmacion = "PENDIENTE" | "CONFIRMADA" | "RECHAZADA";
+
+export interface TransferenciaVehiculoDetalleDto {
+  idInventarioItem: number;
+  nombre: string;
+  unidadMedida: string | null;
+  cantidad: number;
+  estadoEnvase: "VACIO" | "LLENO" | null;
+}
+
+export interface TransferenciaVehiculoDto {
+  id: number;
+  idRutaSesionOrigen: number;
+  idRutaSesionDestino: number;
+  idUsuario: number;
+  motivo: string;
+  estadoConfirmacion: TransferenciaEstadoConfirmacion;
+  idUsuarioConfirma: number | null;
+  fechaConfirmacion: string | null;
+  fechaRegistro: string | null;
+  anulado: boolean;
+  idUsuarioAnulador: number | null;
+  fechaAnulacion: string | null;
+  motivoAnulacion: string | null;
+  detalle: TransferenciaVehiculoDetalleDto[];
+}
+
+export type TransferDetailLineInput = {
+  idInventarioItem: number;
+  cantidad: number;
+  estadoEnvase?: "VACIO" | "LLENO";
+};
+
+export type CreateVehicleTransferPayload = {
+  idRutaSesionOrigen: number;
+  idRutaSesionDestino: number;
+  motivo: string;
+  detalle: TransferDetailLineInput[];
+};
+
+export type RejectOrCancelTransferPayload = {
+  motivo?: string;
+};
+
+export type CreateVehicleHandoffPayload = {
+  motivo: string;
+  idRuta: number;
+  idVehiculo: number;
+  idUsuarioChofer: number;
+  idUsuarioVendedor: number;
+  kmInicialEntrante: number;
+  detalle?: TransferDetailLineInput[];
+};
+
+export interface VehicleHandoffResultDto {
+  relevo: {
+    id: number;
+    idRutaSesionSaliente: number;
+    idRutaSesionEntrante: number;
+    idUsuarioAutoriza: number;
+    motivo: string;
+    fechaRegistro: string | null;
+  };
+  sesionEntrante: RutaSesionDto;
+  transferenciaInventario: TransferenciaVehiculoDto | null;
+  custodia: {
+    saliente: { idRutaSesion: number; productos: RouteInventoryLineDto[] };
+    entrante: { idRutaSesion: number; productos: RouteInventoryLineDto[] };
+  };
+}
+
