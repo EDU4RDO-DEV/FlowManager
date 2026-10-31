@@ -69,6 +69,81 @@ export async function getPayrollById(id: number): Promise<PayrollDetailDto> {
   return data.data;
 }
 
+export interface PayrollPaymentSummaryDto {
+  idPlanilla: number;
+  estadoPlanilla: string;
+  estadoPago: string;
+  totalPlanilla: number;
+  totalPagado: number;
+  saldoPendiente: number;
+  pagos: Array<{
+    id: number;
+    usuario: string;
+    monto: number;
+    metodoPago: string;
+    numeroReferencia: string | null;
+    banco: string | null;
+    rutaComprobante: string | null;
+    fechaPago: string;
+    observaciones: string | null;
+  }>;
+}
+
+export async function getPayrollPayments(id: number): Promise<PayrollPaymentSummaryDto> {
+  const { data } = await api.get<ApiResponse<PayrollPaymentSummaryDto>>(
+    `/api/planilla/mensuales/${id}/pagos`,
+  );
+  if (!data.data) throw new Error(data.message || "Respuesta invalida al consultar pagos");
+  return data.data;
+}
+
+export function getPayrollPaymentReceiptUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  const fileName = path.match(/^\/uploads\/payroll-payments\/([0-9a-f-]{36}\.(?:pdf|jpg|png|webp))$/i)?.[1];
+  if (!fileName) return "";
+  return api.getUri({ url: `/api/planilla/comprobantes/${encodeURIComponent(fileName)}` });
+}
+
+export async function uploadPayrollPaymentReceipt(file: File): Promise<{ rutaComprobante: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await api.post<ApiResponse<{ rutaComprobante: string }>>(
+    "/api/planilla/comprobantes",
+    formData,
+    { headers: { "Content-Type": "multipart/form-data" } },
+  );
+  if (!data.data) throw new Error(data.message || "Respuesta inválida al subir comprobante");
+  return data.data;
+}
+
+export async function downloadPayrollPaymentReceipt(path: string): Promise<Blob> {
+  const url = getPayrollPaymentReceiptUrl(path);
+  if (!url) throw new Error("La ruta del comprobante no es válida");
+  const { data } = await api.get<Blob>(url, { responseType: "blob" });
+  return data;
+}
+
+export async function registerPayrollPayment(
+  id: number,
+  payload: {
+    monto: number;
+    metodoPago: "EFECTIVO" | "TRANSFERENCIA";
+    numeroReferencia?: string;
+    banco?: string;
+    rutaComprobante?: string;
+    observaciones?: string;
+  },
+  idempotencyKey: string,
+): Promise<PayrollPaymentSummaryDto> {
+  const { data } = await api.post<ApiResponse<PayrollPaymentSummaryDto>>(
+    `/api/planilla/mensuales/${id}/pagos`,
+    payload,
+    { headers: { "Idempotency-Key": idempotencyKey } },
+  );
+  if (!data.data) throw new Error(data.message || "Respuesta invalida al registrar pago");
+  return data.data;
+}
+
 export async function previewPayroll(payload: PreviewPayrollPayload): Promise<PayrollPreviewResult> {
   const { data } = await api.post<ApiResponse<PayrollPreviewResult>>(
     "/api/planilla/mensuales/previsualizar",

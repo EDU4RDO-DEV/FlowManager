@@ -1,6 +1,10 @@
 import { prisma } from '../config/prisma';
 import { runSerializableTransaction } from '../utils/serializable-transaction';
 import { parseDateOnlyUtc, validateUsuarioExists } from './logistics.service';
+import {
+  getRouteSessionReadVisibilityIds,
+  type OperationalActor,
+} from './operational-scope.service';
 
 // D-DIST-01: Jornada agrupa 1..N RutaSesion del mismo día operativo. No reemplaza a
 // RutaSesion: cada sesión conserva su propio vehículo, chofer y vendedor. Las sesiones
@@ -29,12 +33,16 @@ function toJornadaDto(jornada: {
   RutaSesion?: {
     Id: number;
     IdVehiculo: number;
-    IdUsuarioChofer: number;
-    IdUsuarioVendedor: number;
+    IdUsuarioChofer: number | null;
+    IdUsuarioVendedor: number | null;
+    IdEmpleadoChofer: number | null;
+    IdEmpleadoVendedor: number | null;
     Estado: string;
     Anulado: boolean;
   }[];
-}) {
+}, visibleSessionIds?: number[]) {
+  const visibleIdSet = visibleSessionIds === undefined ? undefined : new Set(visibleSessionIds);
+
   return {
     id: jornada.Id,
     fecha: jornada.Fecha,
@@ -48,81 +56,124 @@ function toJornadaDto(jornada: {
     idUsuarioAnulador: jornada.IdUsuarioAnulador,
     fechaAnulacion: jornada.FechaAnulacion,
     rutaSesiones: (jornada.RutaSesion ?? [])
-      .filter((sesion) => !sesion.Anulado)
+      .filter((sesion) => !sesion.Anulado && (visibleIdSet === undefined || visibleIdSet.has(sesion.Id)))
       .map((sesion) => ({
         id: sesion.Id,
         idVehiculo: sesion.IdVehiculo,
         idUsuarioChofer: sesion.IdUsuarioChofer,
         idUsuarioVendedor: sesion.IdUsuarioVendedor,
+        idEmpleadoChofer: sesion.IdEmpleadoChofer,
+        idEmpleadoVendedor: sesion.IdEmpleadoVendedor,
         estado: sesion.Estado,
       })),
   };
 }
 
-const jornadaInclude = {
-  RutaSesion: {
-    select: {
-      Id: true,
-      IdVehiculo: true,
-      IdUsuarioChofer: true,
-      IdUsuarioVendedor: true,
-      Estado: true,
-      Anulado: true,
+function jornadaInclude(visibleSessionIds?: number[]) {
+  return {
+    RutaSesion: {
+      where: {
+        Anulado: false,
+        ...(visibleSessionIds !== undefined ? { Id: { in: visibleSessionIds } } : {}),
+      },
+      select: {
+        Id: true,
+        IdVehiculo: true,
+        IdUsuarioChofer: true,
+        IdUsuarioVendedor: true,
+        IdEmpleadoChofer: true,
+        IdEmpleadoVendedor: true,
+        Estado: true,
+        Anulado: true,
+      },
     },
-  },
-} as const;
+  } as const;
+}
 
-export async function listJornadas(filters: { anulado?: boolean; estado?: JornadaEstado }) {
+export async function listJornadas(
+  filters: { anulado?: boolean; estado?: JornadaEstado },
+  actor?: OperationalActor,
+) {
+  const visibleSessionIds = actor
+    ? await getRouteSessionReadVisibilityIds(prisma, actor)
+    : undefined;
+  if (visibleSessionIds?.length === 0) return [];
+
   const rows = await prisma.jornada.findMany({
     where: {
       ...(filters.anulado !== undefined ? { Anulado: filters.anulado } : {}),
       ...(filters.estado !== undefined ? { Estado: filters.estado } : {}),
+      ...(visibleSessionIds !== undefined
+        ? { RutaSesion: { some: { Id: { in: visibleSessionIds }, Anulado: false } } }
+        : {}),
     },
-    include: jornadaInclude,
+    include: jornadaInclude(visibleSessionIds),
     orderBy: [{ Fecha: 'desc' }, { Id: 'desc' }],
   });
 
-  return rows.map(toJornadaDto);
+  return rows.map((row) => toJornadaDto(row, visibleSessionIds));
 }
 
-export async function getJornadaById(id: number) {
+export async function getJornadaById(id: number, actor?: OperationalActor) {
+  const visibleSessionIds = actor
+    ? await getRouteSessionReadVisibilityIds(prisma, actor)
+    : undefined;
+  if (visibleSessionIds?.length === 0) {
+    throw new Error('Jornada no existe');
+  }
+
   const row = await prisma.jornada.findFirst({
-    where: { Id: id, Anulado: false },
-    include: jornadaInclude,
+    where: {
+      Id: id,
+      Anulado: false,
+      ...(visibleSessionIds !== undefined
+        ? { RutaSesion: { some: { Id: { in: visibleSessionIds }, Anulado: false } } }
+        : {}),
+    },
+    include: jornadaInclude(visibleSessionIds),
   });
 
   if (!row) {
     throw new Error('Jornada no existe');
   }
 
-  return toJornadaDto(row);
+  return toJornadaDto(row, visibleSessionIds);
 }
 
-export async function createJornada(input: CreateJornadaInput) {
+export async function createJornada(input: CreateJornadaInput, actor?: OperationalActor) {
   const fecha = parseDateOnlyUtc(input.fecha);
+  const isOperationalUser = ['vendedor', 'chofer'].includes(actor?.roleName?.trim().toLocaleLowerCase('es') ?? '');
+  const idUsuarioResponsable = isOperationalUser ? actor?.userId : input.idUsuarioResponsable;
 
-  if (input.idUsuarioResponsable !== undefined) {
-    await validateUsuarioExists(input.idUsuarioResponsable);
+  if (idUsuarioResponsable !== undefined) {
+    await validateUsuarioExists(idUsuarioResponsable);
   }
 
   const created = await prisma.jornada.create({
     data: {
       Fecha: fecha,
       Estado: 'ABIERTA',
-      IdUsuarioResponsable: input.idUsuarioResponsable,
+      IdUsuarioResponsable: idUsuarioResponsable,
       Observaciones: input.observaciones?.trim(),
       Anulado: false,
     },
-    include: jornadaInclude,
+    include: jornadaInclude(),
   });
 
   return toJornadaDto(created);
 }
 
-export async function closeJornada(id: number, idUsuarioModificador: number) {
+export async function closeJornada(
+  id: number,
+  idUsuarioModificador: number,
+  actor?: OperationalActor,
+) {
   await validateUsuarioExists(idUsuarioModificador);
 
-  const updated = await runSerializableTransaction(async (tx) => {
+  const result = await runSerializableTransaction(async (tx) => {
+    const visibleSessionIds = actor
+      ? await getRouteSessionReadVisibilityIds(tx, actor)
+      : undefined;
     const jornada = await tx.jornada.findFirst({
       where: { Id: id, Anulado: false },
       select: {
@@ -138,6 +189,13 @@ export async function closeJornada(id: number, idUsuarioModificador: number) {
     if (!jornada) {
       throw new Error('Jornada no existe');
     }
+    if (
+      visibleSessionIds !== undefined &&
+      (jornada.RutaSesion.length === 0 ||
+        jornada.RutaSesion.some((sesion) => !visibleSessionIds.includes(sesion.Id)))
+    ) {
+      throw new Error('Jornada no existe o no está asignada al usuario');
+    }
     if (jornada.Estado === 'CERRADA') {
       throw new Error('La jornada ya está cerrada');
     }
@@ -149,16 +207,17 @@ export async function closeJornada(id: number, idUsuarioModificador: number) {
       );
     }
 
-    return tx.jornada.update({
+    const updated = await tx.jornada.update({
       where: { Id: id },
       data: {
         Estado: 'CERRADA',
         IdUsuarioModificador: idUsuarioModificador,
         FechaModificacion: new Date(),
       },
-      include: jornadaInclude,
+      include: jornadaInclude(visibleSessionIds),
     });
+    return { updated, visibleSessionIds };
   });
 
-  return toJornadaDto(updated);
+  return toJornadaDto(result.updated, result.visibleSessionIds);
 }

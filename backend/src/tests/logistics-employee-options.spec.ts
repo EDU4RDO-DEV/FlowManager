@@ -4,16 +4,20 @@ import { getLogisticsEmployeeOptions } from '../../../frontend/lib/logistics-emp
 import type { EmployeeDto } from '../../../frontend/types/employees';
 
 function employee(
+  id: number,
   idUsuario: number,
   idUsuarioVinculado: number | null,
   nombreCompleto: string,
 ): EmployeeDto {
   return {
-    id: 1,
+    id,
     idEntidad: 10,
     idUsuario,
     idUsuarioVinculado,
     idConfiguracionComision: null,
+    idTipoTrabajador: null,
+    tipoTrabajador: null,
+    historialSueldos: [],
     puestoTrabajo: 'Chofer',
     descripcionPuesto: null,
     fechaContratacion: '2026-01-01',
@@ -44,12 +48,13 @@ function employee(
 describe('logistics employee selector options', () => {
   it('uses the linked employee account and never substitutes the record creator', () => {
     const options = getLogisticsEmployeeOptions([
-      employee(30, 47, 'Ana'),
-      employee(31, null, 'Luis'),
+      employee(1, 30, 47, 'Ana'),
+      employee(2, 31, null, 'Luis'),
     ]);
 
-    expect(options).toEqual([{ userId: 47, nombre: 'Ana' }]);
-    expect(options).not.toContainEqual({ userId: 30, nombre: 'Ana' });
-    expect(options).not.toContainEqual({ userId: 31, nombre: 'Luis' });
+    expect(options).toEqual([
+      { employeeId: 1, userId: 47, nombre: 'Ana' },
+      { employeeId: 2, userId: null, nombre: 'Luis' },
+    ]);
   });
 });

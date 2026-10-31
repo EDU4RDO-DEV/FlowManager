@@ -25,6 +25,8 @@ const { prismaMock } = vi.hoisted(() => ({
       findUnique: vi.fn(),
       create: vi.fn(),
     },
+    cajaSesion: { findFirst: vi.fn() },
+    movimientoCaja: { create: vi.fn(), findFirst: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -47,9 +49,10 @@ import { anulateSalePayment, createSalePayment, getSaleById, listSalePayments } 
 function buildSaleWithPayments(pagos: number[]) {
   return {
     DetalleVenta: [
-      { Cantidad: 10, PrecioUnitario: 10, EsBonificacion: false },
+      { Cantidad: 10, PrecioUnitario: 10, EsBonificacion: false, Envases: [] },
     ],
     PagoVenta: pagos.map((monto) => ({ Monto: monto })),
+    DevolucionesComerciales: [],
   };
 }
 
@@ -85,6 +88,9 @@ describe('Fase 4 - Ventas y Cuentas por Cobrar (pagos)', () => {
     sendMock.mockResolvedValue({ ok: true, status: 200 });
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     prismaMock.solicitudPagoIdempotente.findUnique.mockResolvedValue(null);
+    prismaMock.cajaSesion.findFirst.mockResolvedValue({ Id: 99 });
+    prismaMock.movimientoCaja.findFirst.mockResolvedValue(null);
+    prismaMock.pagoVenta.create.mockResolvedValue({ Id: 501 });
     prismaMock.$transaction.mockImplementation(async (callback: (tx: typeof prismaMock) => unknown) =>
       callback(prismaMock),
     );

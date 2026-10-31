@@ -81,6 +81,9 @@ export default function RouteOperationsPage() {
   const { user } = useAuth();
   const canCreate = hasModulePermission(user, "despacho", "create");
   const canUpdate = hasModulePermission(user, "despacho", "update");
+  const canReadLogistica = hasModulePermission(user, "logistica", "read");
+  const canReadEmployees = hasModulePermission(user, "empleados", "read");
+  const canCreateHandoff = canCreate && canReadLogistica && canReadEmployees;
   const [sessions, setSessions] = useState<RutaSesionDto[]>([]);
   const [products, setProducts] = useState<DispatchProductDto[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState("");
@@ -115,12 +118,12 @@ export default function RouteOperationsPage() {
   const [isSavingTransfer, setIsSavingTransfer] = useState(false);
   const [routesCatalog, setRoutesCatalog] = useState<RutaDto[]>([]);
   const [vehiclesCatalog, setVehiclesCatalog] = useState<VehiculoDto[]>([]);
-  const [employeeOptions, setEmployeeOptions] = useState<Array<{ userId: number; nombre: string }>>([]);
+  const [employeeOptions, setEmployeeOptions] = useState<Array<{ employeeId: number; userId: number | null; nombre: string }>>([]);
   const [handoffForm, setHandoffForm] = useState<HandoffFormState>({
     idRuta: "",
     idVehiculo: "",
-    idUsuarioChofer: "",
-    idUsuarioVendedor: "",
+    idEmpleadoChofer: "",
+    idEmpleadoVendedor: "",
     kmInicialEntrante: "",
     motivo: "",
   });
@@ -152,29 +155,45 @@ export default function RouteOperationsPage() {
 
   const loadSessionsAndProducts = useCallback(async () => {
     try {
-      const [loadedSessions, productResult, loadedRoutes, loadedVehicles, employeeList] = await Promise.all([
+      const [loadedSessions, productResult] = await Promise.all([
         listDispatchRutaSesiones({ anulado: false }),
         loadAllDispatchProducts(),
-        listRutas({ anulado: false }),
-        listVehiculos({ anulado: false }),
-        listEmployees(),
       ]);
       setSessions(loadedSessions);
       setProducts(productResult);
-      setRoutesCatalog(loadedRoutes);
-      setVehiclesCatalog(loadedVehicles);
-      setEmployeeOptions(getLogisticsEmployeeOptions(employeeList));
       setSelectedSessionId((previous) =>
         previous && loadedSessions.some((session) => String(session.id) === previous)
           ? previous
           : String(loadedSessions[0]?.id ?? ""),
       );
+
+      const [routesResult, vehiclesResult, employeesResult] = await Promise.allSettled([
+        canReadLogistica ? listRutas({ anulado: false }) : Promise.resolve([]),
+        canReadLogistica ? listVehiculos({ anulado: false }) : Promise.resolve([]),
+        canReadEmployees ? listEmployees() : Promise.resolve([]),
+      ]);
+      setRoutesCatalog(routesResult.status === "fulfilled" ? routesResult.value : []);
+      setVehiclesCatalog(vehiclesResult.status === "fulfilled" ? vehiclesResult.value : []);
+      setEmployeeOptions(
+        employeesResult.status === "fulfilled"
+          ? getLogisticsEmployeeOptions(employeesResult.value)
+          : [],
+      );
+      if (routesResult.status === "rejected") {
+        toast.error(getApiErrorMessage(routesResult.reason, "No se pudo cargar el catálogo de rutas"));
+      }
+      if (vehiclesResult.status === "rejected") {
+        toast.error(getApiErrorMessage(vehiclesResult.reason, "No se pudo cargar el catálogo de vehículos"));
+      }
+      if (employeesResult.status === "rejected") {
+        toast.error(getApiErrorMessage(employeesResult.reason, "No se pudo cargar el personal"));
+      }
     } catch (error) {
       toast.error(getApiErrorMessage(error, "No se pudo cargar la información de rutas"));
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [canReadEmployees, canReadLogistica]);
 
   const loadTransfers = useCallback(async (idRutaSesion: number) => {
     try {
@@ -235,12 +254,38 @@ export default function RouteOperationsPage() {
     [sessions, selectedSession],
   );
   const transferProductOptions = useMemo(
-    () => products.filter((product) => !transferDraft.some((line) => line.idInventarioItem === product.id)),
-    [products, transferDraft],
+    () => {
+      const routeInventory =
+        inventory?.idRutaSesion === selectedSession?.id ? inventory : null;
+      const availableIds = new Set(
+        routeInventory?.productos
+          .filter((line) => line.disponible > 0.009)
+          .map((line) => line.idInventarioItem) ?? [],
+      );
+      return products.filter(
+        (product) =>
+          availableIds.has(product.id) &&
+          !transferDraft.some((line) => line.idInventarioItem === product.id),
+      );
+    },
+    [inventory, products, selectedSession, transferDraft],
   );
   const handoffProductOptions = useMemo(
-    () => products.filter((product) => !handoffDraft.some((line) => line.idInventarioItem === product.id)),
-    [products, handoffDraft],
+    () => {
+      const routeInventory =
+        inventory?.idRutaSesion === selectedSession?.id ? inventory : null;
+      const availableIds = new Set(
+        routeInventory?.productos
+          .filter((line) => line.disponible > 0.009)
+          .map((line) => line.idInventarioItem) ?? [],
+      );
+      return products.filter(
+        (product) =>
+          availableIds.has(product.id) &&
+          !handoffDraft.some((line) => line.idInventarioItem === product.id),
+      );
+    },
+    [handoffDraft, inventory, products, selectedSession],
   );
   const handoffVehicleOptions = useMemo(
     () => vehiclesCatalog.filter((vehicle) => vehicle.id !== selectedSession?.idVehiculo),
@@ -283,8 +328,8 @@ export default function RouteOperationsPage() {
     setHandoffForm({
       idRuta: "",
       idVehiculo: "",
-      idUsuarioChofer: "",
-      idUsuarioVendedor: "",
+      idEmpleadoChofer: "",
+      idEmpleadoVendedor: "",
       kmInicialEntrante: "",
       motivo: "",
     });
@@ -619,7 +664,7 @@ export default function RouteOperationsPage() {
 
   async function submitHandoff() {
     if (!selectedSession) return;
-    if (!handoffForm.idRuta || !handoffForm.idVehiculo || !handoffForm.idUsuarioChofer || !handoffForm.idUsuarioVendedor) {
+    if (!handoffForm.idRuta || !handoffForm.idVehiculo || !handoffForm.idEmpleadoChofer || !handoffForm.idEmpleadoVendedor) {
       toast.error("Completa ruta, vehículo, chofer y vendedor de la sesión entrante");
       return;
     }
@@ -638,8 +683,8 @@ export default function RouteOperationsPage() {
         motivo: handoffForm.motivo.trim(),
         idRuta: Number(handoffForm.idRuta),
         idVehiculo: Number(handoffForm.idVehiculo),
-        idUsuarioChofer: Number(handoffForm.idUsuarioChofer),
-        idUsuarioVendedor: Number(handoffForm.idUsuarioVendedor),
+        idEmpleadoChofer: Number(handoffForm.idEmpleadoChofer),
+        idEmpleadoVendedor: Number(handoffForm.idEmpleadoVendedor),
         kmInicialEntrante: Number(handoffForm.kmInicialEntrante || 0),
         ...(handoffDraft.length > 0 ? { detalle: buildTransferDetail(handoffDraft) } : {}),
       });
@@ -649,8 +694,8 @@ export default function RouteOperationsPage() {
       setHandoffForm({
         idRuta: "",
         idVehiculo: "",
-        idUsuarioChofer: "",
-        idUsuarioVendedor: "",
+        idEmpleadoChofer: "",
+        idEmpleadoVendedor: "",
         kmInicialEntrante: "",
         motivo: "",
       });
@@ -886,7 +931,7 @@ export default function RouteOperationsPage() {
                 <TabsContent value="relevos" className="space-y-4">
                   <HandoffTab
                     canOperate={canOperate}
-                    canCreate={canCreate}
+                    canCreate={canCreateHandoff}
                     isSavingHandoff={isSavingHandoff}
                     handoffForm={handoffForm}
                     setHandoffForm={setHandoffForm}

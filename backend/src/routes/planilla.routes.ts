@@ -5,6 +5,7 @@ import {
   deletePayrollController,
   generatePayrollController,
   getPayrollByIdController,
+  getPayrollPaymentsController,
   getPayrollReceiptController,
   getMyPayrollReceiptController,
   listMyPayrollsController,
@@ -13,6 +14,7 @@ import {
   restorePayrollController,
   reopenPayrollController,
   updatePayrollController,
+  registerPayrollPaymentController,
 } from '../controllers/planilla-mensual.controller';
 import {
   createComisionConfigController,
@@ -33,9 +35,53 @@ import {
   setCategoryCommissionRulesController,
 } from '../controllers/planilla-comision.controller';
 import { requireAuth, requireModulePermission } from '../middlewares/auth.middleware';
+import {
+  createEmployeeAdvanceController,
+  listEmployeeAdvancesController,
+} from '../controllers/employee-advance.controller';
+import {
+  listCommissionAccrualsController,
+  listCommissionReversalRequestsController,
+  cancelCommissionReversalRequestController,
+  reviewCommissionReversalRequestController,
+} from '../controllers/commission-accrual.controller';
+import {
+  getPayrollPaymentReceiptController,
+  uploadPayrollPaymentReceiptController,
+} from '../controllers/payroll-payment-receipt.controller';
+import { uploadPayrollPaymentReceipt } from '../middlewares/upload.middleware';
 
 const planillaRouter = Router();
 
+planillaRouter.post(
+  '/comprobantes',
+  requireModulePermission('planilla', 'create'),
+  (req, res, next) => uploadPayrollPaymentReceipt.single('file')(req, res, (error) => {
+    if (error) {
+      return res.status(400).json({
+        ok: false,
+        message: error instanceof Error ? error.message : 'Comprobante inválido',
+      });
+    }
+    next();
+  }),
+  uploadPayrollPaymentReceiptController,
+);
+planillaRouter.get(
+  '/comprobantes/:fileName',
+  requireModulePermission('planilla', 'read'),
+  getPayrollPaymentReceiptController,
+);
+planillaRouter.get(
+  '/adelantos',
+  requireModulePermission('planilla', 'read'),
+  listEmployeeAdvancesController,
+);
+planillaRouter.post(
+  '/adelantos',
+  requireModulePermission('planilla', 'create'),
+  createEmployeeAdvanceController,
+);
 planillaRouter.get('/mis-planillas', requireAuth, listMyPayrollsController);
 planillaRouter.get('/mis-planillas/:id/recibo.pdf', requireAuth, getMyPayrollReceiptController);
 planillaRouter.get(
@@ -52,6 +98,16 @@ planillaRouter.get(
   '/mensuales/:id',
   requireModulePermission('planilla', 'read'),
   getPayrollByIdController,
+);
+planillaRouter.get(
+  '/mensuales/:id/pagos',
+  requireModulePermission('planilla', 'read'),
+  getPayrollPaymentsController,
+);
+planillaRouter.post(
+  '/mensuales/:id/pagos',
+  requireModulePermission('planilla', 'create'),
+  registerPayrollPaymentController,
 );
 planillaRouter.post(
   '/mensuales/previsualizar',
@@ -93,6 +149,26 @@ planillaRouter.get(
   '/comisiones',
   requireModulePermission('planilla', 'read'),
   listComisionConfigsController,
+);
+planillaRouter.get(
+  '/comisiones/devengadas',
+  requireModulePermission('planilla', 'read'),
+  listCommissionAccrualsController,
+);
+planillaRouter.get(
+  '/comisiones/reversiones',
+  requireModulePermission('planilla', 'read'),
+  listCommissionReversalRequestsController,
+);
+planillaRouter.post(
+  '/comisiones/reversiones/:id/revisar',
+  requireModulePermission('planilla', 'update'),
+  reviewCommissionReversalRequestController,
+);
+planillaRouter.patch(
+  '/comisiones/reversiones/:id/anular',
+  requireModulePermission('planilla', 'update'),
+  cancelCommissionReversalRequestController,
 );
 planillaRouter.get(
   '/comisiones/anulados',

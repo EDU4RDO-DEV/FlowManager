@@ -50,6 +50,7 @@ function formatDate(value: string | null): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleDateString("es-GT", {
+    timeZone: "UTC",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -242,6 +243,7 @@ export default function CreditsPage() {
                     <TableHead>Cliente</TableHead>
                     <TableHead>Documento</TableHead>
                     <TableHead>Emisión</TableHead>
+                    <TableHead>Vencimiento</TableHead>
                     <TableHead className="text-right">Original</TableHead>
                     <TableHead className="text-right">Abonado</TableHead>
                     <TableHead className="text-right">Saldo pendiente</TableHead>
@@ -252,20 +254,20 @@ export default function CreditsPage() {
                 <TableBody>
                   {isLoading && !hasLoadedOnce ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="h-28 text-center text-muted-foreground">
+                      <TableCell colSpan={9} className="h-28 text-center text-muted-foreground">
                         <Loader2 className="mr-2 inline size-4 animate-spin" />
                         Cargando cuentas por cobrar...
                       </TableCell>
                     </TableRow>
                   ) : loadError ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="h-24 text-center text-destructive">
+                      <TableCell colSpan={9} className="h-24 text-center text-destructive">
                         {loadError}
                       </TableCell>
                     </TableRow>
                   ) : credits.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                         No hay documentos para los filtros seleccionados.
                       </TableCell>
                     </TableRow>
@@ -295,10 +297,26 @@ export default function CreditsPage() {
                           ) : null}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">{formatDate(credit.venta.fechaEmision)}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {formatDate(credit.fechaVencimiento)}
+                          {credit.saldoVencido > 0 ? (
+                            <p className="text-xs font-medium text-rose-700">Vencido</p>
+                          ) : null}
+                        </TableCell>
                         <TableCell className="whitespace-nowrap text-right">{formatMoney(credit.totalOriginal)}</TableCell>
                         <TableCell className="whitespace-nowrap text-right">{formatMoney(credit.totalAbonado)}</TableCell>
                         <TableCell className="whitespace-nowrap text-right font-semibold">
                           {formatMoney(credit.saldo)}
+                          {credit.totalDevuelto > 0 ? (
+                            <p className="text-xs text-muted-foreground">
+                              Devuelto: {formatMoney(credit.totalDevuelto)}
+                            </p>
+                          ) : null}
+                          {credit.saldoAFavor > 0 ? (
+                            <p className="text-xs text-emerald-700">
+                              A favor: {formatMoney(credit.saldoAFavor)}
+                            </p>
+                          ) : null}
                         </TableCell>
                         <TableCell>
                           <Badge className={getStatusBadgeClass(getCreditDisplayStatus(credit))}>

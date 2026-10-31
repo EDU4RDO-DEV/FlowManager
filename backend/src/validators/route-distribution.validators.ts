@@ -81,11 +81,17 @@ export const createVehicleHandoffSchema = z.object({
   motivo: z.string().trim().min(3).max(255),
   idRuta: positiveInt,
   idVehiculo: positiveInt,
-  idUsuarioChofer: positiveInt,
-  idUsuarioVendedor: positiveInt,
+  idEmpleadoChofer: positiveInt.optional(),
+  idEmpleadoVendedor: positiveInt.optional(),
+  idUsuarioChofer: positiveInt.optional(),
+  idUsuarioVendedor: positiveInt.optional(),
   kmInicialEntrante: z.number().finite('kmInicialEntrante debe ser válido').min(0),
   detalle: z
     .array(transferDetailLineSchema)
     .superRefine(uniqueTransferItems)
     .optional(),
-});
+}).refine(
+  (data) => (data.idEmpleadoChofer !== undefined || data.idUsuarioChofer !== undefined)
+    && (data.idEmpleadoVendedor !== undefined || data.idUsuarioVendedor !== undefined),
+  { message: 'Debe seleccionar un empleado para el chofer y el vendedor' },
+);

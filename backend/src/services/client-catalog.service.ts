@@ -426,12 +426,27 @@ export async function updateClienteCondicionCredito(id: number, input: UpdateCli
         throw new Error('Condición de crédito no existe');
       }
 
+      const hasAppliedReceivables = await tx.cuentaPorCobrar.findFirst({
+        where: { IdClienteCondicionCreditoAplicada: id },
+        select: { Id: true },
+      });
+
       if (input.idUsuarioModificador !== undefined) {
         await validateUsuarioExists(input.idUsuarioModificador, tx);
       }
 
       if (input.idTipoCredito !== undefined && input.idTipoCredito !== existing.IdTipoCredito) {
         throw new Error('El tipo de crédito no se modifica en una condición existente; asigne una nueva condición');
+      }
+      if (
+        hasAppliedReceivables &&
+        (
+          input.fechaInicioVigencia !== undefined ||
+          input.fechaFinVigencia !== undefined ||
+          input.observaciones !== undefined
+        )
+      ) {
+        throw new Error('No se puede modificar la vigencia o las observaciones de una condición aplicada a cuentas históricas');
       }
 
       const fechaInicioVigencia =

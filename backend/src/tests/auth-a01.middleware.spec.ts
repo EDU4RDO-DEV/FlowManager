@@ -84,7 +84,11 @@ describe('A01 auth middleware invalidation', () => {
     expect(response.status).toHaveBeenCalledWith(401);
     expect(prismaMock.usuario.findFirst).toHaveBeenCalledWith({
       where: { Id: 101, Anulado: false },
-      select: { Id: true, IdRol: true },
+      select: {
+        Id: true,
+        IdRol: true,
+        Rol_Usuario_IdRolToRol: { select: { Nombre: true } },
+      },
     });
     expect(next).not.toHaveBeenCalled();
   });

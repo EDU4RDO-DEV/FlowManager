@@ -3,6 +3,16 @@ import type { ApiResponse } from "@/types/auth";
 export type PayrollState = "BORRADOR" | "CERRADA";
 export type PayrollAdjustmentType = "BONO_META" | "ADELANTO" | "FALTANTE";
 
+export interface PayrollSalaryDetailDto {
+  id: number;
+  idEmpleadoSueldoVigencia: number | null;
+  fechaInicio: string;
+  fechaFin: string;
+  diasCalendario: number;
+  sueldoMensualSnapshot: number;
+  montoDevengado: number;
+}
+
 export interface PayrollDto {
   id: number;
   idEmpleado: number;
@@ -55,16 +65,17 @@ export interface PayrollCommissionDetailDto {
   fuentes: Array<{
     idDetalleVenta: number;
     idVenta: number;
-    idRutaSesion: number;
+    idRutaSesion: number | null;
+    idEmpleadoAtribuido: number | null;
     fechaSesion: string;
     sesionAnulada: boolean;
     estadoPago: string;
     ventaAnulada: boolean;
     detalleVentaAnulado: boolean;
     esBonificacion: boolean;
-    idUsuarioChofer: number;
-    idUsuarioVendedor: number;
-    idUsuarioAtribuido: number;
+    idUsuarioChofer: number | null;
+    idUsuarioVendedor: number | null;
+    idUsuarioAtribuido: number | null;
     rolAtribucion: string;
     cantidad: number;
     precioUnitario: number;
@@ -80,6 +91,7 @@ export interface PayrollAdjustmentDetailDto {
 }
 
 export interface PayrollDetailDto extends PayrollDto {
+  detalleSalarios: PayrollSalaryDetailDto[];
   detalleComisiones: PayrollCommissionDetailDto[];
   detalleAjustes: PayrollAdjustmentDetailDto[];
 }
@@ -89,6 +101,7 @@ export interface PayrollPreviewRow {
   nombreEmpleado: string;
   idUsuarioVinculado: number | null;
   sueldoBase: number;
+  detalleSalarios: Omit<PayrollSalaryDetailDto, "id">[];
   totalComisiones: number;
   totalBonosMetas: number;
   totalViaticos: number;
@@ -133,7 +146,6 @@ export interface PayrollValidation {
   idEmpleado: number;
   nombreEmpleado: string;
   codigo:
-    | "USUARIO_VINCULADO_FALTANTE"
     | "CONFIGURACION_FALTANTE"
     | "CONFIGURACION_NO_DISPONIBLE"
     | "REGLAS_NO_CONFIGURADAS"
@@ -142,6 +154,7 @@ export interface PayrollValidation {
     | "DATOS_CALCULO_INVALIDOS"
     | "PLANILLA_EXISTENTE"
     | "TIPO_TRABAJADOR_FALTANTE"
+    | "HISTORIAL_SUELDO_INCOMPLETO"
     | "TARIFA_VIATICO_NO_CONFIGURADA"
     | "CATEGORIA_COMISION_FALTANTE";
   mensaje: string;

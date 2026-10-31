@@ -21,6 +21,7 @@ export type PermissionModule =
   | "proveedores"
   | "compras"
   | "planilla"
+  | "caja"
   | "sesiones"
   | "produccion"
   | "inventario"

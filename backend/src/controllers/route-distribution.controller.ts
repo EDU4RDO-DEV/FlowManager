@@ -20,6 +20,8 @@ import {
   transferIdParamsSchema,
 } from '../validators/route-distribution.validators';
 import { getZodErrorMessage } from '../validators/validation';
+import { assertRouteSessionAccess } from '../services/operational-scope.service';
+import { prisma } from '../config/prisma';
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Error interno';
@@ -63,7 +65,8 @@ function handleError(error: unknown, res: Response) {
 export async function listVehicleTransfersController(req: Request, res: Response) {
   try {
     const query = listTransfersQuerySchema.parse(req.query);
-    const data = await listVehicleTransfers(query);
+    const actor = req.auth ? { userId: req.auth.userId, roleName: req.auth.nombreRol } : undefined;
+    const data = await listVehicleTransfers(query, actor);
     return res.status(200).json({ ok: true, data });
   } catch (error) {
     return handleError(error, res);
@@ -75,7 +78,10 @@ export async function createVehicleTransferController(req: Request, res: Respons
     const idUsuario = req.auth?.userId;
     if (!idUsuario) return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
     const input = createVehicleTransferSchema.parse(req.body);
-    const data = await createVehicleTransfer(idUsuario, input);
+    const actor = { userId: idUsuario, roleName: req.auth?.nombreRol };
+    await assertRouteSessionAccess(prisma, input.idRutaSesionOrigen, actor);
+    await assertRouteSessionAccess(prisma, input.idRutaSesionDestino, actor);
+    const data = await createVehicleTransfer(idUsuario, input, actor);
     return res.status(201).json({ ok: true, data, message: 'Transferencia registrada en estado PENDIENTE' });
   } catch (error) {
     return handleError(error, res);
@@ -88,7 +94,10 @@ export async function confirmVehicleTransferController(req: Request, res: Respon
     if (!idUsuario) return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
     const { id } = transferIdParamsSchema.parse(req.params);
     transferDecisionSchema.parse(req.body ?? {});
-    const data = await confirmVehicleTransfer(id, idUsuario);
+    const data = await confirmVehicleTransfer(id, idUsuario, {
+      userId: idUsuario,
+      roleName: req.auth?.nombreRol,
+    });
     return res.status(200).json({ ok: true, data, message: 'Transferencia confirmada' });
   } catch (error) {
     return handleError(error, res);
@@ -101,7 +110,12 @@ export async function rejectVehicleTransferController(req: Request, res: Respons
     if (!idUsuario) return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
     const { id } = transferIdParamsSchema.parse(req.params);
     const input = transferDecisionSchema.parse(req.body ?? {});
-    const data = await rejectVehicleTransfer(id, idUsuario, input.motivo ?? 'Rechazada por el vehículo destino');
+    const data = await rejectVehicleTransfer(
+      id,
+      idUsuario,
+      input.motivo ?? 'Rechazada por el vehículo destino',
+      { userId: idUsuario, roleName: req.auth?.nombreRol },
+    );
     return res.status(200).json({ ok: true, data, message: 'Transferencia rechazada' });
   } catch (error) {
     return handleError(error, res);
@@ -114,7 +128,10 @@ export async function cancelVehicleTransferController(req: Request, res: Respons
     if (!idUsuario) return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
     const { id } = transferIdParamsSchema.parse(req.params);
     const input = cancelTransferSchema.parse(req.body);
-    const data = await cancelVehicleTransfer(id, idUsuario, input.motivo);
+    const data = await cancelVehicleTransfer(id, idUsuario, input.motivo, {
+      userId: idUsuario,
+      roleName: req.auth?.nombreRol,
+    });
     return res.status(200).json({ ok: true, data, message: 'Transferencia anulada' });
   } catch (error) {
     return handleError(error, res);

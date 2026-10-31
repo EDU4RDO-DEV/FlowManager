@@ -294,6 +294,23 @@ export async function updateTipoCredito(id: number, input: UpdateTipoCreditoInpu
     await validateUsuarioExists(input.idUsuarioModificador);
   }
 
+  const hasHistoricalReceivables = await prisma.cuentaPorCobrar.findFirst({
+    where: { IdTipoCreditoAplicado: id },
+    select: { Id: true },
+  });
+  if (
+    hasHistoricalReceivables &&
+    (
+      input.nombre !== undefined ||
+      input.plazoDias !== undefined ||
+      input.incrementoPorcentual !== undefined ||
+      input.requiereCamion !== undefined ||
+      input.condiciones !== undefined
+    )
+  ) {
+    throw new Error('No se puede modificar un tipo de crédito utilizado en cuentas históricas; cree una nueva versión');
+  }
+
   if (input.nombre !== undefined) {
     await validateNombreTipoCreditoDisponible(input.nombre, id);
   }

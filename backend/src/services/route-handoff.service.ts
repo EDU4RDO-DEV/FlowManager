@@ -4,7 +4,7 @@ import {
   assertVehicleAvailableForSession,
   syncVehicleStateBySessions,
   toRutaSesionDto,
-  validateEmpleadoVinculado,
+  resolveEmpleadoOperativo,
   validateRutaExists,
   validateUsuarioExists,
 } from './logistics.service';
@@ -40,8 +40,10 @@ type CreateVehicleHandoffInput = {
   motivo: string;
   idRuta: number;
   idVehiculo: number;
-  idUsuarioChofer: number;
-  idUsuarioVendedor: number;
+  idEmpleadoChofer?: number;
+  idEmpleadoVendedor?: number;
+  idUsuarioChofer?: number;
+  idUsuarioVendedor?: number;
   kmInicialEntrante: number;
   detalle?: HandoffTransferLineInput[];
 };
@@ -53,9 +55,6 @@ export async function createVehicleHandoff(
 ) {
   await validateUsuarioExists(idUsuarioAutoriza);
   await validateRutaExists(input.idRuta);
-  await validateEmpleadoVinculado(input.idUsuarioChofer, 'Chofer');
-  await validateEmpleadoVinculado(input.idUsuarioVendedor, 'Vendedor');
-
   const result = await runSerializableTransaction(async (tx) => {
     const saliente = await tx.rutaSesion.findFirst({
       where: { Id: idRutaSesionSaliente, Anulado: false },
@@ -73,6 +72,21 @@ export async function createVehicleHandoff(
     if (saliente.Estado !== 'EN_CURSO') {
       throw new Error('La sesión saliente debe estar EN_CURSO para registrar un relevo');
     }
+
+    const chofer = await resolveEmpleadoOperativo(
+      input.idEmpleadoChofer,
+      input.idUsuarioChofer,
+      'Chofer',
+      saliente.FechaSesion,
+      tx,
+    );
+    const vendedor = await resolveEmpleadoOperativo(
+      input.idEmpleadoVendedor,
+      input.idUsuarioVendedor,
+      'Vendedor',
+      saliente.FechaSesion,
+      tx,
+    );
 
     // No se excluye la sesión saliente del chequeo de disponibilidad: al NO cerrarse de
     // inmediato (custodia compartida), un mismo vehículo no puede tener dos sesiones
@@ -94,8 +108,10 @@ export async function createVehicleHandoff(
       data: {
         IdRuta: input.idRuta,
         IdVehiculo: input.idVehiculo,
-        IdUsuarioChofer: input.idUsuarioChofer,
-        IdUsuarioVendedor: input.idUsuarioVendedor,
+        IdEmpleadoChofer: chofer.idEmpleado,
+        IdEmpleadoVendedor: vendedor.idEmpleado,
+        IdUsuarioChofer: chofer.idUsuario,
+        IdUsuarioVendedor: vendedor.idUsuario,
         IdJornada: saliente.IdJornada,
         FechaSesion: saliente.FechaSesion,
         KmInicial: input.kmInicialEntrante,
@@ -107,6 +123,12 @@ export async function createVehicleHandoff(
         Vehiculo: { select: { Id: true, Placa: true, Marca: true, Modelo: true } },
         Usuario_RutaSesion_IdUsuarioChoferToUsuario: { select: { Id: true, Nombre: true, Correo: true } },
         Usuario_RutaSesion_IdUsuarioVendedorToUsuario: { select: { Id: true, Nombre: true, Correo: true } },
+        Empleado_RutaSesion_IdEmpleadoChoferToEmpleado: {
+          select: { Id: true, Entidad: { select: { NombreCompleto: true } } },
+        },
+        Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado: {
+          select: { Id: true, Entidad: { select: { NombreCompleto: true } } },
+        },
       },
     });
 

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 
+import { prisma } from '../config/prisma';
 import {
   anulateSale,
   anulateSalePayment,
@@ -35,6 +36,11 @@ import {
 } from '../validators/sale.validators';
 import { paymentIdempotencyKeySchema } from '../validators/payment.validators';
 import { getZodErrorMessage } from '../validators/validation';
+import { roleHasModulePermission } from '../middlewares/auth.middleware';
+import {
+  getRouteSessionReadVisibilityIds,
+  type OperationalActor,
+} from '../services/operational-scope.service';
 
 function isNumeroVentaUniqueConflict(error: unknown): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
@@ -135,14 +141,29 @@ export async function previewSaleBonusesController(req: Request, res: Response) 
 
 export async function listAvailableRutaSesionesController(req: Request, res: Response) {
   try {
-    const { idUsuarioVendedor } = listAvailableRutaSesionesQuerySchema.parse(req.query);
-    const rows = await listRutaSesiones({ anulado: false });
+    const query = listAvailableRutaSesionesQuerySchema.parse(req.query);
+    const actor = req.auth ? { userId: req.auth.userId, roleName: req.auth.nombreRol } : null;
+    const visibleSessionIds = actor
+      ? await getRouteSessionReadVisibilityIds(prisma, actor)
+      : undefined;
+    const rows = await listRutaSesiones({
+      anulado: false,
+      ...(visibleSessionIds !== undefined
+        ? { idRutaSesiones: visibleSessionIds }
+        : query.idUsuarioVendedor !== undefined
+          ? { idUsuarioVendedor: query.idUsuarioVendedor }
+          : {}),
+    });
     const data = rows.filter((sesion) => {
       if (sesion.estado === 'CERRADA') {
         return false;
       }
 
-      if (idUsuarioVendedor !== undefined && sesion.idUsuarioVendedor !== idUsuarioVendedor) {
+      if (
+        visibleSessionIds === undefined &&
+        query.idUsuarioVendedor !== undefined &&
+        sesion.idUsuarioVendedor !== query.idUsuarioVendedor
+      ) {
         return false;
       }
 
@@ -163,7 +184,8 @@ export async function listAvailableRutaSesionesController(req: Request, res: Res
 export async function listSalesController(req: Request, res: Response) {
   try {
     const query = listSalesQuerySchema.parse(req.query);
-    const data = await listSales(query);
+    const actor = req.auth ? { userId: req.auth.userId, roleName: req.auth.nombreRol } : undefined;
+    const data = await listSales(query, actor);
 
     return res.status(200).json({ ok: true, data });
   } catch (error) {
@@ -179,7 +201,8 @@ export async function listSalesController(req: Request, res: Response) {
 export async function getSaleByIdController(req: Request, res: Response) {
   try {
     const { id } = saleIdParamsSchema.parse(req.params);
-    const data = await getSaleById(id);
+    const actor = req.auth ? { userId: req.auth.userId, roleName: req.auth.nombreRol } : undefined;
+    const data = await getSaleById(id, actor);
 
     return res.status(200).json({ ok: true, data });
   } catch (error) {
@@ -189,7 +212,7 @@ export async function getSaleByIdController(req: Request, res: Response) {
 
     const message = error instanceof Error ? error.message : 'Error interno';
 
-    if (message === 'Venta no existe') {
+    if (message === 'Venta no existe' || message.includes('no está asignada')) {
       return res.status(404).json({ ok: false, message });
     }
 
@@ -204,6 +227,16 @@ export async function createSaleController(req: Request, res: Response) {
     if (!req.auth?.userId) {
       return res.status(401).json({ ok: false, message: 'Token inválido o expirado' });
     }
+    if (payload.idRutaSesion) {
+      const puedeOperarEnRuta = await roleHasModulePermission(req.auth.idRol, 'despacho', 'read');
+      if (!puedeOperarEnRuta) {
+        return res.status(403).json({ ok: false, message: 'No tienes permiso para vender desde una ruta' });
+      }
+    }
+    const actor: OperationalActor = {
+      userId: req.auth.userId,
+      roleName: req.auth.nombreRol,
+    };
     const data = await createSale({
       ...payload,
       idUsuario: req.auth.userId,
@@ -224,7 +257,7 @@ export async function createSaleController(req: Request, res: Response) {
             rutaFirma: payload.pagoInicial.rutaFirma?.trim(),
           }
         : undefined,
-    }, claveSolicitud);
+    }, claveSolicitud, actor);
 
     return res.status(201).json({ ok: true, data, message: 'Venta registrada correctamente' });
   } catch (error) {
@@ -257,6 +290,8 @@ export async function createSaleController(req: Request, res: Response) {
       message === 'Cliente no existe' ||
       message === 'RutaSesion no existe' ||
       message === 'RutaSesion está cerrada' ||
+      message === 'Vendedor no tiene empleado activo vinculado' ||
+      message.includes('no está asignada') ||
       message === 'Talonario no existe' ||
       message === 'Talonario sin correlativos disponibles' ||
       message.includes('no existe o está anulado')
@@ -266,6 +301,7 @@ export async function createSaleController(req: Request, res: Response) {
 
     if (
       message.startsWith('Stock insuficiente') ||
+      message === 'El vendedor de la venta debe coincidir con el empleado asignado a la sesión' ||
       message.startsWith('Existencia insuficiente en el vehículo') ||
       message.startsWith('La fecha de expiración de la proforma') ||
       message.startsWith('Venta de contado') ||
@@ -274,6 +310,7 @@ export async function createSaleController(req: Request, res: Response) {
       message === 'Cliente no habilitado para crédito' ||
       message === 'El cliente no tiene una condición de crédito vigente con un tipo activo' ||
       message.startsWith('Crédito insuficiente') ||
+      message === 'Debe abrir la caja antes de registrar un pago en efectivo' ||
       message.includes('No fue posible reservar correlativo de talonario')
     ) {
       return res.status(400).json({ ok: false, message });
@@ -321,6 +358,9 @@ export async function updateSaleController(req: Request, res: Response) {
     if (message.startsWith('No se puede modificar')) {
       return res.status(400).json({ ok: false, message });
     }
+    if (message.includes('cantidades realmente recibidas')) {
+      return res.status(409).json({ ok: false, message });
+    }
 
     return res.status(500).json({ ok: false, message });
   }
@@ -334,7 +374,11 @@ export async function confirmRouteProformaController(req: Request, res: Response
       return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
     }
 
-    const data = await confirmRouteProforma(id, userId);
+    const actor: OperationalActor = {
+      userId,
+      roleName: req.auth?.nombreRol,
+    };
+    const data = await confirmRouteProforma(id, userId, actor);
     return res.status(200).json({ ok: true, data, message: 'Proforma confirmada como venta' });
   } catch (error) {
     if (error instanceof ZodError) {
@@ -349,7 +393,11 @@ export async function confirmRouteProformaController(req: Request, res: Response
     }
 
     const message = error instanceof Error ? error.message : 'Error interno';
-    if (message === 'Venta no existe o está anulada' || message === 'Usuario no existe') {
+    if (
+      message === 'Venta no existe o está anulada' ||
+      message === 'Venta no existe o no está asignada al usuario' ||
+      message === 'Usuario no existe'
+    ) {
       return res.status(404).json({ ok: false, message });
     }
     if (
@@ -482,6 +530,7 @@ export async function createSalePaymentController(req: Request, res: Response) {
     if (
       message.startsWith('Pago no puede ser mayor') ||
       message.startsWith('Monto inválido') ||
+      message === 'Debe abrir la caja antes de registrar un pago en efectivo' ||
       message.includes('obligatorio')
     ) {
       return res.status(400).json({ ok: false, message });
@@ -508,6 +557,12 @@ export async function anulateSalePaymentController(req: Request, res: Response) 
 
     if (message === 'Pago no existe' || message === 'Usuario no existe') {
       return res.status(404).json({ ok: false, message });
+    }
+    if (
+      message === 'Debe abrir la caja antes de anular un pago en efectivo' ||
+      message === 'Se requiere usuario para registrar la reversión de caja'
+    ) {
+      return res.status(400).json({ ok: false, message });
     }
 
     return res.status(500).json({ ok: false, message });

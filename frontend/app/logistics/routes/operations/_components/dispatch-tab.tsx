@@ -131,7 +131,9 @@ export function DispatchTab({
         <Card className="rounded-xl">
           <CardContent className="space-y-4 p-4">
             <div>
-              <h2 className="text-lg font-semibold">{visibleInventory.despacho ? "Nuevo despacho (reabastecimiento)" : "Despacho inicial"}</h2>
+              <h2 className="text-lg font-semibold">
+                {visibleInventory.productos.length > 0 ? "Nuevo despacho" : "Despacho inicial"}
+              </h2>
               <p className="text-sm text-muted-foreground">
                 Puedes confirmar más de un despacho por sesión (reabastecimiento tras regresar a planta); se
                 suman al disponible del vehículo. El servidor valida y descuenta la existencia de planta en

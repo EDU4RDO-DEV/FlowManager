@@ -278,7 +278,10 @@ export async function getDashboardData(query: DashboardQuery) {
       orderCount: current.orderCount,
       orderCountChangePercent: percentageChange(current.orderCount, previous.orderCount),
       pendingOrderCount: current.pendingOrderCount,
-      pendingOrderCountChangePercent: null,
+      pendingOrderCountChangePercent: percentageChange(
+        current.pendingOrderCount,
+        previous.pendingOrderCount,
+      ),
       unitsSold: current.unitsSold,
       unitsSoldChangePercent: percentageChange(current.unitsSold, previous.unitsSold),
       averageTicket,

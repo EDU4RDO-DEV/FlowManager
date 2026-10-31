@@ -36,6 +36,7 @@ import {
   SlidersHorizontal,
   Truck,
   Users,
+  Wallet,
   Wrench,
 } from "lucide-react";
 
@@ -126,6 +127,7 @@ export function DashboardShell({ title, description, printContentOnly = false, c
         compras: allowedModules.includes("compras"),
         empleados: allowedModules.includes("empleados"),
         planilla: allowedModules.includes("planilla"),
+        caja: allowedModules.includes("caja"),
         produccion: allowedModules.includes("produccion"),
         usuarios: allowedModules.includes("usuarios"),
         roles: allowedModules.includes("roles"),
@@ -397,6 +399,22 @@ export function DashboardShell({ title, description, printContentOnly = false, c
           ],
         },
         {
+          id: "finanzas",
+          title: "FINANZAS",
+          items: [
+            {
+              type: "link",
+              item: {
+                id: "caja",
+                name: "Caja",
+                path: "/cash",
+                icon: Wallet,
+                available: has.caja,
+              },
+            },
+          ],
+        },
+        {
           id: "administracion-rrhh",
           title: "ADMINISTRACIÓN Y RRHH",
           items: [
@@ -421,6 +439,22 @@ export function DashboardShell({ title, description, printContentOnly = false, c
                   icon: FileSpreadsheet,
                   available: has.planilla,
                   isActive: (currentPath: string) => isPathActive(currentPath, "/payroll"),
+                },
+                {
+                  id: "rrhh-adelantos",
+                  name: "Anticipos de empleados",
+                  path: "/payroll/advances",
+                  icon: CreditCard,
+                  available: has.planilla,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/payroll/advances"),
+                },
+                {
+                  id: "rrhh-comisiones-devengadas",
+                  name: "Comisiones devengadas",
+                  path: "/payroll/commissions",
+                  icon: ReceiptText,
+                  available: has.planilla,
+                  isActive: (currentPath: string) => isPathActive(currentPath, "/payroll/commissions"),
                 },
                 {
                   id: "rrhh-mis-recibos",

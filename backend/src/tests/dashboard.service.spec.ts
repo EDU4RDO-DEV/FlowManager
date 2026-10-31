@@ -30,7 +30,7 @@ describe('dashboard.service', () => {
         { dateKey: '2026-01-03', salesAmount: 150 },
       ])
       .mockResolvedValueOnce([
-        { productName: 'Garrafón', quantitySold: 6, salesAmount: 200 },
+        { productId: 5, productName: 'Garrafón', quantitySold: 6, salesAmount: 200 },
       ])
       .mockResolvedValueOnce([
         { customerId: 7, customerName: 'Cliente A', orderCount: 2, salesAmount: 150 },
@@ -64,7 +64,7 @@ describe('dashboard.service', () => {
       { date: '2026-01-03', salesAmount: 150 },
     ]);
     expect(result.topProducts).toEqual([
-      { name: 'Garrafón', quantity: 6, salesAmount: 200 },
+      { id: 5, name: 'Garrafón', quantity: 6, salesAmount: 200 },
     ]);
     expect(result.topCustomers).toEqual([
       { id: 7, name: 'Cliente A', orderCount: 2, salesAmount: 150 },

@@ -53,6 +53,10 @@ vi.mock('../services/inventory-movement.service', () => ({
   registerEnvaseBucketChange: registerEnvaseBucketChangeMock,
   registerInventoryMovement: registerMovementMock,
 }));
+vi.mock('../services/cash.service', () => ({
+  recordCashPaymentMovement: vi.fn().mockResolvedValue(undefined),
+  reverseSalePaymentCashMovement: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { createSale } from '../services/sale.service';
 
@@ -120,8 +124,14 @@ function saleRow() {
     Usuario: { Id: 1, Nombre: 'Operador', Correo: 'operador@example.test' },
     RutaSesion: {
       Id: 12,
+      IdVehiculo: 3,
+      IdUsuarioVendedor: 1,
+      IdUsuarioChofer: 2,
       Estado: 'EN_CURSO',
       FechaSesion: new Date('2026-10-15T00:00:00.000Z'),
+      Vehiculo: { Id: 3, Placa: 'TEST-003' },
+      Usuario_RutaSesion_IdUsuarioVendedorToUsuario: { Id: 1, Nombre: 'Vendedor' },
+      Usuario_RutaSesion_IdUsuarioChoferToUsuario: { Id: 2, Nombre: 'Chofer' },
       Ruta: { Id: 2, Nombre: 'Centro' },
     },
     Talonario: null,
@@ -168,8 +178,7 @@ function configureRouteSale(
     HabilitadoCredito: false,
     Entidad: { NombreCompleto: 'Cliente', Nit: null },
   });
-  prismaMock.rutaSesion.findFirst.mockResolvedValueOnce({ Id: 12, Estado: 'EN_CURSO' });
-  prismaMock.rutaSesion.findFirst.mockResolvedValueOnce(routeSession(available, hasReturn, returnedQuantity));
+  prismaMock.rutaSesion.findFirst.mockResolvedValue(routeSession(available, hasReturn, returnedQuantity));
   prismaMock.$transaction.mockImplementation(
     async (callback: (tx: typeof prismaMock) => Promise<unknown>) => callback(prismaMock),
   );
@@ -179,6 +188,7 @@ function configureRouteSale(
     .mockResolvedValue(saleRow());
   prismaMock.venta.create.mockResolvedValueOnce({ Id: 7, NumeroVenta: 1 });
   prismaMock.detalleVenta.create.mockResolvedValueOnce({ Id: 3 });
+  prismaMock.pagoVenta.create.mockResolvedValue({ Id: 5 });
   prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({
     Id: 9,
     Nombre: 'Garrafón',

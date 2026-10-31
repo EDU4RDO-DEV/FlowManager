@@ -18,8 +18,8 @@ export type TransferDraft = {
 export type HandoffFormState = {
   idRuta: string;
   idVehiculo: string;
-  idUsuarioChofer: string;
-  idUsuarioVendedor: string;
+  idEmpleadoChofer: string;
+  idEmpleadoVendedor: string;
   kmInicialEntrante: string;
   motivo: string;
 };

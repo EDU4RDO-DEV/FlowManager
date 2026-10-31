@@ -59,8 +59,8 @@ type RouteFormState = {
 type SessionFormState = {
   idRuta: string;
   idVehiculo: string;
-  idUsuarioChofer: string;
-  idUsuarioVendedor: string;
+  idEmpleadoChofer: string;
+  idEmpleadoVendedor: string;
   idJornada: string;
   fechaSesion: string;
   kmInicial: string;
@@ -82,8 +82,8 @@ const EMPTY_ROUTE_FORM: RouteFormState = {
 const EMPTY_SESSION_FORM: SessionFormState = {
   idRuta: "",
   idVehiculo: "",
-  idUsuarioChofer: "",
-  idUsuarioVendedor: "",
+  idEmpleadoChofer: "",
+  idEmpleadoVendedor: "",
   idJornada: "",
   fechaSesion: "",
   kmInicial: "",
@@ -118,7 +118,7 @@ export default function LogisticsRoutesPage() {
   const [sessions, setSessions] = useState<RutaSesionDto[]>([]);
   const [trashSessions, setTrashSessions] = useState<RutaSesionDto[]>([]);
   const [vehicles, setVehicles] = useState<VehiculoDto[]>([]);
-  const [employees, setEmployees] = useState<Array<{ userId: number; nombre: string }>>([]);
+  const [employees, setEmployees] = useState<Array<{ employeeId: number; userId: number | null; nombre: string }>>([]);
   const [jornadas, setJornadas] = useState<JornadaDto[]>([]);
   const [routeForm, setRouteForm] = useState<RouteFormState>(EMPTY_ROUTE_FORM);
   const [sessionForm, setSessionForm] = useState<SessionFormState>(EMPTY_SESSION_FORM);
@@ -187,10 +187,14 @@ export default function LogisticsRoutesPage() {
     setSessionForm((prev) => ({
       ...prev,
       idVehiculo,
-      idUsuarioChofer: !prev.idUsuarioChofer && habitual ? String(habitual.idUsuarioChofer) : prev.idUsuarioChofer,
-      idUsuarioVendedor: !prev.idUsuarioVendedor && habitual ? String(habitual.idUsuarioVendedor) : prev.idUsuarioVendedor,
+      idEmpleadoChofer: !prev.idEmpleadoChofer && habitual
+        ? String(habitual.idEmpleadoChofer ?? employees.find((item) => item.userId === habitual.idUsuarioChofer)?.employeeId ?? "")
+        : prev.idEmpleadoChofer,
+      idEmpleadoVendedor: !prev.idEmpleadoVendedor && habitual
+        ? String(habitual.idEmpleadoVendedor ?? employees.find((item) => item.userId === habitual.idUsuarioVendedor)?.employeeId ?? "")
+        : prev.idEmpleadoVendedor,
     }));
-    if (habitual && (!sessionForm.idUsuarioChofer || !sessionForm.idUsuarioVendedor)) {
+    if (habitual && (!sessionForm.idEmpleadoChofer || !sessionForm.idEmpleadoVendedor)) {
       toast.info("Se sugirió el chofer/vendedor habitual de este vehículo; puedes cambiarlos si corresponde.");
     }
   }
@@ -218,8 +222,8 @@ export default function LogisticsRoutesPage() {
     setSessionForm({
       idRuta: String(item.idRuta),
       idVehiculo: String(item.idVehiculo),
-      idUsuarioChofer: String(item.idUsuarioChofer),
-      idUsuarioVendedor: String(item.idUsuarioVendedor),
+      idEmpleadoChofer: String(item.idEmpleadoChofer ?? employees.find((employee) => employee.userId === item.idUsuarioChofer)?.employeeId ?? ""),
+      idEmpleadoVendedor: String(item.idEmpleadoVendedor ?? employees.find((employee) => employee.userId === item.idUsuarioVendedor)?.employeeId ?? ""),
       idJornada: item.idJornada === null ? "" : String(item.idJornada),
       fechaSesion: item.fechaSesion.slice(0, 10),
       kmInicial: item.kmInicial === null ? "" : String(item.kmInicial),
@@ -292,12 +296,16 @@ export default function LogisticsRoutesPage() {
 
   async function saveSession() {
     try {
+      if (!sessionForm.idEmpleadoChofer || !sessionForm.idEmpleadoVendedor) {
+        toast.error("Selecciona el empleado chofer y el empleado vendedor");
+        return;
+      }
       if (editingSessionId) {
         const updated = await updateRutaSesion(Number(sessionForm.idRuta), editingSessionId, {
           idRuta: Number(sessionForm.idRuta),
           idVehiculo: Number(sessionForm.idVehiculo),
-          idUsuarioChofer: Number(sessionForm.idUsuarioChofer),
-          idUsuarioVendedor: Number(sessionForm.idUsuarioVendedor),
+          idEmpleadoChofer: Number(sessionForm.idEmpleadoChofer),
+          idEmpleadoVendedor: Number(sessionForm.idEmpleadoVendedor),
           idJornada: sessionForm.idJornada ? Number(sessionForm.idJornada) : null,
           fechaSesion: sessionForm.fechaSesion,
           kmInicial: sessionForm.kmInicial ? Number(sessionForm.kmInicial) : null,
@@ -312,8 +320,8 @@ export default function LogisticsRoutesPage() {
         const created = await createRutaSesion({
           idRuta: Number(sessionForm.idRuta),
           idVehiculo: Number(sessionForm.idVehiculo),
-          idUsuarioChofer: Number(sessionForm.idUsuarioChofer),
-          idUsuarioVendedor: Number(sessionForm.idUsuarioVendedor),
+          idEmpleadoChofer: Number(sessionForm.idEmpleadoChofer),
+          idEmpleadoVendedor: Number(sessionForm.idEmpleadoVendedor),
           idJornada: sessionForm.idJornada ? Number(sessionForm.idJornada) : undefined,
           fechaSesion: sessionForm.fechaSesion,
           kmInicial: sessionForm.kmInicial ? Number(sessionForm.kmInicial) : undefined,
@@ -613,19 +621,19 @@ export default function LogisticsRoutesPage() {
                       <select
                         id="session-driver"
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        value={sessionForm.idUsuarioChofer}
-                        onChange={(event) => setSessionForm((prev) => ({ ...prev, idUsuarioChofer: event.target.value }))}
+                        value={sessionForm.idEmpleadoChofer}
+                        onChange={(event) => setSessionForm((prev) => ({ ...prev, idEmpleadoChofer: event.target.value }))}
                       >
                         <option value="">Seleccionar</option>
                         {employees.map((item) => (
-                          <option key={item.userId} value={item.userId}>
+                          <option key={item.employeeId} value={item.employeeId}>
                             {item.nombre}
                           </option>
                         ))}
                       </select>
                       {employees.length === 0 ? (
                         <p className="text-xs text-muted-foreground">
-                          No hay personal disponible. Solo aparecen empleados con una cuenta de usuario vinculada.{" "}
+                          No hay empleados activos disponibles para asignar.{" "}
                           <Link href="/employees" target="_blank" className="underline">
                             Revisar empleados
                           </Link>
@@ -639,19 +647,19 @@ export default function LogisticsRoutesPage() {
                       <select
                         id="session-seller"
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        value={sessionForm.idUsuarioVendedor}
-                        onChange={(event) => setSessionForm((prev) => ({ ...prev, idUsuarioVendedor: event.target.value }))}
+                        value={sessionForm.idEmpleadoVendedor}
+                        onChange={(event) => setSessionForm((prev) => ({ ...prev, idEmpleadoVendedor: event.target.value }))}
                       >
                         <option value="">Seleccionar</option>
                         {employees.map((item) => (
-                          <option key={item.userId} value={item.userId}>
+                          <option key={item.employeeId} value={item.employeeId}>
                             {item.nombre}
                           </option>
                         ))}
                       </select>
                       {employees.length === 0 ? (
                         <p className="text-xs text-muted-foreground">
-                          Mismo listado que Chofer: empleados vinculados a una cuenta de usuario.
+                          Selecciona un empleado; no necesita cuenta de usuario.
                         </p>
                       ) : null}
                     </div>
@@ -778,8 +786,8 @@ export default function LogisticsRoutesPage() {
                                 <TableCell className="font-medium">{item.ruta?.nombre ?? `#${item.idRuta}`}</TableCell>
                                 <TableCell>{formatDate(item.fechaSesion)}</TableCell>
                                 <TableCell>{item.vehiculo?.placa ?? `#${item.idVehiculo}`}</TableCell>
-                                <TableCell>{item.chofer?.nombre ?? `#${item.idUsuarioChofer}`}</TableCell>
-                                <TableCell>{item.vendedor?.nombre ?? `#${item.idUsuarioVendedor}`}</TableCell>
+                                <TableCell>{item.chofer?.nombre ?? `#${item.idEmpleadoChofer ?? item.idUsuarioChofer}`}</TableCell>
+                                <TableCell>{item.vendedor?.nombre ?? `#${item.idEmpleadoVendedor ?? item.idUsuarioVendedor}`}</TableCell>
                                 <TableCell>{item.estado}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-2">
@@ -874,8 +882,8 @@ export default function LogisticsRoutesPage() {
                           }
                         >
                           <option value="">Sin asignar</option>
-                          {employees.map((item) => (
-                            <option key={item.userId} value={item.userId}>
+                          {employees.filter((item) => item.userId !== null).map((item) => (
+                            <option key={item.userId} value={String(item.userId)}>
                               {item.nombre}
                             </option>
                           ))}

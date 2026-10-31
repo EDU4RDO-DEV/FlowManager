@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock, loadRouteInventoryMock, transferEnvaseBucketMock } = vi.hoisted(() => ({
+const {
+  prismaMock,
+  loadRouteInventoryMock,
+  transferEnvaseBucketMock,
+  getEnvaseBucketQuantityMock,
+} = vi.hoisted(() => ({
   prismaMock: {
     $transaction: vi.fn(),
     rutaSesion: { findFirst: vi.fn() },
@@ -9,6 +14,7 @@ const { prismaMock, loadRouteInventoryMock, transferEnvaseBucketMock } = vi.hois
   },
   loadRouteInventoryMock: vi.fn(),
   transferEnvaseBucketMock: vi.fn(),
+  getEnvaseBucketQuantityMock: vi.fn(),
 }));
 
 vi.mock('../config/prisma', () => ({ prisma: prismaMock }));
@@ -17,6 +23,7 @@ vi.mock('../services/route-inventory.service', () => ({
   assertRouteCanClose: vi.fn(),
 }));
 vi.mock('../services/inventory-movement.service', () => ({
+  getEnvaseBucketQuantity: getEnvaseBucketQuantityMock,
   transferEnvaseBucket: transferEnvaseBucketMock,
 }));
 
@@ -33,7 +40,12 @@ function sessionRow(id: number, estado = 'EN_CURSO') {
 
 function inventoryWithAvailable(idInventarioItem: number, disponible: number, estadoEnvaseDespachado: string | null = null) {
   return {
-    session: { Id: 10, Estado: 'EN_CURSO' },
+    session: {
+      Id: 10,
+      Estado: 'EN_CURSO',
+      DevolucionRuta: [],
+      TransferenciasOrigen: [],
+    },
     despacho: { Id: 1 },
     devolucion: null,
     lines: [
@@ -43,6 +55,7 @@ function inventoryWithAvailable(idInventarioItem: number, disponible: number, es
         unidadMedida: 'unidad',
         despachado: disponible,
         estadoEnvaseDespachado,
+        esEnvaseRetornable: estadoEnvaseDespachado !== null,
         vendido: 0,
         devolucionComercial: 0,
         noVendibleComercial: 0,
@@ -65,6 +78,7 @@ function inventoryWithAvailable(idInventarioItem: number, disponible: number, es
 describe('route-transfer.service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getEnvaseBucketQuantityMock.mockResolvedValue(10);
     prismaMock.$transaction.mockImplementation(
       async (callback: (tx: typeof prismaMock) => Promise<unknown>) => callback(prismaMock),
     );
@@ -131,6 +145,76 @@ describe('route-transfer.service', () => {
         detalle: [{ idInventarioItem: 7, cantidad: 6 }],
       }),
     ).rejects.toThrow('Existencia insuficiente');
+
+    expect(prismaMock.transferenciaVehiculo.create).not.toHaveBeenCalled();
+  });
+
+  it('transfers returnable stock using product-level availability and the selected state bucket', async () => {
+    prismaMock.rutaSesion.findFirst
+      .mockResolvedValueOnce(sessionRow(10))
+      .mockResolvedValueOnce(sessionRow(20));
+    loadRouteInventoryMock.mockResolvedValueOnce(inventoryWithAvailable(7, 5));
+    prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
+      { Id: 7, Nombre: 'Garrafón', UnidadMedida: 'unidad', EsEnvaseRetornable: true },
+    ]);
+    getEnvaseBucketQuantityMock.mockResolvedValueOnce(4);
+    prismaMock.transferenciaVehiculo.create.mockResolvedValueOnce({
+      Id: 2,
+      IdRutaSesionOrigen: 10,
+      IdRutaSesionDestino: 20,
+      IdUsuario: 5,
+      Motivo: 'Reparto cruzado',
+      EstadoConfirmacion: 'PENDIENTE',
+      IdUsuarioConfirma: null,
+      FechaConfirmacion: null,
+      FechaRegistro: new Date(),
+      Anulado: false,
+      IdUsuarioAnulador: null,
+      FechaAnulacion: null,
+      MotivoAnulacion: null,
+      Detalles: [{
+        Id: 2,
+        IdInventarioItem: 7,
+        NombreSnapshot: 'Garrafón',
+        UnidadMedidaSnapshot: 'unidad',
+        Cantidad: 3,
+        EstadoEnvase: 'VACIO',
+      }],
+    });
+
+    const result = await createVehicleTransfer(5, {
+      idRutaSesionOrigen: 10,
+      idRutaSesionDestino: 20,
+      motivo: 'Reparto cruzado',
+      detalle: [{ idInventarioItem: 7, cantidad: 3, estadoEnvase: 'VACIO' }],
+    });
+
+    expect(result.estadoConfirmacion).toBe('PENDIENTE');
+    expect(getEnvaseBucketQuantityMock).toHaveBeenCalledWith(
+      expect.anything(),
+      7,
+      { ubicacion: 'RUTA', estado: 'VACIO', idRutaSesion: 10 },
+    );
+  });
+
+  it('rejects a transfer whose requested container state is not physically available', async () => {
+    prismaMock.rutaSesion.findFirst
+      .mockResolvedValueOnce(sessionRow(10))
+      .mockResolvedValueOnce(sessionRow(20));
+    loadRouteInventoryMock.mockResolvedValueOnce(inventoryWithAvailable(7, 5));
+    prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
+      { Id: 7, Nombre: 'Garrafón', UnidadMedida: 'unidad', EsEnvaseRetornable: true },
+    ]);
+    getEnvaseBucketQuantityMock.mockResolvedValueOnce(2);
+
+    await expect(
+      createVehicleTransfer(5, {
+        idRutaSesionOrigen: 10,
+        idRutaSesionDestino: 20,
+        motivo: 'Reparto cruzado',
+        detalle: [{ idInventarioItem: 7, cantidad: 3, estadoEnvase: 'VACIO' }],
+      }),
+    ).rejects.toThrow('Existencia insuficiente de envase VACIO');
 
     expect(prismaMock.transferenciaVehiculo.create).not.toHaveBeenCalled();
   });

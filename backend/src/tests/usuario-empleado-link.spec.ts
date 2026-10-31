@@ -220,8 +220,16 @@ describe('Fase 1 - relación Usuario-Empleado', () => {
     ).rejects.toThrowError('Chofer no tiene empleado activo vinculado');
 
     expect(prismaMock.empleado.findFirst).toHaveBeenCalledWith({
-      where: { Anulado: false, IdUsuarioVinculado: 77 },
-      select: { Id: true },
+      where: {
+        Anulado: false,
+        IdUsuarioVinculado: 77,
+        FechaContratacion: { lte: new Date('2026-09-28T00:00:00.000Z') },
+        OR: [
+          { FechaSalida: null },
+          { FechaSalida: { gte: new Date('2026-09-28T00:00:00.000Z') } },
+        ],
+      },
+      select: { Id: true, IdUsuarioVinculado: true },
     });
   });
 });

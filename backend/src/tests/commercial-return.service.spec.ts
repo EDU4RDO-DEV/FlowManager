@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock } = vi.hoisted(() => ({
+const {
+  prismaMock,
+  registerEnvaseBucketChangeMock,
+  registerInventoryMovementMock,
+  syncSaleReceivableAfterCommercialReturnMock,
+} = vi.hoisted(() => ({
   prismaMock: {
     $transaction: vi.fn(),
     devolucionComercial: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
@@ -10,10 +15,26 @@ const { prismaMock } = vi.hoisted(() => ({
     rutaSesion: { findFirst: vi.fn() },
     despachoRuta: { findFirst: vi.fn() },
     devolucionRuta: { findFirst: vi.fn() },
+    envaseClienteSaldo: { findFirst: vi.fn(), update: vi.fn() },
+    movimientoEnvase: { create: vi.fn() },
+    inventarioItem: { findFirst: vi.fn(), update: vi.fn() },
   },
+  registerEnvaseBucketChangeMock: vi.fn(),
+  registerInventoryMovementMock: vi.fn(),
+  syncSaleReceivableAfterCommercialReturnMock: vi.fn(),
 }));
 
 vi.mock('../config/prisma', () => ({ prisma: prismaMock }));
+vi.mock('../services/inventory-movement.service', () => ({
+  registerEnvaseBucketChange: registerEnvaseBucketChangeMock,
+  registerInventoryMovement: registerInventoryMovementMock,
+}));
+vi.mock('../services/sale.service', () => ({
+  syncSaleReceivableAfterCommercialReturn: syncSaleReceivableAfterCommercialReturnMock,
+}));
+vi.mock('../services/commission-accrual.service', () => ({
+  accrueMonthlyCommissionsForSale: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { createCommercialReturn } from '../services/commercial-return.service';
 
@@ -29,6 +50,7 @@ const input = {
 describe('commercial route returns', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    syncSaleReceivableAfterCommercialReturnMock.mockResolvedValue(undefined);
     prismaMock.$transaction.mockImplementation(
       async (callback: (tx: typeof prismaMock) => Promise<unknown>) => callback(prismaMock),
     );
@@ -36,8 +58,15 @@ describe('commercial route returns', () => {
     prismaMock.usuario.findFirst.mockResolvedValue({ Id: 12 });
     prismaMock.venta.findFirst.mockResolvedValue({
       Id: 90,
+      IdCliente: 55,
       IdRutaSesion: 70,
-      DetalleVenta: [{ Id: 301, IdInventarioItem: 8, Cantidad: 5 }],
+      DetalleVenta: [{
+        Id: 301,
+        IdInventarioItem: 8,
+        Cantidad: 5,
+        InventarioItem: { EsEnvaseRetornable: false },
+        Envases: [],
+      }],
     });
     prismaMock.rutaSesion.findFirst.mockResolvedValue({ Estado: 'EN_CURSO' });
     prismaMock.despachoRuta.findFirst.mockResolvedValue({
@@ -46,6 +75,11 @@ describe('commercial route returns', () => {
     prismaMock.devolucionRuta.findFirst.mockResolvedValue(null);
     prismaMock.devolucionComercialDetalle.findMany.mockResolvedValue([]);
     prismaMock.devolucionComercial.create.mockResolvedValue({ Id: 44, Detalles: [] });
+    prismaMock.envaseClienteSaldo.findFirst.mockResolvedValue(null);
+    prismaMock.movimientoEnvase.create.mockResolvedValue({ Id: 71 });
+    prismaMock.inventarioItem.findFirst.mockResolvedValue({ Id: 8, Existencia: 20 });
+    registerEnvaseBucketChangeMock.mockResolvedValue(0);
+    registerInventoryMovementMock.mockResolvedValue(undefined);
   });
 
   it('authorizes a route return and stores its idempotency key and source line', async () => {
@@ -70,6 +104,11 @@ describe('commercial route returns', () => {
         },
       }),
     }));
+    expect(syncSaleReceivableAfterCommercialReturnMock).toHaveBeenCalledWith(
+      prismaMock,
+      90,
+      12,
+    );
   });
 
   it('keeps damaged quantities traceable without treating them as sellable', async () => {
@@ -95,6 +134,92 @@ describe('commercial route returns', () => {
         },
       }),
     }));
+  });
+
+  it('restores a returned borrowed container to route custody exactly once', async () => {
+    prismaMock.venta.findFirst.mockResolvedValueOnce({
+      Id: 90,
+      IdCliente: 55,
+      IdRutaSesion: 70,
+      DetalleVenta: [{
+        Id: 301,
+        IdInventarioItem: 8,
+        Cantidad: 2,
+        EstadoEnvase: 'LLENO',
+        InventarioItem: { EsEnvaseRetornable: true },
+        Envases: [{
+          Id: 600,
+          IdInventarioItemEnvase: 8,
+          Modo: 'PRESTAMO_EMPRESA',
+          Cantidad: 2,
+        }],
+      }],
+    });
+    prismaMock.envaseClienteSaldo.findFirst.mockResolvedValueOnce({
+      Id: 33,
+      CantidadPrestada: 2,
+    });
+
+    await createCommercialReturn(90, 12, '8e71e2a8-ef5c-481d-b53f-d2ad2acbe801', input);
+
+    expect(prismaMock.envaseClienteSaldo.update).toHaveBeenCalledWith({
+      where: { Id: 33 },
+      data: { CantidadPrestada: 0, FechaActualizacion: expect.any(Date) },
+    });
+    expect(prismaMock.movimientoEnvase.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        TipoMovimiento: 'DEVOLUCION',
+        IdRutaSesion: 70,
+        IdVenta: 90,
+        IdDetalleVentaEnvase: 600,
+        SaldoAnterior: 2,
+        SaldoNuevo: 0,
+      }),
+    }));
+    expect(registerEnvaseBucketChangeMock).toHaveBeenCalledTimes(1);
+    expect(registerEnvaseBucketChangeMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        bucket: { ubicacion: 'RUTA', estado: 'LLENO', idRutaSesion: 70 },
+        entrada: true,
+        tipoDocumento: 'DEVCOM',
+      }),
+    );
+  });
+
+  it('returns a sellable plant-sale item to plant stock with one inventory movement', async () => {
+    prismaMock.venta.findFirst.mockResolvedValueOnce({
+      Id: 90,
+      IdCliente: 55,
+      IdRutaSesion: null,
+      DetalleVenta: [{
+        Id: 301,
+        IdInventarioItem: 8,
+        Cantidad: 5,
+        EstadoEnvase: null,
+        InventarioItem: { EsEnvaseRetornable: false, Existencia: 20, Nombre: 'Producto' },
+        Envases: [],
+      }],
+    });
+    prismaMock.inventarioItem.findFirst.mockResolvedValueOnce({ Id: 8, Existencia: 20 });
+
+    await createCommercialReturn(90, 12, '9f6b6d6f-d15b-4c0f-b832-3d5fc4cb0bfd', input);
+
+    expect(prismaMock.inventarioItem.update).toHaveBeenCalledWith({
+      where: { Id: 8 },
+      data: { Existencia: 22 },
+    });
+    expect(registerInventoryMovementMock).toHaveBeenCalledTimes(1);
+    expect(registerInventoryMovementMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        tipoDocumento: 'DEVCOM',
+        tipoMovimiento: true,
+        existenciaAnterior: 20,
+        cantidad: 2,
+        nuevaExistencia: 22,
+      }),
+    );
   });
 
   it('rejects returned quantities above the remaining quantity sold', async () => {

@@ -8,6 +8,11 @@ import {
   getCustomerCreditAuthorization as getCustomerCreditAuthorizationFromSales,
   listSalePayments,
 } from './sale.service';
+import {
+  assertSaleAccess,
+  getSaleVisibilityWhere,
+  type OperationalActor,
+} from './operational-scope.service';
 
 type ListCreditsInput = {
   page?: number;
@@ -92,6 +97,12 @@ function toCreditDto(
           Correo: string;
         };
       }>;
+      DevolucionesComerciales: Array<{
+        Detalles: Array<{
+          Cantidad: number;
+          DetalleVenta: { PrecioUnitario: Prisma.Decimal; EsBonificacion: boolean };
+        }>;
+      }>;
     };
     TipoCredito: {
       Id: number;
@@ -106,7 +117,32 @@ function toCreditDto(
       .reduce((sum, payment) => sum + toNumber(payment.Monto), 0)
       .toFixed(2),
   );
+  const totalDevuelto = Number(
+    credit.Venta.DevolucionesComerciales
+      .flatMap((devolucion) => devolucion.Detalles)
+      .reduce((sum, detail) => sum + (
+        detail.DetalleVenta.EsBonificacion
+          ? 0
+          : detail.Cantidad * toNumber(detail.DetalleVenta.PrecioUnitario)
+      ), 0)
+      .toFixed(2),
+  );
+  const totalNeto = Math.max(0, totalOriginal - totalDevuelto);
   const cuentaAnulada = credit.Anulado || credit.Estado === 'ANULADO' || credit.Venta.Anulado;
+  const saldo = cuentaAnulada ? 0 : calculateSaldo(totalNeto, totalAbonado);
+  const hoyUtc = new Date();
+  hoyUtc.setUTCHours(0, 0, 0, 0);
+  const saldoVencido = !cuentaAnulada && credit.FechaVencimiento && credit.FechaVencimiento < hoyUtc
+    ? saldo
+    : 0;
+  const estadoPago = cuentaAnulada
+    ? 'PENDIENTE'
+    : saldo === 0
+      ? 'PAGADO'
+      : totalAbonado > 0
+        ? 'PARCIAL'
+        : 'PENDIENTE';
+  const estadoCuenta = cuentaAnulada ? 'ANULADO' : saldo === 0 ? 'PAGADO' : 'ACTIVO';
 
   return {
     id: credit.Id,
@@ -115,8 +151,11 @@ function toCreditDto(
     idClienteCondicionCreditoAplicada: credit.IdClienteCondicionCreditoAplicada,
     totalOriginal,
     totalAbonado,
-    saldo: cuentaAnulada ? 0 : calculateSaldo(totalOriginal, totalAbonado),
-    estado: cuentaAnulada ? 'ANULADO' : credit.Estado,
+    totalDevuelto,
+    saldo,
+    saldoAFavor: cuentaAnulada ? 0 : calculateSaldo(totalAbonado, totalNeto),
+    saldoVencido,
+    estado: estadoCuenta,
     fechaCreacion: credit.FechaCreacion,
     fechaVencimiento: credit.FechaVencimiento,
     fechaLiquidacion: credit.FechaLiquidacion,
@@ -129,7 +168,7 @@ function toCreditDto(
       numeroVenta: credit.Venta.NumeroVenta,
       numeroProForma: credit.Venta.NumeroProForma,
       condicionPago: credit.Venta.CondicionPago,
-      estadoPago: credit.Venta.EstadoPago,
+      estadoPago,
       anulado: credit.Venta.Anulado,
       autorizacionFel: credit.Venta.AutorizacionFel,
       numeroFel: credit.Venta.NumeroFel,
@@ -175,7 +214,10 @@ function toCreditDto(
   };
 }
 
-function getCreditListWhere(input: ListCreditsInput): Prisma.CuentaPorCobrarWhereInput {
+function getCreditListWhere(
+  input: ListCreditsInput,
+  actor?: OperationalActor,
+): Prisma.CuentaPorCobrarWhereInput {
   const search = input.busqueda?.trim();
   const numeroDocumento = search && /^\d+$/.test(search) ? Number(search) : undefined;
   const fechaDesde = input.fechaDesde ? new Date(`${input.fechaDesde}T00:00:00.000Z`) : undefined;
@@ -223,6 +265,10 @@ function getCreditListWhere(input: ListCreditsInput): Prisma.CuentaPorCobrarWher
   }
   if (searchWhere) {
     ventaConditions.push(searchWhere);
+  }
+  const visibilityWhere = actor ? getSaleVisibilityWhere(actor) : undefined;
+  if (visibilityWhere) {
+    ventaConditions.push(visibilityWhere);
   }
 
   const ventaWhere: Prisma.VentaWhereInput = {
@@ -286,6 +332,18 @@ async function getCreditByIdInternal(id: number) {
           SerieFel: true,
           FechaEmisionFel: true,
           FechaRegistro: true,
+          DevolucionesComerciales: {
+            select: {
+              Detalles: {
+                select: {
+                  Cantidad: true,
+                  DetalleVenta: {
+                    select: { PrecioUnitario: true, EsBonificacion: true },
+                  },
+                },
+              },
+            },
+          },
           Cliente: {
             select: {
               Id: true,
@@ -327,9 +385,9 @@ async function getCreditSaleId(id: number, includeAnulado = false): Promise<numb
   return credit.IdVenta;
 }
 
-export async function listCredits(input: ListCreditsInput) {
+export async function listCredits(input: ListCreditsInput, actor?: OperationalActor) {
   const { page, limit, skip } = resolvePagination(input);
-  const where = getCreditListWhere(input);
+  const where = getCreditListWhere(input, actor);
 
   const [total, rows] = await Promise.all([
     prisma.cuentaPorCobrar.count({ where }),
@@ -358,6 +416,18 @@ export async function listCredits(input: ListCreditsInput) {
             SerieFel: true,
             FechaEmisionFel: true,
             FechaRegistro: true,
+            DevolucionesComerciales: {
+              select: {
+                Detalles: {
+                  select: {
+                    Cantidad: true,
+                    DetalleVenta: {
+                      select: { PrecioUnitario: true, EsBonificacion: true },
+                    },
+                  },
+                },
+              },
+            },
             Cliente: {
               select: {
                 Id: true,
@@ -387,21 +457,24 @@ export async function listCredits(input: ListCreditsInput) {
   };
 }
 
-export async function getCreditById(id: number) {
+export async function getCreditById(id: number, actor?: OperationalActor) {
   const credit = await getCreditByIdInternal(id);
 
   if (!credit) {
     throw new Error('CuentaPorCobrar no existe');
   }
+  if (actor) await assertSaleAccess(prisma, credit.Venta.Id, actor);
 
   return toCreditDto(credit);
 }
 
-export async function listCreditsByCustomer(idCliente: number) {
+export async function listCreditsByCustomer(idCliente: number, actor?: OperationalActor) {
+  const visibilityWhere = actor ? getSaleVisibilityWhere(actor) : undefined;
   const rows = await prisma.cuentaPorCobrar.findMany({
     where: {
       Venta: {
         IdCliente: idCliente,
+        ...(visibilityWhere ? { AND: [visibilityWhere] } : {}),
       },
     },
     orderBy: { Id: 'desc' },
@@ -425,6 +498,18 @@ export async function listCreditsByCustomer(idCliente: number) {
           SerieFel: true,
           FechaEmisionFel: true,
           FechaRegistro: true,
+          DevolucionesComerciales: {
+            select: {
+              Detalles: {
+                select: {
+                  Cantidad: true,
+                  DetalleVenta: {
+                    select: { PrecioUnitario: true, EsBonificacion: true },
+                  },
+                },
+              },
+            },
+          },
           Cliente: {
             select: {
               Id: true,
@@ -470,11 +555,15 @@ export async function getCustomerCreditAuthorization(idCliente: number) {
   return getCustomerCreditAuthorizationFromSales(idCliente);
 }
 
-export async function getCreditsPortfolio() {
+export async function getCreditsPortfolio(actor?: OperationalActor) {
+  const visibilityWhere = actor ? getSaleVisibilityWhere(actor) : undefined;
   const rows = await prisma.cuentaPorCobrar.findMany({
     where: {
       Anulado: false,
-      Venta: { Anulado: false },
+      Venta: {
+        Anulado: false,
+        ...(visibilityWhere ? { AND: [visibilityWhere] } : {}),
+      },
     },
     include: {
       Venta: {
@@ -497,6 +586,18 @@ export async function getCreditsPortfolio() {
               Monto: true,
             },
           },
+          DevolucionesComerciales: {
+            select: {
+              Detalles: {
+                select: {
+                  Cantidad: true,
+                  DetalleVenta: {
+                    select: { PrecioUnitario: true, EsBonificacion: true },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -509,6 +610,7 @@ export async function getCreditsPortfolio() {
     creditos: number;
     totalOriginal: number;
     totalAbonado: number;
+    totalDevuelto: number;
     saldo: number;
     creditosActivos: number;
     creditosPagados: number;
@@ -524,6 +626,7 @@ export async function getCreditsPortfolio() {
       creditos: 0,
       totalOriginal: 0,
       totalAbonado: 0,
+      totalDevuelto: 0,
       saldo: 0,
       creditosActivos: 0,
       creditosPagados: 0,
@@ -534,14 +637,25 @@ export async function getCreditsPortfolio() {
     const totalAbonado = Number(
       row.Venta.PagoVenta.reduce((sum, payment) => sum + toNumber(payment.Monto), 0).toFixed(2),
     );
-    const saldo = calculateSaldo(totalOriginal, totalAbonado);
+    const totalDevuelto = Number(
+      row.Venta.DevolucionesComerciales
+        .flatMap((devolucion) => devolucion.Detalles)
+        .reduce((sum, detail) => sum + (
+          detail.DetalleVenta.EsBonificacion
+            ? 0
+            : detail.Cantidad * toNumber(detail.DetalleVenta.PrecioUnitario)
+        ), 0)
+        .toFixed(2),
+    );
+    const saldo = calculateSaldo(Math.max(0, totalOriginal - totalDevuelto), totalAbonado);
 
     current.creditos += 1;
     current.totalOriginal = Number((current.totalOriginal + totalOriginal).toFixed(2));
     current.totalAbonado = Number((current.totalAbonado + totalAbonado).toFixed(2));
+    current.totalDevuelto = Number((current.totalDevuelto + totalDevuelto).toFixed(2));
     current.saldo = Number((current.saldo + saldo).toFixed(2));
 
-    if (row.Estado === 'PAGADO') {
+    if (saldo === 0) {
       current.creditosPagados += 1;
     } else if (row.Estado === 'ANULADO') {
       current.creditosAnulados += 1;

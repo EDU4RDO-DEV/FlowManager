@@ -80,6 +80,12 @@ const sesionesRuta: ReportDefinition<SesionesRutaParams> = {
         Vehiculo: { select: { Placa: true } },
         Usuario_RutaSesion_IdUsuarioChoferToUsuario: { select: { Nombre: true } },
         Usuario_RutaSesion_IdUsuarioVendedorToUsuario: { select: { Nombre: true } },
+        Empleado_RutaSesion_IdEmpleadoChoferToEmpleado: {
+          select: { Entidad: { select: { NombreCompleto: true } } },
+        },
+        Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado: {
+          select: { Entidad: { select: { NombreCompleto: true } } },
+        },
       },
       orderBy: { FechaSesion: 'desc' },
       take: 5000,
@@ -89,8 +95,12 @@ const sesionesRuta: ReportDefinition<SesionesRutaParams> = {
       fecha: s.FechaSesion,
       ruta: s.Ruta.Nombre,
       vehiculo: s.Vehiculo.Placa,
-      chofer: s.Usuario_RutaSesion_IdUsuarioChoferToUsuario.Nombre,
-      vendedor: s.Usuario_RutaSesion_IdUsuarioVendedorToUsuario.Nombre,
+      chofer: s.Empleado_RutaSesion_IdEmpleadoChoferToEmpleado?.Entidad.NombreCompleto
+        ?? s.Usuario_RutaSesion_IdUsuarioChoferToUsuario?.Nombre
+        ?? 'Sin asignar',
+      vendedor: s.Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado?.Entidad.NombreCompleto
+        ?? s.Usuario_RutaSesion_IdUsuarioVendedorToUsuario?.Nombre
+        ?? 'Sin asignar',
       estado: s.Estado,
       kmRecorridos: s.KmInicial !== null && s.KmFinal !== null ? round2(s.KmFinal - s.KmInicial) : null,
     }));

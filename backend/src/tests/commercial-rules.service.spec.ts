@@ -17,6 +17,9 @@ const { prismaMock } = vi.hoisted(() => ({
       findFirst: vi.fn(),
       create: vi.fn(),
     },
+    cuentaPorCobrar: {
+      findFirst: vi.fn(),
+    },
     reglaPrecioCliente: {
       create: vi.fn(),
     },
@@ -32,7 +35,12 @@ vi.mock('../config/prisma', () => ({
 
 import { previewSaleBonuses } from '../services/sale.service';
 import { createTipoCliente } from '../services/client-catalog.service';
-import { createReglaBonificacion, createReglaPrecioCliente, createTipoCredito } from '../services/commercial-rule.service';
+import {
+  createReglaBonificacion,
+  createReglaPrecioCliente,
+  createTipoCredito,
+  updateTipoCredito,
+} from '../services/commercial-rule.service';
 
 describe('Fase 3 - reglas comerciales (rango, vigencia, unicidad)', () => {
   beforeEach(() => {
@@ -76,6 +84,17 @@ describe('Fase 3 - reglas comerciales (rango, vigencia, unicidad)', () => {
     await expect(
       createTipoCredito({ idUsuario: 1, nombre: '30 días' }),
     ).rejects.toThrowError('Ya existe un tipo de crédito con ese nombre');
+  });
+
+  it('preserves credit type terms after they have been applied to receivables', async () => {
+    prismaMock.tipoCredito.findFirst.mockResolvedValueOnce({ Id: 3 });
+    prismaMock.cuentaPorCobrar.findFirst.mockResolvedValueOnce({ Id: 12 });
+
+    await expect(
+      updateTipoCredito(3, { plazoDias: 60 }),
+    ).rejects.toThrow(
+      'No se puede modificar un tipo de crédito utilizado en cuentas históricas; cree una nueva versión',
+    );
   });
 
   it('rechaza regla de precio con vigencia invertida (fechaFin < fechaInicio)', async () => {

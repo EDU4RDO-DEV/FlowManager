@@ -72,6 +72,7 @@ const NOT_FOUND_MESSAGES = new Set([
 
 const CONFLICT_MESSAGES = new Set([
   'Ya existe un tipo de crédito con ese nombre',
+  'No se puede modificar un tipo de crédito utilizado en cuentas históricas; cree una nueva versión',
   'fechaFin no puede ser anterior a fechaInicio',
   'cantidadMaxima no puede ser menor a cantidadMinima',
 ]);

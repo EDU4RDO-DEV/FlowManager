@@ -12,6 +12,7 @@ export type AppModuleKey =
   | 'proveedores'
   | 'compras'
   | 'planilla'
+  | 'caja'
   | 'sesiones'
   | 'produccion'
   | 'inventario'
@@ -34,6 +35,7 @@ const ALL_MODULES: AppModuleKey[] = [
   'proveedores',
   'compras',
   'planilla',
+  'caja',
   'sesiones',
   'produccion',
   'inventario',

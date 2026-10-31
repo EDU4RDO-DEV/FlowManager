@@ -28,6 +28,11 @@ import {
   updateRutaSesion,
   updateVehiculo,
 } from '../services/logistics.service';
+import { prisma } from '../config/prisma';
+import {
+  assertRouteSessionAccess,
+  getRouteSessionReadVisibilityIds,
+} from '../services/operational-scope.service';
 import {
   createGastoVehiculoSchema,
   createRutaSchema,
@@ -99,8 +104,16 @@ export async function uploadGastoVehiculoImageController(req: Request, res: Resp
 
 export async function listVehiculosController(req: Request, res: Response) {
   try {
+    if (!req.auth?.userId) return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
     const query = vehiculoFiltersSchema.parse(req.query);
-    const data = await listVehiculos(query);
+    const visibleSessionIds = await getRouteSessionReadVisibilityIds(prisma, {
+      userId: req.auth.userId,
+      roleName: req.auth.nombreRol,
+    });
+    const data = await listVehiculos({
+      ...query,
+      ...(visibleSessionIds !== undefined ? { idRutaSesiones: visibleSessionIds } : {}),
+    });
     return res.status(200).json({ ok: true, data });
   } catch (error) {
     const parsed = handleValidationError(error, res);
@@ -363,8 +376,16 @@ export async function restoreRutaController(req: Request, res: Response) {
 
 export async function listRutaSesionesController(req: Request, res: Response) {
   try {
+    if (!req.auth?.userId) return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
     const query = rutaSesionFiltersSchema.parse(req.query);
-    const data = await listRutaSesiones(query);
+    const visibleSessionIds = await getRouteSessionReadVisibilityIds(prisma, {
+      userId: req.auth.userId,
+      roleName: req.auth.nombreRol,
+    });
+    const data = await listRutaSesiones({
+      ...query,
+      ...(visibleSessionIds !== undefined ? { idRutaSesiones: visibleSessionIds } : {}),
+    });
     return res.status(200).json({ ok: true, data });
   } catch (error) {
     const parsed = handleValidationError(error, res);
@@ -630,7 +651,18 @@ export async function restoreRutaSesionController(req: Request, res: Response) {
 export async function listGastosVehiculoController(req: Request, res: Response) {
   try {
     const query = gastoVehiculoFiltersSchema.parse(req.query);
-    const data = await listGastosVehiculo(query);
+    const visibleSessionIds = req.auth
+      ? await getRouteSessionReadVisibilityIds(prisma, {
+          userId: req.auth.userId,
+          roleName: req.auth.nombreRol,
+        })
+      : undefined;
+    const data = await listGastosVehiculo({
+      ...query,
+      ...(visibleSessionIds !== undefined
+        ? { idRutaSesiones: visibleSessionIds }
+        : {}),
+    });
     return res.status(200).json({ ok: true, data });
   } catch (error) {
     const parsed = handleValidationError(error, res);
@@ -659,8 +691,14 @@ export async function getGastoVehiculoByIdController(req: Request, res: Response
 
 export async function createGastoVehiculoController(req: Request, res: Response) {
   try {
+    const idUsuario = req.auth?.userId;
+    if (!idUsuario) return res.status(401).json({ ok: false, message: 'Autenticación requerida' });
     const payload = createGastoVehiculoSchema.parse(req.body);
-    const data = await createGastoVehiculo(payload);
+    await assertRouteSessionAccess(prisma, payload.idRutaSesion, {
+      userId: idUsuario,
+      roleName: req.auth?.nombreRol,
+    });
+    const data = await createGastoVehiculo({ ...payload, idUsuario });
 
     return res.status(201).json({ ok: true, data, message: 'Gasto de vehiculo registrado correctamente' });
   } catch (error) {
@@ -670,6 +708,7 @@ export async function createGastoVehiculoController(req: Request, res: Response)
     const message = getMessage(error);
     if (
       message === 'RutaSesion no existe' ||
+      message.includes('no está asignada') ||
       message === 'Usuario no existe' ||
       message === 'Proveedor no existe'
     ) {
@@ -684,6 +723,12 @@ export async function updateGastoVehiculoController(req: Request, res: Response)
   try {
     const { id } = logisticsIdParamsSchema.parse(req.params);
     const payload = updateGastoVehiculoSchema.parse(req.body);
+    if (payload.idRutaSesion !== undefined && req.auth) {
+      await assertRouteSessionAccess(prisma, payload.idRutaSesion, {
+        userId: req.auth.userId,
+        roleName: req.auth.nombreRol,
+      });
+    }
 
     const data = await updateGastoVehiculo(id, payload);
     return res.status(200).json({ ok: true, data, message: 'Gasto de vehiculo actualizado correctamente' });
@@ -695,6 +740,7 @@ export async function updateGastoVehiculoController(req: Request, res: Response)
     if (
       message === 'GastoVehiculo no existe' ||
       message === 'RutaSesion no existe' ||
+      message.includes('no está asignada') ||
       message === 'Usuario no existe' ||
       message === 'Proveedor no existe'
     ) {

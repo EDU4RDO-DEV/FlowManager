@@ -20,6 +20,7 @@ import {
 import { requireModulePermission } from '../middlewares/auth.middleware';
 import { uploadSaleProofImage } from '../middlewares/upload.middleware';
 import { createCommercialReturnController } from '../controllers/commercial-return.controller';
+import { requireAssignedSaleAccess } from '../middlewares/operational-scope.middleware';
 
 const saleRouter = Router();
 
@@ -39,18 +40,44 @@ saleRouter.get(
   listAvailableRutaSesionesController,
 );
 saleRouter.get('/', requireModulePermission('ventas', 'read'), listSalesController);
-saleRouter.get('/:id', requireModulePermission('ventas', 'read'), getSaleByIdController);
+saleRouter.get('/:id', requireModulePermission('ventas', 'read'), requireAssignedSaleAccess(), getSaleByIdController);
 saleRouter.post('/', requireModulePermission('ventas', 'create'), createSaleController);
-saleRouter.patch('/:id', requireModulePermission('ventas', 'update'), updateSaleController);
-saleRouter.post('/:id/confirmar-proforma', requireModulePermission('ventas', 'update'), confirmRouteProformaController);
-saleRouter.post('/:id/devoluciones-comerciales', requireModulePermission('ventas', 'update'), createCommercialReturnController);
-saleRouter.patch('/:id/anular', requireModulePermission('ventas', 'delete'), anulateSaleController);
+saleRouter.patch('/:id', requireModulePermission('ventas', 'update'), requireAssignedSaleAccess(), updateSaleController);
+saleRouter.post(
+  '/:id/confirmar-proforma',
+  requireModulePermission('ventas', 'update'),
+  requireAssignedSaleAccess(),
+  confirmRouteProformaController,
+);
+saleRouter.post(
+  '/:id/devoluciones-comerciales',
+  requireModulePermission('ventas', 'update'),
+  requireAssignedSaleAccess(),
+  createCommercialReturnController,
+);
+saleRouter.patch(
+  '/:id/anular',
+  requireModulePermission('ventas', 'delete'),
+  requireAssignedSaleAccess(),
+  anulateSaleController,
+);
 
-saleRouter.get('/:id/pagos', requireModulePermission('ventas', 'read'), listSalePaymentsController);
-saleRouter.post('/:id/pagos', requireModulePermission('ventas', 'create'), createSalePaymentController);
+saleRouter.get(
+  '/:id/pagos',
+  requireModulePermission('ventas', 'read'),
+  requireAssignedSaleAccess(),
+  listSalePaymentsController,
+);
+saleRouter.post(
+  '/:id/pagos',
+  requireModulePermission('ventas', 'create'),
+  requireAssignedSaleAccess(),
+  createSalePaymentController,
+);
 saleRouter.patch(
   '/:id/pagos/:idPago/anular',
   requireModulePermission('ventas', 'delete'),
+  requireAssignedSaleAccess(),
   anulateSalePaymentController,
 );
 

@@ -26,7 +26,8 @@ import { getZodErrorMessage } from '../validators/validation';
 export async function listCreditsController(req: Request, res: Response) {
   try {
     const query = listCreditsQuerySchema.parse(req.query);
-    const data = await listCredits(query);
+    const actor = req.auth ? { userId: req.auth.userId, roleName: req.auth.nombreRol } : undefined;
+    const data = await listCredits(query, actor);
 
     return res.status(200).json({ ok: true, data });
   } catch (error) {
@@ -42,7 +43,8 @@ export async function listCreditsController(req: Request, res: Response) {
 export async function getCreditByIdController(req: Request, res: Response) {
   try {
     const { id } = creditIdParamsSchema.parse(req.params);
-    const data = await getCreditById(id);
+    const actor = req.auth ? { userId: req.auth.userId, roleName: req.auth.nombreRol } : undefined;
+    const data = await getCreditById(id, actor);
 
     return res.status(200).json({ ok: true, data });
   } catch (error) {
@@ -63,7 +65,8 @@ export async function getCreditByIdController(req: Request, res: Response) {
 export async function listCreditsByCustomerController(req: Request, res: Response) {
   try {
     const { idCliente } = customerIdParamsSchema.parse(req.params);
-    const data = await listCreditsByCustomer(idCliente);
+    const actor = req.auth ? { userId: req.auth.userId, roleName: req.auth.nombreRol } : undefined;
+    const data = await listCreditsByCustomer(idCliente, actor);
 
     return res.status(200).json({ ok: true, data });
   } catch (error) {
@@ -96,9 +99,10 @@ export async function getCustomerCreditAuthorizationController(req: Request, res
   }
 }
 
-export async function getCreditsPortfolioController(_req: Request, res: Response) {
+export async function getCreditsPortfolioController(req: Request, res: Response) {
   try {
-    const data = await getCreditsPortfolio();
+    const actor = req.auth ? { userId: req.auth.userId, roleName: req.auth.nombreRol } : undefined;
+    const data = await getCreditsPortfolio(actor);
     return res.status(200).json({ ok: true, data });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno';

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   Check,
@@ -50,11 +50,16 @@ import { listEmployees } from "@/services/employees.service";
 import {
   closePayroll,
   deletePayroll,
+  downloadPayrollPaymentReceipt,
   downloadPayrollReceipt,
   generatePayroll,
   getPayrollById,
+  getPayrollPayments,
+  getPayrollPaymentReceiptUrl,
   listPayrolls,
   previewPayroll,
+  registerPayrollPayment,
+  uploadPayrollPaymentReceipt,
   reopenPayroll,
   restorePayroll,
 } from "@/services/payroll.service";
@@ -114,6 +119,16 @@ export default function PayrollPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedPayrollId, setSelectedPayrollId] = useState<number | null>(null);
   const [selectedPayrollDetail, setSelectedPayrollDetail] = useState<PayrollDetailDto | null>(null);
+  const [payrollPaymentSummary, setPayrollPaymentSummary] = useState<Awaited<ReturnType<typeof getPayrollPayments>> | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"EFECTIVO" | "TRANSFERENCIA">("EFECTIVO");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [paymentBank, setPaymentBank] = useState("");
+  const [paymentReceiptPath, setPaymentReceiptPath] = useState("");
+  const [paymentObservations, setPaymentObservations] = useState("");
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const [receiptUploading, setReceiptUploading] = useState(false);
+  const paymentIdempotencyKeys = useRef(new Map<string, string>());
   const [deleteCandidate, setDeleteCandidate] = useState<PayrollDto | null>(null);
   const [closeCandidate, setCloseCandidate] = useState<PayrollDto | null>(null);
   const [reopenCandidate, setReopenCandidate] = useState<PayrollDto | null>(null);
@@ -153,18 +168,93 @@ export default function PayrollPage() {
   useEffect(() => {
     if (!selectedPayrollId) {
       setSelectedPayrollDetail(null);
+      setPayrollPaymentSummary(null);
       return;
     }
 
     void (async () => {
       try {
-        const detail = await getPayrollById(selectedPayrollId);
+        const [detail, paymentSummary] = await Promise.all([
+          getPayrollById(selectedPayrollId),
+          getPayrollPayments(selectedPayrollId),
+        ]);
         setSelectedPayrollDetail(detail);
+        setPayrollPaymentSummary(paymentSummary);
       } catch (error) {
         toast.error(getApiErrorMessage(error, "No se pudo cargar el detalle"));
       }
     })();
   }, [selectedPayrollId]);
+
+  async function handlePayrollPayment() {
+    if (!selectedPayrollId) return;
+    const amount = Number(paymentAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Ingresa un monto de pago válido.");
+      return;
+    }
+    if (paymentMethod === "TRANSFERENCIA" && !paymentReference.trim()) {
+      toast.error("La referencia es obligatoria para transferencias.");
+      return;
+    }
+    const request = {
+      monto: amount,
+      metodoPago: paymentMethod,
+      numeroReferencia: paymentReference.trim() || undefined,
+      banco: paymentBank.trim() || undefined,
+      rutaComprobante: paymentReceiptPath.trim() || undefined,
+      observaciones: paymentObservations.trim() || undefined,
+    };
+    const fingerprint = JSON.stringify({ idPlanilla: selectedPayrollId, ...request });
+    const idempotencyKey = paymentIdempotencyKeys.current.get(fingerprint) ?? crypto.randomUUID();
+    paymentIdempotencyKeys.current.set(fingerprint, idempotencyKey);
+    setPaymentSaving(true);
+    try {
+      const summary = await registerPayrollPayment(selectedPayrollId, request, idempotencyKey);
+      paymentIdempotencyKeys.current.delete(fingerprint);
+      setPayrollPaymentSummary(summary);
+      setPaymentAmount("");
+      setPaymentReference("");
+      setPaymentBank("");
+      setPaymentReceiptPath("");
+      setPaymentObservations("");
+      toast.success("Pago de planilla registrado.");
+      await loadData();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo registrar el pago de planilla."));
+    } finally {
+      setPaymentSaving(false);
+    }
+  }
+
+  async function handlePayrollReceiptUpload(file?: File) {
+    if (!file) return;
+    setReceiptUploading(true);
+    setPaymentReceiptPath("");
+    try {
+      const uploaded = await uploadPayrollPaymentReceipt(file);
+      setPaymentReceiptPath(uploaded.rutaComprobante);
+      toast.success("Comprobante adjuntado.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo subir el comprobante."));
+    } finally {
+      setReceiptUploading(false);
+    }
+  }
+
+  async function handleDownloadPayrollPaymentReceipt(path: string) {
+    try {
+      const blob = await downloadPayrollPaymentReceipt(path);
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = path.split("/").pop() ?? "comprobante";
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "No se pudo descargar el comprobante."));
+    }
+  }
 
   const metrics = useMemo(() => {
     const totalLiquido = payrolls.reduce((acc, item) => acc + item.sueldoLiquido, 0);
@@ -627,7 +717,7 @@ export default function PayrollPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Empleado / conceptos</TableHead>
-                            <TableHead className="text-right">Base</TableHead>
+                            <TableHead className="text-right">Sueldo base devengado</TableHead>
                             <TableHead className="text-right">Comisión</TableHead>
                             <TableHead className="text-right">Bonos</TableHead>
                             <TableHead className="text-right">Días</TableHead>
@@ -646,6 +736,14 @@ export default function PayrollPage() {
                                     Ver comisiones ({item.detalleComisiones.length}) y ajustes ({item.detalleAjustes.length})
                                   </summary>
                                   <div className="mt-2 space-y-1">
+                                    {item.detalleSalarios.map((salary, index) => (
+                                      <p key={`${salary.idEmpleadoSueldoVigencia ?? "actual"}-${index}`}>
+                                        Sueldo prorrateado: {new Date(salary.fechaInicio).toLocaleDateString("es-GT", { timeZone: "UTC" })}
+                                        {"–"}{new Date(salary.fechaFin).toLocaleDateString("es-GT", { timeZone: "UTC" })}
+                                        {" · "}{salary.diasCalendario} días de {money(salary.sueldoMensualSnapshot)}
+                                        {" · "}{money(salary.montoDevengado)}
+                                      </p>
+                                    ))}
                                     {item.detalleComisiones.map((commission) => (
                                       <p key={`${commission.idReglaComision ?? commission.idReglaComisionCategoria}-${commission.idInventarioItem}`}>
                                         {commission.nombreProducto}: {commission.cantidad} × base {money(commission.baseCalculo)}
@@ -837,7 +935,15 @@ export default function PayrollPage() {
                       <p className="text-xs text-muted-foreground">Estado: {selectedPayrollDetail.estado}</p>
                     </div>
                     <div className="rounded-lg border bg-background p-3 space-y-1">
-                      <p>Sueldo base: {money(selectedPayrollDetail.sueldoBase)}</p>
+                      <p>Sueldo base prorrateado: {money(selectedPayrollDetail.sueldoBase)}</p>
+                      {selectedPayrollDetail.detalleSalarios.map((salary) => (
+                        <p key={salary.id}>
+                          Prorrateo {new Date(salary.fechaInicio).toLocaleDateString("es-GT", { timeZone: "UTC" })}
+                          {"–"}{new Date(salary.fechaFin).toLocaleDateString("es-GT", { timeZone: "UTC" })}
+                          {" · "}{salary.diasCalendario} días × {money(salary.sueldoMensualSnapshot)} mensual
+                          {" = "}{money(salary.montoDevengado)}
+                        </p>
+                      ))}
                       <p>Comisiones: {money(selectedPayrollDetail.totalComisiones)}</p>
                       <p>Bonos metas: {money(selectedPayrollDetail.totalBonosMetas)}</p>
                       <p>Días trabajados: {selectedPayrollDetail.diasTrabajados}</p>
@@ -849,6 +955,123 @@ export default function PayrollPage() {
                       <p>Descuentos: {money(selectedPayrollDetail.totalDescuentos)}</p>
                       <p className="font-semibold">Líquido: {money(selectedPayrollDetail.sueldoLiquido)}</p>
                       <p className="text-xs text-muted-foreground">Los viáticos se muestran por separado y no se incluyen en el total líquido.</p>
+                    </div>
+                    <div className="rounded-lg border bg-background p-3 space-y-3">
+                      <div>
+                        <p className="font-medium">Pagos de planilla</p>
+                        <p>
+                          Estado: {payrollPaymentSummary?.estadoPago ?? "PENDIENTE"} · Pagado: {money(payrollPaymentSummary?.totalPagado ?? 0)}
+                          {" · "}Saldo: {money(payrollPaymentSummary?.saldoPendiente ?? selectedPayrollDetail.sueldoLiquido)}
+                        </p>
+                      </div>
+                      {canCreate && selectedPayrollDetail.estado === "CERRADA" && (payrollPaymentSummary?.saldoPendiente ?? selectedPayrollDetail.sueldoLiquido) > 0 ? (
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label htmlFor="payroll-payment-amount">Monto</Label>
+                            <Input
+                              id="payroll-payment-amount"
+                              type="number"
+                              min="0.01"
+                              max={payrollPaymentSummary?.saldoPendiente ?? selectedPayrollDetail.sueldoLiquido}
+                              step="0.01"
+                              value={paymentAmount}
+                              onChange={(event) => setPaymentAmount(event.target.value)}
+                              disabled={paymentSaving}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="payroll-payment-method">Medio de pago</Label>
+                            <select
+                              id="payroll-payment-method"
+                              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                              value={paymentMethod}
+                              onChange={(event) => setPaymentMethod(event.target.value as "EFECTIVO" | "TRANSFERENCIA")}
+                              disabled={paymentSaving}
+                            >
+                              <option value="EFECTIVO">Efectivo</option>
+                              <option value="TRANSFERENCIA">Transferencia bancaria</option>
+                            </select>
+                          </div>
+                          {paymentMethod === "TRANSFERENCIA" ? (
+                            <>
+                              <div className="space-y-1">
+                                <Label htmlFor="payroll-payment-reference">Referencia</Label>
+                                <Input
+                                  id="payroll-payment-reference"
+                                  value={paymentReference}
+                                  onChange={(event) => setPaymentReference(event.target.value)}
+                                  maxLength={100}
+                                  disabled={paymentSaving}
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label htmlFor="payroll-payment-bank">Banco</Label>
+                                <Input
+                                  id="payroll-payment-bank"
+                                  value={paymentBank}
+                                  onChange={(event) => setPaymentBank(event.target.value)}
+                                  maxLength={100}
+                                  disabled={paymentSaving}
+                                />
+                              </div>
+                            </>
+                          ) : null}
+                          <div className="space-y-1">
+                            <Label htmlFor="payroll-payment-receipt">Comprobante (PDF o imagen, máximo 10 MB)</Label>
+                            <Input
+                              id="payroll-payment-receipt"
+                              type="file"
+                              accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                              onChange={(event) => void handlePayrollReceiptUpload(event.target.files?.[0])}
+                              disabled={paymentSaving || receiptUploading}
+                            />
+                            {receiptUploading ? <p className="text-xs text-muted-foreground">Subiendo comprobante...</p> : null}
+                            {paymentReceiptPath ? <p className="text-xs text-muted-foreground">Comprobante adjunto.</p> : null}
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="payroll-payment-observations">Observaciones</Label>
+                            <Input
+                              id="payroll-payment-observations"
+                              value={paymentObservations}
+                              onChange={(event) => setPaymentObservations(event.target.value)}
+                              maxLength={255}
+                              disabled={paymentSaving}
+                            />
+                          </div>
+                          <Button
+                            className="sm:col-span-2"
+                            onClick={() => void handlePayrollPayment()}
+                            disabled={paymentSaving || receiptUploading}
+                          >
+                            {paymentSaving ? "Registrando..." : "Registrar pago"}
+                          </Button>
+                        </div>
+                      ) : null}
+                      {(payrollPaymentSummary?.pagos ?? []).map((payment) => (
+                        <div key={payment.id} className="border-t pt-2 text-xs">
+                          <p>{new Date(payment.fechaPago).toLocaleString("es-GT")} · {payment.usuario} · {payment.metodoPago} · {money(payment.monto)}</p>
+                          {payment.numeroReferencia ? <p>Referencia: {payment.numeroReferencia}{payment.banco ? ` · ${payment.banco}` : ""}</p> : null}
+                          {payment.rutaComprobante && getPayrollPaymentReceiptUrl(payment.rutaComprobante) ? (
+                            <p>
+                              Comprobante:{" "}
+                              <Button
+                                type="button"
+                                variant="link"
+                                className="h-auto p-0"
+                                onClick={() => void handleDownloadPayrollPaymentReceipt(payment.rutaComprobante!)}
+                              >
+                                Descargar comprobante
+                              </Button>
+                            </p>
+                          ) : null}
+                          {payment.rutaComprobante && /^https?:\/\//i.test(payment.rutaComprobante) ? (
+                            <p>
+                              Comprobante: <a className="text-primary underline" href={payment.rutaComprobante} target="_blank" rel="noreferrer">Ver enlace</a>
+                            </p>
+                          ) : null}
+                          {payment.observaciones ? <p>{payment.observaciones}</p> : null}
+                        </div>
+                      ))}
                     </div>
                     <div className="space-y-1">
                       <p className="font-medium">Comisiones por producto</p>
@@ -866,7 +1089,10 @@ export default function PayrollPage() {
                           </p>
                           {item.fuentes.map((source) => (
                             <p key={source.idDetalleVenta} className="text-xs text-muted-foreground">
-                              Venta #{source.idVenta} {source.estadoPago}, detalle #{source.idDetalleVenta}, sesión #{source.idRutaSesion} ({source.rolAtribucion}, {new Date(source.fechaSesion).toLocaleDateString("es-GT", { timeZone: "UTC" })}) · {source.cantidad} × {money(source.precioUnitario)}
+                              Venta #{source.idVenta} {source.estadoPago}, detalle #{source.idDetalleVenta}
+                              {source.idRutaSesion ? `, sesión #${source.idRutaSesion}` : ""}
+                              {` (vendedor empleado #${source.idEmpleadoAtribuido ?? "histórico"}, ${new Date(source.fechaSesion).toLocaleDateString("es-GT", { timeZone: "UTC" })})`}
+                              {" · "}{source.cantidad} × {money(source.precioUnitario)}
                             </p>
                           ))}
                         </div>

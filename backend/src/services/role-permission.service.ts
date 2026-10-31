@@ -26,6 +26,7 @@ const MODULE_LABELS: Record<BackendModuleKey, string> = {
   compras: 'Compras',
   inventario: 'Inventario',
   planilla: 'Planilla',
+  caja: 'Caja',
   sesiones: 'Sesiones',
   produccion: 'Produccion',
   envases: 'Envases',

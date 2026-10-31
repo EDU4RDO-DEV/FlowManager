@@ -214,6 +214,9 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     select: {
       Id: true,
       IdRol: true,
+      Rol_Usuario_IdRolToRol: {
+        select: { Nombre: true },
+      },
     },
   });
 
@@ -228,7 +231,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     userId,
     sessionId,
     idRol: activeUser.IdRol,
-    nombreRol: payload.nombreRol,
+    nombreRol: activeUser.Rol_Usuario_IdRolToRol?.Nombre ?? null,
     correo: payload.correo,
     nombre: payload.nombre,
   };

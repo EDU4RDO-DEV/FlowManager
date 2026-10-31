@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'node:crypto';
 
 import multer from 'multer';
 
@@ -11,6 +12,7 @@ const providersDir = path.join(uploadsRoot, 'providers');
 const vehiclesDir = path.join(uploadsRoot, 'vehicles');
 const salesDir = path.join(uploadsRoot, 'sales');
 const companyLogosDir = path.join(uploadsRoot, 'company-logos');
+const payrollPaymentsDir = path.join(uploadsRoot, 'payroll-payments');
 
 if (!fs.existsSync(productsDir)) {
   fs.mkdirSync(productsDir, { recursive: true });
@@ -38,6 +40,10 @@ if (!fs.existsSync(salesDir)) {
 
 if (!fs.existsSync(companyLogosDir)) {
   fs.mkdirSync(companyLogosDir, { recursive: true });
+}
+
+if (!fs.existsSync(payrollPaymentsDir)) {
+  fs.mkdirSync(payrollPaymentsDir, { recursive: true });
 }
 
 const ALLOWED_MIME_TYPES = new Set([
@@ -126,6 +132,33 @@ export const uploadEmployeeImage = createImageUploader(employeesDir, 'empleado')
 export const uploadProviderImage = createImageUploader(providersDir, 'proveedor');
 export const uploadVehicleExpenseImage = createImageUploader(vehiclesDir, 'vehiculo-gasto');
 export const uploadSaleProofImage = createImageUploader(salesDir, 'talonario');
+
+const payrollReceiptExtensions: Record<string, string> = {
+  'application/pdf': '.pdf',
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+};
+
+export const uploadPayrollPaymentReceipt = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, callback) => callback(null, payrollPaymentsDir),
+    filename: (_req, file, callback) => {
+      const extension = payrollReceiptExtensions[file.mimetype];
+      callback(null, `${randomUUID()}${extension}`);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, callback) => {
+    if (!payrollReceiptExtensions[file.mimetype]) {
+      callback(new Error('El comprobante debe ser PDF, JPG, PNG o WEBP'));
+      return;
+    }
+    callback(null, true);
+  },
+});
+
+export { payrollPaymentsDir };
 
 export const uploadCompanyLogo = multer({
   storage: multer.memoryStorage(),

@@ -48,6 +48,7 @@ function baseInventory(disponibleAgua: number) {
         unidadMedida: 'unidad',
         despachado: disponibleAgua,
         estadoEnvaseDespachado: null,
+        esEnvaseRetornable: false,
         vendido: 0,
         devolucionComercial: 0,
         noVendibleComercial: 0,

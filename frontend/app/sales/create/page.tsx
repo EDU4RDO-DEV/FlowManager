@@ -38,8 +38,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getApiErrorMessage } from "@/lib/api";
+import { getLogisticsEmployeeOptions } from "@/lib/logistics-employee-options";
+import { hasModulePermission } from "@/lib/rbac";
 import { createClient, listClients } from "@/services/clients.service";
 import { getCustomerCreditAuthorization } from "@/services/credits.service";
+import { listEmployees } from "@/services/employees.service";
+import { getRouteInventory } from "@/services/logistics.service";
 import { listProducts } from "@/services/products.service";
 import {
   createSale,
@@ -52,6 +56,7 @@ import {
 } from "@/services/sales.service";
 import type { ClientDto } from "@/types/clients";
 import type { CustomerCreditAuthorization } from "@/types/credits";
+import type { RouteInventoryDto } from "@/types/logistics";
 import type { ProductDto } from "@/types/products";
 import type {
   BonusPreviewItem,
@@ -90,15 +95,23 @@ export default function CreateSalePage() {
   const router = useRouter();
   const { user } = useAuth();
   const saleRequest = useRef<{ fingerprint: string; key: string } | null>(null);
+  const isRouteSeller = user?.nombreRol?.trim().toLocaleLowerCase("es") === "vendedor";
 
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [routeSessionsError, setRouteSessionsError] = useState<string | null>(null);
+  const [routeInventoryState, setRouteInventoryState] = useState<
+    | { idRutaSesion: number; data: RouteInventoryDto }
+    | { idRutaSesion: number; error: string }
+    | null
+  >(null);
 
   const [clients, setClients] = useState<ClientDto[]>([]);
   const [products, setProducts] = useState<ProductDto[]>([]);
   const [talonarios, setTalonarios] = useState<TalonarioDto[]>([]);
   const [routeSessions, setRouteSessions] = useState<RouteSessionOptionDto[]>([]);
+  const [employeeOptions, setEmployeeOptions] = useState<Array<{ employeeId: number; userId: number | null; nombre: string }>>([]);
   const [bonusPreview, setBonusPreview] = useState<BonusPreviewItem[]>([]);
 
   const [idCliente, setIdCliente] = useState<number | null>(null);
@@ -108,6 +121,7 @@ export default function CreateSalePage() {
     error?: string;
   } | null>(null);
   const [idRutaSesion, setIdRutaSesion] = useState<number | null>(null);
+  const [idEmpleadoVendedor, setIdEmpleadoVendedor] = useState<number | null>(null);
   const [idTalonario, setIdTalonario] = useState<number | null>(null);
   const [tipoRegistro, setTipoRegistro] = useState<"VENTA" | "PROFORMA">("VENTA");
   const [fechaExpiracionProforma, setFechaExpiracionProforma] = useState("");
@@ -146,11 +160,16 @@ export default function CreateSalePage() {
     async function loadSources() {
       setIsLoading(true);
       try {
-        const [clientsData, talonariosData, routeSessionsData, firstProductsPage] = await Promise.all([
+        const [clientsData, talonariosData, routeSessionsData, firstProductsPage, employeesData] = await Promise.all([
           listClients(),
           listTalonarios(),
-          listAvailableRouteSessions(),
+          listAvailableRouteSessions().catch((error) => {
+            setRouteSessions([]);
+            setRouteSessionsError(getApiErrorMessage(error, "No se pudieron consultar las sesiones de ruta"));
+            throw error;
+          }),
           listProducts({ anulado: false, esVendible: true, page: 1, limit: 100 }),
+          hasModulePermission(user, "empleados", "read") ? listEmployees() : Promise.resolve([]),
         ]);
 
         const pages = firstProductsPage.pagination.totalPages;
@@ -168,6 +187,21 @@ export default function CreateSalePage() {
         setClients(clientsData.filter((client) => !client.anulado));
         setTalonarios(talonariosData.filter((talonario) => !talonario.anulado));
         setRouteSessions(routeSessionsData);
+        setRouteSessionsError(null);
+        if (user?.nombreRol?.trim().toLocaleLowerCase("es") === "vendedor") {
+          const assignedActiveSessions = routeSessionsData.filter(
+            (session) =>
+              session.estado === "EN_CURSO",
+          );
+          if (assignedActiveSessions.length === 1) {
+            setIdRutaSesion(assignedActiveSessions[0].id);
+          } else {
+            setIdRutaSesion((current) =>
+              assignedActiveSessions.some((session) => session.id === current) ? current : null,
+            );
+          }
+        }
+        setEmployeeOptions(getLogisticsEmployeeOptions(employeesData));
         setProducts(allProducts.filter((product) => !product.anulado && product.esVendible));
       } catch (error) {
         toast.error(getApiErrorMessage(error, "No se pudo cargar catálogo comercial"));
@@ -178,7 +212,58 @@ export default function CreateSalePage() {
     }
 
     void loadSources();
-  }, []);
+  }, [user]);
+
+  const selectableRouteSessions = useMemo(
+    () => routeSessions.filter((session) => session.estado === "EN_CURSO"),
+    [routeSessions],
+  );
+  const selectedRouteSession = useMemo(
+    () => selectableRouteSessions.find((session) => session.id === idRutaSesion) ?? null,
+    [idRutaSesion, selectableRouteSessions],
+  );
+  const routeInventory =
+    idRutaSesion !== null && routeInventoryState?.idRutaSesion === idRutaSesion && "data" in routeInventoryState
+      ? routeInventoryState.data
+      : null;
+  const routeInventoryError =
+    idRutaSesion !== null && routeInventoryState?.idRutaSesion === idRutaSesion && "error" in routeInventoryState
+      ? routeInventoryState.error
+      : null;
+  const isLoadingRouteInventory =
+    idRutaSesion !== null && routeInventory === null && routeInventoryError === null;
+  const routeAvailabilityByItem = useMemo(
+    () =>
+      new Map(
+        routeInventory?.idRutaSesion === idRutaSesion
+          ? routeInventory.productos.map((item) => [item.idInventarioItem, item.disponible])
+          : [],
+      ),
+    [idRutaSesion, routeInventory],
+  );
+
+  useEffect(() => {
+    if (idRutaSesion === null) return;
+
+    let cancelled = false;
+
+    void getRouteInventory(idRutaSesion)
+      .then((inventory) => {
+        if (!cancelled) setRouteInventoryState({ idRutaSesion, data: inventory });
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setRouteInventoryState({
+            idRutaSesion,
+            error: getApiErrorMessage(error, "No se pudo consultar el inventario del vehículo"),
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [idRutaSesion]);
 
   const selectedClient = useMemo(
     () => clients.find((item) => item.id === idCliente) ?? null,
@@ -485,6 +570,30 @@ export default function CreateSalePage() {
       return "Usuario no autenticado";
     }
 
+    if (isRouteSeller && routeSessionsError) {
+      return "No se pudo verificar tu sesión de ruta. Intenta actualizar antes de registrar la venta";
+    }
+
+    if (
+      isRouteSeller &&
+      selectableRouteSessions.length > 0 &&
+      (!idRutaSesion || !selectableRouteSessions.some((session) => session.id === idRutaSesion))
+    ) {
+      return "Selecciona una de tus sesiones de ruta activas para evitar registrar la venta contra inventario de planta";
+    }
+
+    if (idRutaSesion !== null) {
+      if (isLoadingRouteInventory) {
+        return "Espera a que se consulte la existencia disponible del vehículo";
+      }
+      if (routeInventoryError) {
+        return routeInventoryError;
+      }
+      if (routeInventory?.idRutaSesion !== idRutaSesion) {
+        return "No se pudo verificar el inventario de la sesión seleccionada";
+      }
+    }
+
     if (!idCliente) {
       return "Selecciona un cliente";
     }
@@ -621,6 +730,7 @@ export default function CreateSalePage() {
         idUsuario: user.id,
         idCliente,
         idRutaSesion: idRutaSesion ?? undefined,
+        ...(!idRutaSesion && idEmpleadoVendedor !== null ? { idEmpleadoVendedor } : {}),
         idTalonario: idTalonario ?? undefined,
         tipoRegistro,
         ...(tipoRegistro === "PROFORMA"
@@ -642,6 +752,21 @@ export default function CreateSalePage() {
       }
       const result = await createSale(salePayload, saleRequest.current.key);
       saleRequest.current = null;
+
+      if (idRutaSesion !== null) {
+        try {
+          const updatedRouteInventory = await getRouteInventory(idRutaSesion);
+          setRouteInventoryState({ idRutaSesion, data: updatedRouteInventory });
+        } catch (error) {
+          setRouteInventoryState({
+            idRutaSesion,
+            error: getApiErrorMessage(error, "Error de consulta"),
+          });
+          toast.error(
+            `Venta registrada, pero no se pudo actualizar el disponible del vehículo: ${getApiErrorMessage(error, "Error de consulta")}`,
+          );
+        }
+      }
 
       toast.success(`${tipoRegistro === "PROFORMA" ? "Proforma" : "Venta"} #${result.numeroVenta} registrada correctamente`);
       router.push(`/sales/${result.id}`);
@@ -789,11 +914,27 @@ export default function CreateSalePage() {
               </div>
 
               <div className="space-y-1">
-                <Label>Sesión de ruta (opcional)</Label>
+                <Label>
+                  Sesión de ruta
+                  {isRouteSeller && selectableRouteSessions.length > 0 ? " (requerida)" : " (opcional)"}
+                </Label>
                 <Select
                   value={idRutaSesion ? String(idRutaSesion) : "none"}
+                  disabled={
+                    isLoading ||
+                    (isRouteSeller && selectableRouteSessions.length === 1)
+                  }
                   onValueChange={(value) => {
                     const selectedSession = value === "none" ? null : Number(value);
+                    if (
+                      selectedSession !== null &&
+                      !selectableRouteSessions.some((session) => session.id === selectedSession)
+                    ) {
+                      return;
+                    }
+                    if (isRouteSeller && selectableRouteSessions.length > 0 && selectedSession === null) {
+                      return;
+                    }
                     setIdRutaSesion(selectedSession);
                     if (!selectedSession && tipoRegistro === "PROFORMA") {
                       setTipoRegistro("VENTA");
@@ -805,8 +946,10 @@ export default function CreateSalePage() {
                     <SelectValue placeholder="Sin sesión de ruta" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Sin sesión de ruta</SelectItem>
-                    {routeSessions.map((session) => (
+                    {(!isRouteSeller || selectableRouteSessions.length === 0) ? (
+                      <SelectItem value="none">Venta desde planta (sin sesión de ruta)</SelectItem>
+                    ) : null}
+                    {selectableRouteSessions.map((session) => (
                       <SelectItem key={session.id} value={String(session.id)}>
                         {session.ruta?.nombre ?? `Ruta ${session.idRuta}`} · {session.vendedor?.nombre ?? "Sin vendedor"}
                       </SelectItem>
@@ -814,8 +957,33 @@ export default function CreateSalePage() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Requerido para que la venta cuente en comisiones del vendedor/chofer.
+                  Las ventas de ruta se atribuyen al empleado vendedor de la sesión, no al chofer.
                 </p>
+                {isRouteSeller && routeSessionsError ? (
+                  <p role="alert" className="text-xs text-destructive">
+                    No se pudo verificar tu sesión asignada; las ventas quedan bloqueadas hasta actualizar.
+                  </p>
+                ) : null}
+                {isRouteSeller && !routeSessionsError && hasLoadedOnce && selectableRouteSessions.length === 0 ? (
+                  <p role="status" className="text-xs text-amber-700">
+                    No tienes una sesión EN_CURSO asignada. No puedes realizar ventas desde ruta; la opción de planta
+                    permanece sujeta a tus permisos.
+                  </p>
+                ) : null}
+                {idRutaSesion !== null ? (
+                  <p
+                    role={routeInventoryError ? "alert" : "status"}
+                    className={routeInventoryError ? "text-xs text-destructive" : "text-xs text-muted-foreground"}
+                  >
+                    {isLoadingRouteInventory
+                      ? "Consultando existencias del vehículo..."
+                      : routeInventoryError
+                        ? routeInventoryError
+                        : routeInventory?.idRutaSesion === idRutaSesion
+                          ? `Existencias actualizadas para ${selectedRouteSession?.ruta?.nombre ?? "el vehículo asignado"}.`
+                          : "No se pudo verificar el inventario del vehículo."}
+                  </p>
+                ) : null}
               </div>
 
               <div className="space-y-1">
@@ -838,6 +1006,36 @@ export default function CreateSalePage() {
                   </p>
                 ) : null}
               </div>
+
+              {idRutaSesion ? (
+                <div className="space-y-1">
+                  <Label>Vendedor responsable</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {routeSessions.find((session) => session.id === idRutaSesion)?.vendedor?.nombre
+                      ?? "La sesión de ruta no tiene vendedor laboral identificado."}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <Label>Vendedor responsable (opcional)</Label>
+                  <Select
+                    value={idEmpleadoVendedor === null ? "none" : String(idEmpleadoVendedor)}
+                    onValueChange={(value) => setIdEmpleadoVendedor(value === "none" ? null : Number(value))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin vendedor asignado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Sin vendedor asignado</SelectItem>
+                      {employeeOptions.map((employee) => (
+                        <SelectItem key={employee.employeeId} value={String(employee.employeeId)}>
+                          {employee.nombre}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {tipoRegistro === "PROFORMA" ? (
                 <div className="space-y-1">
@@ -988,6 +1186,11 @@ export default function CreateSalePage() {
                               <CommandItem
                                 key={product.id}
                                 value={product.nombre}
+                                disabled={
+                                  idRutaSesion !== null &&
+                                  routeInventory?.idRutaSesion === idRutaSesion &&
+                                  (routeAvailabilityByItem.get(product.id) ?? 0) <= 0
+                                }
                                 onSelect={() => {
                                   setSelectedProductId(product.id);
                                   setProductPopoverOpen(false);
@@ -996,7 +1199,16 @@ export default function CreateSalePage() {
                                 <div className="flex w-full items-center justify-between gap-2">
                                   <span>{product.nombre}</span>
                                   <span className="text-xs text-muted-foreground">
-                                    Stock {product.existencia.toFixed(2)} · {toMoney(product.precioVenta)}
+                                    {idRutaSesion !== null
+                                      ? isLoadingRouteInventory
+                                        ? "Consultando vehículo..."
+                                        : routeInventory?.idRutaSesion === idRutaSesion
+                                          ? `Disponible vehículo ${(
+                                              routeAvailabilityByItem.get(product.id) ?? 0
+                                            ).toFixed(2)}`
+                                          : "Disponible vehículo no verificado"
+                                      : `Stock planta ${product.existencia.toFixed(2)}`}{" "}
+                                    · {toMoney(product.precioVenta)}
                                   </span>
                                 </div>
                               </CommandItem>
@@ -1007,7 +1219,20 @@ export default function CreateSalePage() {
                     </PopoverContent>
                   </Popover>
                 </div>
-                <Button type="button" onClick={addProductRow} disabled={!selectedProductId || isAddingProduct}>
+                <Button
+                  type="button"
+                  onClick={addProductRow}
+                  disabled={
+                    !selectedProductId ||
+                    isAddingProduct ||
+                    Boolean(
+                      idRutaSesion !== null &&
+                        (isLoadingRouteInventory ||
+                          routeInventoryError ||
+                          routeInventory?.idRutaSesion !== idRutaSesion),
+                    )
+                  }
+                >
                   {isAddingProduct ? (
                     <Loader2 className="mr-2 size-4 animate-spin" />
                   ) : (
@@ -1031,6 +1256,17 @@ export default function CreateSalePage() {
                     <div>
                       <p className="text-xs text-muted-foreground">Producto</p>
                       <p className="font-medium">{row.nombre}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {idRutaSesion !== null
+                          ? isLoadingRouteInventory
+                            ? "Disponible en vehículo: consultando..."
+                            : routeInventory?.idRutaSesion === idRutaSesion
+                              ? `Disponible en vehículo: ${(
+                                  routeAvailabilityByItem.get(row.idInventarioItem) ?? 0
+                                ).toFixed(2)}`
+                              : "Disponible en vehículo: no verificado"
+                          : `Existencia en planta: ${(product?.existencia ?? 0).toFixed(2)}`}
+                      </p>
                     </div>
                     {product?.esEnvaseRetornable ? (
                       <div className="space-y-1">
@@ -1180,6 +1416,9 @@ export default function CreateSalePage() {
                         {toMoney(creditAuthorization.saldoPendiente)} · Disponible:{" "}
                         {toMoney(creditAuthorization.creditoDisponible)}
                       </p>
+                      <p className="text-xs text-muted-foreground">
+                        Saldo vencido: {toMoney(creditAuthorization.saldoVencido)}
+                      </p>
                       {creditAuthorization.motivoNoAutorizado ? (
                         <p className="mt-1 text-destructive">{creditAuthorization.motivoNoAutorizado}</p>
                       ) : null}
@@ -1266,7 +1505,25 @@ export default function CreateSalePage() {
               </div>
 
               <div className="md:col-span-2">
-                <Button className="w-full" disabled={isSubmitting || isLoading} onClick={handleSubmit}>
+                <Button
+                  className="w-full"
+                  disabled={
+                    isSubmitting ||
+                    isLoading ||
+                    Boolean(
+                      isRouteSeller &&
+                        (routeSessionsError ||
+                          (selectableRouteSessions.length > 0 && idRutaSesion === null)),
+                    ) ||
+                    Boolean(
+                      idRutaSesion !== null &&
+                        (isLoadingRouteInventory ||
+                          routeInventoryError ||
+                          routeInventory?.idRutaSesion !== idRutaSesion),
+                    )
+                  }
+                  onClick={handleSubmit}
+                >
                   {isSubmitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
                   {tipoRegistro === "PROFORMA" ? "Registrar proforma" : "Registrar venta"}
                 </Button>

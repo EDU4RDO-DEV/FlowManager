@@ -11,8 +11,19 @@ import {
   registerInventoryMovement,
 } from './inventory-movement.service';
 import { NotificationEvents, send } from './notification.service';
+import {
+  recordCashPaymentMovement,
+  reverseSalePaymentCashMovement,
+} from './cash.service';
+import { accrueMonthlyCommissionsForSale } from './commission-accrual.service';
 import { processExpiredProformaReservations } from './proforma-reservation.service';
 import { getRouteAvailableQuantities } from './route-inventory.service';
+import {
+  assertRouteSessionAccess,
+  assertSaleAccess,
+  getSaleVisibilityWhere,
+  type OperationalActor,
+} from './operational-scope.service';
 
 type ListSalesInput = {
   page?: number;
@@ -53,6 +64,7 @@ type SalePaymentInput = {
 type CreateSaleInput = {
   idUsuario: number;
   idCliente: number;
+  idEmpleadoVendedor?: number;
   idRutaSesion?: number;
   idTalonario?: number;
   numeroProForma?: number;
@@ -272,6 +284,7 @@ export type CustomerCreditAuthorization = {
   habilitadoCredito: boolean;
   limiteCredito: number;
   saldoPendiente: number;
+  saldoVencido: number;
   creditoDisponible: number;
   condicionVigente: {
     id: number;
@@ -327,17 +340,35 @@ async function getCustomerCreditAuthorizationInternal(
       },
       select: {
         TotalOriginal: true,
+        FechaVencimiento: true,
         Venta: {
           select: {
             PagoVenta: {
               where: { Anulado: false },
               select: { Monto: true },
             },
+            DevolucionesComerciales: {
+              select: {
+                Detalles: {
+                  select: {
+                    Cantidad: true,
+                    DetalleVenta: {
+                      select: { PrecioUnitario: true, EsBonificacion: true },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
       },
     }),
   ]);
+  const hoyUtc = new Date(Date.UTC(
+    fechaOperacion.getUTCFullYear(),
+    fechaOperacion.getUTCMonth(),
+    fechaOperacion.getUTCDate(),
+  ));
   const saldoPendiente = Number(
     cuentas
       .reduce((saldo, cuenta) => {
@@ -345,7 +376,33 @@ async function getCustomerCreditAuthorizationInternal(
           (sum, pago) => sum + toNumber(pago.Monto),
           0,
         );
-        return saldo + Math.max(0, toNumber(cuenta.TotalOriginal) - totalAbonado);
+        const totalDevuelto = cuenta.Venta.DevolucionesComerciales
+          .flatMap((devolucion) => devolucion.Detalles)
+          .reduce((sum, detalle) => sum + (
+            detalle.DetalleVenta.EsBonificacion
+              ? 0
+              : detalle.Cantidad * toNumber(detalle.DetalleVenta.PrecioUnitario)
+          ), 0);
+        return saldo + Math.max(0, toNumber(cuenta.TotalOriginal) - totalDevuelto - totalAbonado);
+      }, 0)
+      .toFixed(2),
+  );
+  const saldoVencido = Number(
+    cuentas
+      .reduce((saldo, cuenta) => {
+        if (!cuenta.FechaVencimiento || cuenta.FechaVencimiento >= hoyUtc) return saldo;
+        const totalAbonado = cuenta.Venta.PagoVenta.reduce(
+          (sum, pago) => sum + toNumber(pago.Monto),
+          0,
+        );
+        const totalDevuelto = cuenta.Venta.DevolucionesComerciales
+          .flatMap((devolucion) => devolucion.Detalles)
+          .reduce((sum, detalle) => sum + (
+            detalle.DetalleVenta.EsBonificacion
+              ? 0
+              : detalle.Cantidad * toNumber(detalle.DetalleVenta.PrecioUnitario)
+          ), 0);
+        return saldo + Math.max(0, toNumber(cuenta.TotalOriginal) - totalDevuelto - totalAbonado);
       }, 0)
       .toFixed(2),
   );
@@ -364,6 +421,7 @@ async function getCustomerCreditAuthorizationInternal(
     habilitadoCredito: cliente.HabilitadoCredito,
     limiteCredito,
     saldoPendiente,
+    saldoVencido,
     creditoDisponible,
     condicionVigente: condicion
       ? {
@@ -421,7 +479,7 @@ function getCreditDueDate(fechaOperacion: Date, plazoDias: number | null): Date 
   }
 
   const fechaVencimiento = new Date(fechaOperacion);
-  fechaVencimiento.setDate(fechaVencimiento.getDate() + plazoDias);
+  fechaVencimiento.setUTCDate(fechaVencimiento.getUTCDate() + plazoDias);
   return fechaVencimiento;
 }
 
@@ -631,11 +689,43 @@ async function getSaleByIdInternal(
           Correo: true,
         },
       },
+      EmpleadoVendedor: {
+        select: {
+          Id: true,
+          Entidad: { select: { NombreCompleto: true } },
+        },
+      },
       RutaSesion: {
         select: {
           Id: true,
+          IdVehiculo: true,
+          IdUsuarioVendedor: true,
+          IdUsuarioChofer: true,
+          IdEmpleadoChofer: true,
+          IdEmpleadoVendedor: true,
+          Empleado_RutaSesion_IdEmpleadoChoferToEmpleado: {
+            select: {
+              Id: true,
+              Entidad: { select: { NombreCompleto: true } },
+            },
+          },
+          Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado: {
+            select: {
+              Id: true,
+              Entidad: { select: { NombreCompleto: true } },
+            },
+          },
           Estado: true,
           FechaSesion: true,
+          Vehiculo: {
+            select: { Id: true, Placa: true },
+          },
+          Usuario_RutaSesion_IdUsuarioVendedorToUsuario: {
+            select: { Id: true, Nombre: true },
+          },
+          Usuario_RutaSesion_IdUsuarioChoferToUsuario: {
+            select: { Id: true, Nombre: true },
+          },
           Ruta: {
             select: {
               Id: true,
@@ -770,7 +860,10 @@ function toSaleDto(sale: NonNullable<Awaited<ReturnType<typeof getSaleByIdIntern
     id: sale.Id,
     idCliente: sale.IdCliente,
     idUsuario: sale.IdUsuario,
+    idEmpleadoVendedor: sale.IdEmpleadoVendedor,
+    fechaVentaEfectiva: sale.FechaVentaEfectiva,
     idRutaSesion: sale.IdRutaSesion,
+    origenInventario: sale.IdRutaSesion ? 'RUTA' : 'PLANTA',
     idTalonario: sale.IdTalonario,
     numeroVenta: sale.NumeroVenta,
     numeroProForma: sale.NumeroProForma,
@@ -835,11 +928,47 @@ function toSaleDto(sale: NonNullable<Awaited<ReturnType<typeof getSaleByIdIntern
       nombre: sale.Usuario.Nombre,
       correo: sale.Usuario.Correo,
     },
+    empleadoVendedor: sale.EmpleadoVendedor
+      ? {
+          id: sale.EmpleadoVendedor.Id,
+          nombre: sale.EmpleadoVendedor.Entidad.NombreCompleto,
+        }
+      : null,
     rutaSesion: sale.RutaSesion
       ? {
           id: sale.RutaSesion.Id,
+          idVehiculo: sale.RutaSesion.IdVehiculo,
+          idUsuarioVendedor: sale.RutaSesion.IdUsuarioVendedor,
+          idUsuarioChofer: sale.RutaSesion.IdUsuarioChofer,
+          idEmpleadoVendedor: sale.RutaSesion.IdEmpleadoVendedor,
           estado: sale.RutaSesion.Estado,
           fechaSesion: sale.RutaSesion.FechaSesion,
+          vehiculo: {
+            id: sale.RutaSesion.Vehiculo.Id,
+            placa: sale.RutaSesion.Vehiculo.Placa,
+          },
+          vendedor: sale.RutaSesion.Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado
+            ? {
+                id: sale.RutaSesion.Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado.Id,
+                nombre: sale.RutaSesion.Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado.Entidad.NombreCompleto,
+              }
+            : sale.RutaSesion.Usuario_RutaSesion_IdUsuarioVendedorToUsuario
+              ? {
+                  id: sale.RutaSesion.Usuario_RutaSesion_IdUsuarioVendedorToUsuario.Id,
+                  nombre: sale.RutaSesion.Usuario_RutaSesion_IdUsuarioVendedorToUsuario.Nombre,
+                }
+              : null,
+          chofer: sale.RutaSesion.Empleado_RutaSesion_IdEmpleadoChoferToEmpleado
+            ? {
+                id: sale.RutaSesion.Empleado_RutaSesion_IdEmpleadoChoferToEmpleado.Id,
+                nombre: sale.RutaSesion.Empleado_RutaSesion_IdEmpleadoChoferToEmpleado.Entidad.NombreCompleto,
+              }
+            : sale.RutaSesion.Usuario_RutaSesion_IdUsuarioChoferToUsuario
+              ? {
+                  id: sale.RutaSesion.Usuario_RutaSesion_IdUsuarioChoferToUsuario.Id,
+                  nombre: sale.RutaSesion.Usuario_RutaSesion_IdUsuarioChoferToUsuario.Nombre,
+                }
+              : null,
           ruta: {
             id: sale.RutaSesion.Ruta.Id,
             nombre: sale.RutaSesion.Ruta.Nombre,
@@ -882,8 +1011,9 @@ function validatePaymentRules(payment: SalePaymentInput) {
   }
 }
 
-export async function listSales(input: ListSalesInput) {
+export async function listSales(input: ListSalesInput, actor?: OperationalActor) {
   const { page, limit, skip } = resolvePagination(input);
+  const visibilityWhere = actor ? getSaleVisibilityWhere(actor) : undefined;
 
   const where: Prisma.VentaWhereInput = {
     ...(input.anulado !== undefined ? { Anulado: input.anulado } : { Anulado: false }),
@@ -923,6 +1053,7 @@ export async function listSales(input: ListSalesInput) {
           ],
         }
       : {}),
+    ...(visibilityWhere ? { AND: [visibilityWhere] } : {}),
   };
 
   const [total, rows] = await Promise.all([
@@ -951,11 +1082,43 @@ export async function listSales(input: ListSalesInput) {
             Correo: true,
           },
         },
+        EmpleadoVendedor: {
+          select: {
+            Id: true,
+            Entidad: { select: { NombreCompleto: true } },
+          },
+        },
         RutaSesion: {
           select: {
             Id: true,
+            IdVehiculo: true,
+            IdUsuarioVendedor: true,
+            IdUsuarioChofer: true,
+            IdEmpleadoChofer: true,
+            IdEmpleadoVendedor: true,
+            Empleado_RutaSesion_IdEmpleadoChoferToEmpleado: {
+              select: {
+                Id: true,
+                Entidad: { select: { NombreCompleto: true } },
+              },
+            },
+            Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado: {
+              select: {
+                Id: true,
+                Entidad: { select: { NombreCompleto: true } },
+              },
+            },
             Estado: true,
             FechaSesion: true,
+            Vehiculo: {
+              select: { Id: true, Placa: true },
+            },
+            Usuario_RutaSesion_IdUsuarioVendedorToUsuario: {
+              select: { Id: true, Nombre: true },
+            },
+            Usuario_RutaSesion_IdUsuarioChoferToUsuario: {
+              select: { Id: true, Nombre: true },
+            },
             Ruta: {
               select: {
                 Id: true,
@@ -1034,7 +1197,8 @@ export async function listSales(input: ListSalesInput) {
   };
 }
 
-export async function getSaleById(id: number) {
+export async function getSaleById(id: number, actor?: OperationalActor) {
+  if (actor) await assertSaleAccess(prisma, id, actor);
   const sale = await getSaleByIdInternal(prisma, id, true);
   if (!sale) {
     throw new Error('Venta no existe');
@@ -1145,7 +1309,11 @@ export function notifyFacturaEmitida(sale: ReturnType<typeof toSaleDto>): void {
     });
 }
 
-export async function createSale(input: CreateSaleInput, claveSolicitud: string = crypto.randomUUID()) {
+export async function createSale(
+  input: CreateSaleInput,
+  claveSolicitud: string = crypto.randomUUID(),
+  actor?: OperationalActor,
+) {
   const huellaSolicitud = crypto
     .createHash('sha256')
     .update(JSON.stringify(input))
@@ -1161,7 +1329,7 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
     ) {
       throw new Error('La clave de idempotencia ya fue utilizada con datos diferentes');
     }
-    return getSaleById(existingRequest.Id);
+    return getSaleById(existingRequest.Id, actor);
   }
 
   await validateUsuarioExists(input.idUsuario);
@@ -1212,6 +1380,41 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
       }
       if (isRouteProforma && proformaExpiration! <= fechaOperacion) {
         throw new Error('La fecha de expiración de la proforma debe ser futura');
+      }
+      if (input.idRutaSesion && actor) {
+        await assertRouteSessionAccess(tx, input.idRutaSesion, actor);
+      }
+      const rutaSesion = input.idRutaSesion
+        ? await tx.rutaSesion.findFirst({
+            where: { Id: input.idRutaSesion, Anulado: false },
+            select: { IdEmpleadoVendedor: true },
+          })
+        : null;
+      if (input.idRutaSesion && !rutaSesion) {
+        throw new Error('RutaSesion no existe');
+      }
+      if (
+        rutaSesion?.IdEmpleadoVendedor !== null &&
+        rutaSesion?.IdEmpleadoVendedor !== undefined &&
+        input.idEmpleadoVendedor !== undefined &&
+        rutaSesion.IdEmpleadoVendedor !== input.idEmpleadoVendedor
+      ) {
+        throw new Error('El vendedor de la venta debe coincidir con el empleado asignado a la sesión');
+      }
+      const idEmpleadoVendedor = rutaSesion?.IdEmpleadoVendedor ?? input.idEmpleadoVendedor ?? null;
+      if (idEmpleadoVendedor !== null) {
+        const empleadoVendedor = await tx.empleado.findFirst({
+          where: {
+            Id: idEmpleadoVendedor,
+            Anulado: false,
+            FechaContratacion: { lte: fechaOperacion },
+            OR: [{ FechaSalida: null }, { FechaSalida: { gte: fechaOperacion } }],
+          },
+          select: { Id: true },
+        });
+        if (!empleadoVendedor) {
+          throw new Error('Vendedor no tiene empleado activo vinculado');
+        }
       }
       if (input.tipoRegistro === 'VENTA' && input.condicionPago === 'CREDITO') {
         await validateClienteCreditoHabilitado(tx, input.idCliente);
@@ -1434,6 +1637,8 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
           IdCliente: input.idCliente,
           IdUsuario: input.idUsuario,
           IdRutaSesion: input.idRutaSesion,
+          IdEmpleadoVendedor: idEmpleadoVendedor,
+          FechaVentaEfectiva: input.tipoRegistro === 'VENTA' ? fechaOperacion : null,
           IdTalonario: input.idTalonario,
           NumeroVenta: numeroVenta,
           ClaveSolicitud: claveSolicitud,
@@ -1625,7 +1830,10 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
       }
 
       if (input.pagoInicial && totalPagoInicial > 0) {
-        await tx.pagoVenta.create({
+        const initialPaymentDate = input.pagoInicial.fechaPago
+          ? toDateOnly(input.pagoInicial.fechaPago)
+          : new Date();
+        const initialPayment = await tx.pagoVenta.create({
           data: {
             IdVenta: createdSale.Id,
             IdUsuario: input.idUsuario,
@@ -1633,12 +1841,24 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
             MetodoPago: input.pagoInicial.metodoPago,
             NumeroReferencia: input.pagoInicial.numeroReferencia,
             Banco: input.pagoInicial.banco,
-            FechaPago: input.pagoInicial.fechaPago ? toDateOnly(input.pagoInicial.fechaPago) : new Date(),
+            FechaPago: initialPaymentDate,
             RutaFirma: input.pagoInicial.rutaFirma,
             Observaciones: input.pagoInicial.observaciones,
             Anulado: false,
           },
+          select: { Id: true },
         });
+        if (['EFECTIVO', 'TRANSFERENCIA', 'CHEQUE', 'POS'].includes(input.pagoInicial.metodoPago)) {
+          await recordCashPaymentMovement(tx, {
+            idUsuario: input.idUsuario,
+            metodoPago: input.pagoInicial.metodoPago as 'EFECTIVO' | 'TRANSFERENCIA' | 'CHEQUE' | 'POS',
+            monto: totalPagoInicial,
+            fecha: initialPaymentDate,
+            source: 'PAGO_VENTA',
+            sourceId: initialPayment.Id,
+            concepto: `Cobro inicial de venta #${createdSale.NumeroVenta}`,
+          });
+        }
       }
 
       if (input.tipoRegistro === 'VENTA' && input.condicionPago === 'CREDITO') {
@@ -1711,6 +1931,10 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
         });
       }
 
+      if (input.tipoRegistro === 'VENTA') {
+        await accrueMonthlyCommissionsForSale(tx, createdSale.Id, input.idUsuario);
+      }
+
       const sale = await getSaleByIdInternal(tx, createdSale.Id, true);
       if (!sale) {
         throw new Error('No se pudo registrar la venta');
@@ -1780,7 +2004,11 @@ export async function createSale(input: CreateSaleInput, claveSolicitud: string 
   return created;
 }
 
-export async function confirmRouteProforma(id: number, idUsuario: number) {
+export async function confirmRouteProforma(
+  id: number,
+  idUsuario: number,
+  actor?: OperationalActor,
+) {
   await validateUsuarioExists(idUsuario);
   await processExpiredProformaReservations();
 
@@ -1807,6 +2035,7 @@ export async function confirmRouteProforma(id: number, idUsuario: number) {
       if (!sale) {
         throw new Error('Venta no existe o está anulada');
       }
+      if (actor) await assertSaleAccess(tx, id, actor);
       if (sale.TipoRegistro !== 'PROFORMA' || !sale.IdRutaSesion) {
         throw new Error('Solo se pueden confirmar proformas asociadas a una sesión de ruta');
       }
@@ -1857,6 +2086,7 @@ export async function confirmRouteProforma(id: number, idUsuario: number) {
         },
         data: {
           TipoRegistro: 'VENTA',
+          FechaVentaEfectiva: now,
           IdUsuarioModificador: idUsuario,
           FechaModificacion: now,
         },
@@ -1891,6 +2121,7 @@ export async function confirmRouteProforma(id: number, idUsuario: number) {
         }
       }
 
+      await accrueMonthlyCommissionsForSale(tx, id, idUsuario);
       const convertedSale = await getSaleByIdInternal(tx, id, true);
       if (!convertedSale) {
         throw new Error('No se pudo confirmar la proforma');
@@ -1977,6 +2208,15 @@ export async function updateSale(id: number, input: UpdateSaleInput) {
   if (sale.EstadoEntrega === 'ENTREGADO') {
     throw new Error('No se puede modificar una venta entregada');
   }
+  if (
+    input.estadoEntrega !== undefined &&
+    ['PARCIAL', 'ENTREGADO'].includes(input.estadoEntrega) &&
+    input.estadoEntrega !== sale.EstadoEntrega
+  ) {
+    throw new Error(
+      'No se puede registrar una entrega parcial o total sin persistir las cantidades realmente recibidas',
+    );
+  }
 
   if (input.idUsuarioModificador !== undefined) {
     await validateUsuarioExists(input.idUsuarioModificador);
@@ -2004,12 +2244,6 @@ export async function updateSale(id: number, input: UpdateSaleInput) {
   }
 
   const updatedDto = toSaleDto(updated);
-
-  // El guard previo ya impide modificar una venta con EstadoEntrega === 'ENTREGADO',
-  // por lo que llegar aquí con este valor siempre representa una transición real.
-  if (input.estadoEntrega === 'ENTREGADO') {
-    notifyPedidoEntregado(updatedDto);
-  }
 
   return updatedDto;
 }
@@ -2415,6 +2649,13 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
       },
     });
 
+    await accrueMonthlyCommissionsForSale(
+      tx,
+      saleToAnulate.Id,
+      idUsuarioAnulador ?? saleToAnulate.IdUsuario,
+      false,
+    );
+
     await tx.cuentaPorCobrar.updateMany({
       where: {
         IdVenta: saleToAnulate.Id,
@@ -2549,6 +2790,18 @@ async function recalculateSalePaymentStatus(
           Monto: true,
         },
       },
+      DevolucionesComerciales: {
+        select: {
+          Detalles: {
+            select: {
+              Cantidad: true,
+              DetalleVenta: {
+                select: { PrecioUnitario: true, EsBonificacion: true },
+              },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -2563,13 +2816,21 @@ async function recalculateSalePaymentStatus(
       esBonificacion: detail.EsBonificacion,
     })),
   );
+  const returnedTotal = sale.DevolucionesComerciales
+    .flatMap((devolucion) => devolucion.Detalles)
+    .reduce((sum, detail) => sum + (
+      detail.DetalleVenta.EsBonificacion
+        ? 0
+        : detail.Cantidad * toNumber(detail.DetalleVenta.PrecioUnitario)
+    ), 0);
+  const netTotal = Number(Math.max(0, totals.total - returnedTotal).toFixed(2));
 
   const totalPagado = Number(
     sale.PagoVenta.reduce((sum, item) => sum + toNumber(item.Monto), 0).toFixed(2),
   );
 
-  const estadoPago = getPaymentState(totals.total, totalPagado);
-  const saldo = Number(Math.max(0, totals.total - totalPagado).toFixed(2));
+  const estadoPago = getPaymentState(netTotal, totalPagado);
+  const saldo = Number(Math.max(0, netTotal - totalPagado).toFixed(2));
 
   await tx.venta.update({
     where: { Id: idVenta },
@@ -2579,11 +2840,20 @@ async function recalculateSalePaymentStatus(
   });
 
   return {
-    total: totals.total,
+    total: netTotal,
     totalPagado,
     estadoPago,
     saldo,
   };
+}
+
+export async function syncSaleReceivableAfterCommercialReturn(
+  tx: Prisma.TransactionClient,
+  idVenta: number,
+  idUsuarioModificador: number,
+) {
+  const recalculated = await recalculateSalePaymentStatus(tx, idVenta);
+  await syncCuentaPorCobrarFromSale(tx, idVenta, recalculated, idUsuarioModificador);
 }
 
 export function buildPagoRecibidoDatos(payment: {
@@ -2775,6 +3045,17 @@ export async function createSalePayment(
             Anulado: false,
           },
         });
+        if (['EFECTIVO', 'TRANSFERENCIA', 'CHEQUE', 'POS'].includes(input.metodoPago)) {
+          await recordCashPaymentMovement(tx, {
+            idUsuario: input.idUsuario,
+            metodoPago: input.metodoPago,
+            monto: payment.Monto,
+            fecha: payment.FechaPago ?? new Date(),
+            source: 'PAGO_VENTA',
+            sourceId: payment.Id,
+            concepto: `Abono de venta #${sale.NumeroVenta}`,
+          });
+        }
 
         const recalculated = await recalculateSalePaymentStatus(tx, idVenta);
         await syncCuentaPorCobrarFromSale(tx, idVenta, recalculated, input.idUsuario);
@@ -2878,6 +3159,12 @@ export async function anulateSalePayment(idVenta: number, idPago: number, idUsua
     if (!payment) {
       throw new Error('Pago no existe');
     }
+
+    await reverseSalePaymentCashMovement(tx, {
+      idPagoVenta: payment.Id,
+      idUsuario: idUsuarioAnulador,
+      concepto: `Anulación de pago #${payment.Id} de venta #${idVenta}`,
+    });
 
     await tx.pagoVenta.update({
       where: {

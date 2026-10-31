@@ -43,7 +43,11 @@ export function SummaryTab({ selectedSession, visibleInventory, transfers, hando
           <CardContent className="space-y-1 p-4">
             <p className="text-sm text-muted-foreground">Despacho / devolución</p>
             <p className="font-semibold">
-              {visibleInventory.despacho ? `Despachado ${formatDate(visibleInventory.despacho.fechaRegistro)}` : "Pendiente de despacho"}
+              {visibleInventory.despacho
+                ? `Despachado ${formatDate(visibleInventory.despacho.fechaRegistro)}`
+                : visibleInventory.productos.some((line) => (line.transferidoRecibido ?? 0) > 0)
+                  ? "Carga recibida por transferencia"
+                  : "Pendiente de despacho"}
             </p>
             <p className="text-xs text-muted-foreground">
               {visibleInventory.devolucion ? `Recibido ${formatDate(visibleInventory.devolucion.fechaRegistro)}` : "Devolución aún no registrada"}

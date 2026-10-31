@@ -5,6 +5,7 @@ const { prismaMock } = vi.hoisted(() => ({
     usuario: { findFirst: vi.fn() },
     cliente: { findFirst: vi.fn() },
     tipoCredito: { findFirst: vi.fn() },
+    cuentaPorCobrar: { findFirst: vi.fn() },
     clienteCondicionCredito: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -48,6 +49,7 @@ function setupTransaction() {
   prismaMock.usuario.findFirst.mockResolvedValue({ Id: 1 });
   prismaMock.cliente.findFirst.mockResolvedValue({ Id: 4 });
   prismaMock.tipoCredito.findFirst.mockResolvedValue({ Id: 8 });
+  prismaMock.cuentaPorCobrar.findFirst.mockResolvedValue(null);
   prismaMock.$transaction.mockImplementation(
     async (callback: (tx: typeof prismaMock) => unknown) => callback(prismaMock),
   );
@@ -152,6 +154,22 @@ describe('client credit condition history', () => {
       }),
     ).rejects.toThrow(
       'El tipo de crédito no se modifica en una condición existente; asigne una nueva condición',
+    );
+
+    expect(prismaMock.clienteCondicionCredito.update).not.toHaveBeenCalled();
+  });
+
+  it('does not edit dates or notes after a condition has been applied to a receivable', async () => {
+    prismaMock.clienteCondicionCredito.findFirst.mockResolvedValue(conditionRow());
+    prismaMock.cuentaPorCobrar.findFirst.mockResolvedValue({ Id: 21 });
+
+    await expect(
+      updateClienteCondicionCredito(2, {
+        fechaFinVigencia: '2026-12-31',
+        idUsuarioModificador: 1,
+      }),
+    ).rejects.toThrow(
+      'No se puede modificar la vigencia o las observaciones de una condición aplicada a cuentas históricas',
     );
 
     expect(prismaMock.clienteCondicionCredito.update).not.toHaveBeenCalled();

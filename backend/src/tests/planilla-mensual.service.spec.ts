@@ -22,6 +22,9 @@ const { prismaMock, renderHtmlToPdfMock } = vi.hoisted(() => ({
     reglaComisionCategoria: {
       findMany: vi.fn(),
     },
+    comisionDevengada: {
+      findMany: vi.fn(),
+    },
     tarifaViatico: {
       findFirst: vi.fn(),
     },
@@ -76,6 +79,8 @@ function routeEmployee(
     IdTipoTrabajador: 1,
     TipoTrabajador: { Clave: 'RUTA' },
     SueldoBase: sueldoBase,
+    FechaContratacion: new Date('2026-01-01T00:00:00.000Z'),
+    FechaSalida: null,
     HistorialSueldos: [],
     Entidad: { NombreCompleto: nombre },
   };
@@ -86,6 +91,7 @@ describe('planilla-mensual.service', () => {
     vi.resetAllMocks();
     prismaMock.tarifaViatico.findFirst.mockResolvedValue(null);
     prismaMock.reglaComisionCategoria.findMany.mockResolvedValue([]);
+    prismaMock.comisionDevengada.findMany.mockResolvedValue([]);
     prismaMock.adelantoEmpleado.findMany.mockResolvedValue([]);
     prismaMock.faltanteEmpleado.findMany.mockResolvedValue([]);
   });
@@ -210,6 +216,7 @@ describe('planilla-mensual.service', () => {
           BaseCalculo: 30000,
         }],
       }],
+      DetallesSalario: [],
       PlanillaDetalleAjuste: [{
         Id: 1,
         TipoAjuste: 'ADELANTO',
@@ -247,16 +254,125 @@ describe('planilla-mensual.service', () => {
     });
   });
 
-  it('calcula comisión sobre ventas pagadas y volumen mensual completo', async () => {
+  it('prorratea el sueldo por días calendario y separa los cambios salariales del mes', async () => {
+    prismaMock.configuracionComision.findFirst.mockResolvedValue({ Id: 3 });
+    prismaMock.empleado.findMany.mockResolvedValueOnce([{
+      ...routeEmployee(1, null, 'Empleado con cambio salarial', 6200),
+      HistorialSueldos: [
+        {
+          Id: 1,
+          SueldoBase: 3100,
+          FechaInicioVigencia: new Date('2026-08-01T00:00:00.000Z'),
+          FechaFinVigencia: new Date('2026-08-15T00:00:00.000Z'),
+        },
+        {
+          Id: 2,
+          SueldoBase: 6200,
+          FechaInicioVigencia: new Date('2026-08-16T00:00:00.000Z'),
+          FechaFinVigencia: null,
+        },
+      ],
+    }]);
+    prismaMock.detalleVenta.findMany.mockResolvedValueOnce([]);
+    prismaMock.planillaMensual.findMany.mockResolvedValueOnce([]);
+
+    const result = await previewPayroll({ mes: 8, anio: 2026 });
+
+    expect(result.planillas[0].sueldoBase).toBe(4700);
+    expect(result.planillas[0].detalleSalarios).toEqual([
+      expect.objectContaining({
+        idEmpleadoSueldoVigencia: 1,
+        diasCalendario: 15,
+        sueldoMensualSnapshot: 3100,
+        montoDevengado: 1500,
+      }),
+      expect.objectContaining({
+        idEmpleadoSueldoVigencia: 2,
+        diasCalendario: 16,
+        sueldoMensualSnapshot: 6200,
+        montoDevengado: 3200,
+      }),
+    ]);
+    expect(result.validaciones).toEqual([]);
+  });
+
+  it('usa snapshots del ledger de comisiones al generar la previsualización mensual', async () => {
     prismaMock.configuracionComision.findFirst.mockResolvedValue({ Id: 3 });
     prismaMock.empleado.findMany.mockResolvedValueOnce([
-      routeEmployee(1, 10, 'Repartidor A', 2000),
-      routeEmployee(2, 11, 'Vendedor B', 2000),
+      routeEmployee(2, null, 'Vendedor sin usuario'),
+    ]);
+    prismaMock.detalleVenta.findMany.mockResolvedValue([]);
+    prismaMock.reglaComision.findMany.mockResolvedValue([]);
+    prismaMock.comisionDevengada.findMany.mockResolvedValue([{
+      Id: 1,
+      IdEmpleado: 2,
+      IdVenta: 900,
+      IdDetalleVenta: 901,
+      Mes: 8,
+      Anio: 2026,
+      TipoMovimiento: 'DEVENGO',
+      MontoMovimiento: 40,
+      BaseCalculoSnapshot: 1000,
+      BaseCategoriaSnapshot: null,
+      CantidadSnapshot: 1,
+      NombreProductoSnapshot: 'Producto con regla aplicada',
+      IdConfiguracionSnapshot: 3,
+      IdReglaSnapshot: 10,
+      IdCategoriaSnapshot: null,
+      IdReglaCategoriaSnapshot: null,
+      CategoriaSnapshot: null,
+      TipoCalculoSnapshot: 'PORCENTAJE_VENTA',
+      ValorAplicadoSnapshot: 4,
+      FechaVentaEfectiva: new Date('2026-08-12T00:00:00.000Z'),
+      DetalleVenta: {
+        IdInventarioItem: 5,
+        PrecioUnitario: 1000,
+        Anulado: false,
+        EsBonificacion: false,
+        InventarioItem: { Id: 5, Nombre: 'Producto con regla aplicada' },
+        Venta: {
+          Id: 900,
+          IdRutaSesion: null,
+          EstadoPago: 'PENDIENTE',
+          Anulado: false,
+          RutaSesion: null,
+        },
+      },
+    }]);
+    prismaMock.planillaMensual.findMany.mockResolvedValueOnce([]);
+
+    const result = await previewPayroll({
+      mes: 8,
+      anio: 2026,
+      empleados: [{ idEmpleado: 2, diasTrabajados: 0, ajustes: [] }],
+    });
+
+    expect(result.validaciones).toEqual([]);
+    expect(result.planillas[0].totalComisiones).toBe(40);
+    expect(result.planillas[0].detalleComisiones[0]).toMatchObject({
+      idReglaComision: 10,
+      idConfiguracionComision: 3,
+      nombreProducto: 'Producto con regla aplicada',
+      montoComision: 40,
+      valorAplicado: 4,
+      fuentes: [expect.objectContaining({ idDetalleVenta: 901, idEmpleadoAtribuido: 2 })],
+    });
+  });
+
+  it('atribuye una sola comisión mensual al vendedor de ventas confirmadas sin requerir usuario ni ruta', async () => {
+    prismaMock.configuracionComision.findFirst.mockResolvedValue({ Id: 3 });
+    prismaMock.empleado.findMany.mockResolvedValueOnce([
+      routeEmployee(1, null, 'Conductor sin comisión', 2000),
+      routeEmployee(2, null, 'Vendedor sin usuario', 2000),
     ]);
     prismaMock.tarifaViatico.findFirst.mockResolvedValue({ TarifaDiaria: 30 });
-    prismaMock.faltanteEmpleado.findMany.mockResolvedValue([{ Id: 1, Monto: 50, Observacion: 'Faltante' }]);
+    prismaMock.faltanteEmpleado.findMany.mockImplementation(async (args: {
+      where: { IdEmpleado: number };
+    }) => args.where.IdEmpleado === 1
+      ? [{ Id: 1, Monto: 50, Observacion: 'Faltante' }]
+      : []);
 
-    prismaMock.detalleVenta.findMany.mockResolvedValue([
+    const monthlySales = [
       {
         Id: 101,
         IdVenta: 900,
@@ -264,12 +380,12 @@ describe('planilla-mensual.service', () => {
         Cantidad: 120,
         PrecioUnitario: 10,
         Venta: {
-          RutaSesion: {
-            Id: 700,
-            FechaSesion: new Date('2026-08-12T00:00:00.000Z'),
-            IdUsuarioChofer: 10,
-            IdUsuarioVendedor: 11,
-          },
+          TipoRegistro: 'VENTA',
+          FechaVentaEfectiva: new Date('2026-08-12T00:00:00.000Z'),
+          IdEmpleadoVendedor: 2,
+          EstadoPago: 'PENDIENTE',
+          Anulado: false,
+          RutaSesion: null,
         },
         InventarioItem: { Nombre: 'Garrafón 18L', IdCategoriaComision: null, CategoriaComision: null },
       },
@@ -280,32 +396,27 @@ describe('planilla-mensual.service', () => {
         Cantidad: 80,
         PrecioUnitario: 10,
         Venta: {
+          TipoRegistro: 'VENTA',
+          FechaVentaEfectiva: new Date('2026-08-13T00:00:00.000Z'),
+          IdEmpleadoVendedor: 2,
+          EstadoPago: 'PAGADO',
+          Anulado: false,
           RutaSesion: {
             Id: 701,
             FechaSesion: new Date('2026-08-13T00:00:00.000Z'),
+            Anulado: false,
             IdUsuarioChofer: 11,
             IdUsuarioVendedor: 10,
           },
         },
         InventarioItem: { Nombre: 'Garrafón 18L', IdCategoriaComision: null, CategoriaComision: null },
       },
-      {
-        Id: 101,
-        IdVenta: 900,
-        IdInventarioItem: 5,
-        Cantidad: 120,
-        PrecioUnitario: 10,
-        Venta: {
-          RutaSesion: {
-            Id: 700,
-            FechaSesion: new Date('2026-08-12T00:00:00.000Z'),
-            IdUsuarioChofer: 10,
-            IdUsuarioVendedor: 11,
-          },
-        },
-        InventarioItem: { Nombre: 'Garrafón 18L', IdCategoriaComision: null, CategoriaComision: null },
-      },
-    ]);
+    ];
+    prismaMock.detalleVenta.findMany.mockImplementation(async (args: {
+      where: { Venta: { IdEmpleadoVendedor: number } };
+    }) => monthlySales.filter(
+      (detail) => detail.Venta.IdEmpleadoVendedor === args.where.Venta.IdEmpleadoVendedor,
+    ));
 
     prismaMock.reglaComision.findMany.mockResolvedValue([
       {
@@ -339,19 +450,20 @@ describe('planilla-mensual.service', () => {
     });
 
     expect(result.planillas).toHaveLength(2);
-    expect(result.planillas[0].totalComisiones).toBe(80);
-    expect(result.planillas[0].sueldoLiquido).toBe(2230);
+    expect(result.planillas[0].totalComisiones).toBe(0);
+    expect(result.planillas[1].totalComisiones).toBe(80);
+    expect(result.planillas[1].sueldoLiquido).toBe(2280);
     expect(result.planillas.map((payroll) => payroll.totalBonosMetas)).toEqual([200, 200]);
     expect(result.planillas.map((payroll) => payroll.totalViaticos)).toEqual([150, 150]);
-    expect(result.planillas.map((payroll) => payroll.totalDescuentos)).toEqual([50, 50]);
+    expect(result.planillas.map((payroll) => payroll.totalDescuentos)).toEqual([50, 0]);
     expect(result.planillas.reduce((total, payroll) => total + payroll.totalBonosMetas, 0)).toBe(400);
     expect(result.validaciones).toEqual([]);
-    expect(result.planillas[0].detalleComisiones[0]).toMatchObject({
+    expect(result.planillas[1].detalleComisiones[0]).toMatchObject({
       idReglaComision: 11,
       idConfiguracionComision: 3,
       fuentes: [
-        { idDetalleVenta: 101, rolAtribucion: 'CHOFER' },
-        { idDetalleVenta: 102, rolAtribucion: 'VENDEDOR' },
+        { idDetalleVenta: 101, rolAtribucion: 'VENDEDOR', idEmpleadoAtribuido: 2 },
+        { idDetalleVenta: 102, rolAtribucion: 'VENDEDOR', idEmpleadoAtribuido: 2 },
       ],
     });
     expect(result.previewId).toHaveLength(64);
@@ -371,18 +483,26 @@ describe('planilla-mensual.service', () => {
     );
     employees.push(routeEmployee(100, 500, 'Ruta garrafones'));
     employees.push(routeEmployee(101, 501, 'Ruta redondeo'));
-    const saleByUser = new Map<number, Array<{
+    const saleByEmployee = new Map<number, Array<{
       Id: number;
       IdVenta: number;
       IdInventarioItem: number;
       Cantidad: number;
       PrecioUnitario: number;
-      Venta: { RutaSesion: {
-        Id: number;
-        FechaSesion: Date;
-        IdUsuarioChofer: number;
-        IdUsuarioVendedor: number;
-      } };
+      Venta: {
+        TipoRegistro: string;
+        FechaVentaEfectiva: Date;
+        IdEmpleadoVendedor: number;
+        EstadoPago: string;
+        Anulado: boolean;
+        RutaSesion: {
+          Id: number;
+          FechaSesion: Date;
+          Anulado: boolean;
+          IdUsuarioChofer: number;
+          IdUsuarioVendedor: number;
+        };
+      };
       InventarioItem: {
         Nombre: string;
         IdCategoriaComision: number;
@@ -390,14 +510,14 @@ describe('planilla-mensual.service', () => {
       };
     }>>();
     const addSale = (
-      userId: number,
+      employeeId: number,
       detailId: number,
       productId: number,
       price: number,
       categoryId: number,
       categoryName: string,
     ) => {
-      const details = saleByUser.get(userId) ?? [];
+      const details = saleByEmployee.get(employeeId) ?? [];
       details.push({
         Id: detailId,
         IdVenta: detailId + 1000,
@@ -405,11 +525,17 @@ describe('planilla-mensual.service', () => {
         Cantidad: 1,
         PrecioUnitario: price,
         Venta: {
+          TipoRegistro: 'VENTA',
+          FechaVentaEfectiva: new Date('2026-08-12T00:00:00.000Z'),
+          IdEmpleadoVendedor: employeeId,
+          EstadoPago: 'PENDIENTE',
+          Anulado: false,
           RutaSesion: {
             Id: detailId + 2000,
             FechaSesion: new Date('2026-08-12T00:00:00.000Z'),
-            IdUsuarioChofer: userId,
-            IdUsuarioVendedor: userId + 1000,
+            Anulado: false,
+            IdUsuarioChofer: employeeId + 1000,
+            IdUsuarioVendedor: employeeId + 2000,
           },
         },
         InventarioItem: {
@@ -418,12 +544,12 @@ describe('planilla-mensual.service', () => {
           CategoriaComision: { Nombre: categoryName },
         },
       });
-      saleByUser.set(userId, details);
+      saleByEmployee.set(employeeId, details);
     };
 
     tiers.forEach((tier, index) => {
       addSale(
-        100 + index,
+        index + 1,
         300 + index,
         100 + index,
         tier.montoMinimoVenta || 1000,
@@ -431,17 +557,16 @@ describe('planilla-mensual.service', () => {
         'Otros',
       );
     });
-    addSale(500, 600, 600, 1000, 1, 'Garrafones');
-    addSale(501, 601, 601, 0.1, 2, 'Otros');
-    addSale(501, 602, 602, 0.1, 2, 'Otros');
+    addSale(100, 600, 600, 1000, 1, 'Garrafones');
+    addSale(101, 601, 601, 0.1, 2, 'Otros');
+    addSale(101, 602, 602, 0.1, 2, 'Otros');
 
     prismaMock.configuracionComision.findFirst.mockResolvedValue({ Id: 3 });
     prismaMock.empleado.findMany.mockResolvedValueOnce(employees);
     prismaMock.detalleVenta.findMany.mockImplementation(async (args: {
-      where: { Venta: { RutaSesion: { OR: Array<{ IdUsuarioChofer: number }> } } };
+      where: { Venta: { IdEmpleadoVendedor: number } };
     }) => {
-      const userId = args.where.Venta.RutaSesion.OR[0].IdUsuarioChofer;
-      return saleByUser.get(userId) ?? [];
+      return saleByEmployee.get(args.where.Venta.IdEmpleadoVendedor) ?? [];
     });
     prismaMock.reglaComisionCategoria.findMany.mockResolvedValue([
       {
@@ -500,37 +625,13 @@ describe('planilla-mensual.service', () => {
     prismaMock.configuracionComision.findFirst.mockResolvedValue({ Id: 3 });
     prismaMock.empleado.findMany.mockResolvedValueOnce([routeA, routeB, plant]);
     prismaMock.tarifaViatico.findFirst.mockResolvedValue({ TarifaDiaria: 30 });
-    prismaMock.detalleVenta.findMany.mockImplementation(async (args: {
-      where: { Venta: { RutaSesion: { OR: Array<{ IdUsuarioChofer: number }> } } };
-    }) => {
-      const userId = args.where.Venta.RutaSesion.OR[0].IdUsuarioChofer;
-      return userId === 30 ? [{
-        Id: 99,
-        IdVenta: 199,
-        IdInventarioItem: 999,
-        Cantidad: 1,
-        PrecioUnitario: 100,
-        Venta: {
-          RutaSesion: {
-            Id: 299,
-            FechaSesion: new Date('2026-08-12T00:00:00.000Z'),
-            IdUsuarioChofer: 30,
-            IdUsuarioVendedor: 31,
-          },
-        },
-        InventarioItem: {
-          Nombre: 'Producto de planta',
-          IdCategoriaComision: null,
-          CategoriaComision: null,
-        },
-      }] : [];
-    });
+    prismaMock.detalleVenta.findMany.mockResolvedValue([]);
     prismaMock.adelantoEmpleado.findMany.mockImplementation(async (args: {
       where: { IdEmpleado: number };
     }) => args.where.IdEmpleado === 1
-      ? [{ Id: 11, Monto: 100, Observacion: 'Adelanto A' }]
+      ? [{ Id: 11, Monto: 100, Observacion: 'Adelanto A', Aplicaciones: [] }]
       : args.where.IdEmpleado === 2
-        ? [{ Id: 22, Monto: 50, Observacion: 'Adelanto B' }]
+        ? [{ Id: 22, Monto: 50, Observacion: 'Adelanto B', Aplicaciones: [] }]
         : []);
     prismaMock.faltanteEmpleado.findMany.mockImplementation(async (args: {
       where: { IdEmpleado: number };
@@ -581,7 +682,14 @@ describe('planilla-mensual.service', () => {
         IdInventarioItem: 5,
         Cantidad: 2,
         PrecioUnitario: 50,
-        Venta: { RutaSesion: { Id: 1, FechaSesion: new Date('2026-08-01T00:00:00Z'), IdUsuarioChofer: 10, IdUsuarioVendedor: 10 } },
+        Venta: {
+          TipoRegistro: 'VENTA',
+          FechaVentaEfectiva: new Date('2026-08-01T00:00:00Z'),
+          IdEmpleadoVendedor: 1,
+          EstadoPago: 'PENDIENTE',
+          Anulado: false,
+          RutaSesion: { Id: 1, FechaSesion: new Date('2026-08-01T00:00:00Z'), Anulado: false, IdUsuarioChofer: 10, IdUsuarioVendedor: 10 },
+        },
         InventarioItem: { Nombre: 'Producto A', IdCategoriaComision: null, CategoriaComision: null },
       },
       {
@@ -590,7 +698,14 @@ describe('planilla-mensual.service', () => {
         IdInventarioItem: 6,
         Cantidad: 3,
         PrecioUnitario: 10,
-        Venta: { RutaSesion: { Id: 2, FechaSesion: new Date('2026-08-02T00:00:00Z'), IdUsuarioChofer: 10, IdUsuarioVendedor: 11 } },
+        Venta: {
+          TipoRegistro: 'VENTA',
+          FechaVentaEfectiva: new Date('2026-08-02T00:00:00Z'),
+          IdEmpleadoVendedor: 1,
+          EstadoPago: 'PENDIENTE',
+          Anulado: false,
+          RutaSesion: { Id: 2, FechaSesion: new Date('2026-08-02T00:00:00Z'), Anulado: false, IdUsuarioChofer: 10, IdUsuarioVendedor: 11 },
+        },
         InventarioItem: { Nombre: 'Producto B', IdCategoriaComision: null, CategoriaComision: null },
       },
     ]);
@@ -622,25 +737,28 @@ describe('planilla-mensual.service', () => {
 
     expect(result.planillas[0].totalComisiones).toBe(22);
     expect(result.planillas[0].detalleComisiones).toHaveLength(2);
-    expect(result.planillas[0].detalleComisiones[0].fuentes[0].rolAtribucion).toBe('AMBOS');
+    expect(result.planillas[0].detalleComisiones[0].fuentes[0].rolAtribucion).toBe('VENDEDOR');
     expect(result.validaciones).toEqual([]);
   });
 
-  it('devuelve validaciones individualizadas cuando faltan vínculo o configuración', async () => {
+  it('permite nómina sin usuario y reporta una configuración de comisión faltante', async () => {
+    prismaMock.configuracionComision.findFirst.mockImplementation(async (args: {
+      where: { Id?: number; EsGeneral?: boolean };
+    }) => args.where.Id === 3 ? { Id: 3 } : null);
     prismaMock.empleado.findMany.mockResolvedValueOnce([
-      routeEmployee(1, null, 'Empleado sin vínculo'),
-      routeEmployee(2, 12, 'Empleado sin configuración', 1000, null),
+      routeEmployee(1, null, 'Empleado sin vínculo', 1000, 3),
+      routeEmployee(2, null, 'Empleado sin configuración', 1000, 99),
     ]);
+    prismaMock.detalleVenta.findMany.mockResolvedValueOnce([]);
     prismaMock.planillaMensual.findMany.mockResolvedValueOnce([]);
 
     const result = await previewPayroll({ mes: 8, anio: 2026 });
 
-    expect(result.planillas).toEqual([]);
+    expect(result.planillas.map(({ idEmpleado }) => idEmpleado)).toEqual([1]);
     expect(result.validaciones.map(({ idEmpleado, codigo }) => ({ idEmpleado, codigo }))).toEqual([
-      { idEmpleado: 1, codigo: 'USUARIO_VINCULADO_FALTANTE' },
-      { idEmpleado: 2, codigo: 'CONFIGURACION_FALTANTE' },
+      { idEmpleado: 2, codigo: 'CONFIGURACION_NO_DISPONIBLE' },
     ]);
-    expect(prismaMock.detalleVenta.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.detalleVenta.findMany).toHaveBeenCalledTimes(1);
   });
 
   it('bloquea el cálculo cuando dos reglas aplicables se solapan', async () => {
@@ -653,7 +771,14 @@ describe('planilla-mensual.service', () => {
         IdInventarioItem: 5,
         Cantidad: 10,
         PrecioUnitario: 10,
-        Venta: { RutaSesion: { Id: 1, FechaSesion: new Date('2026-08-01T00:00:00Z'), IdUsuarioChofer: 10, IdUsuarioVendedor: 11 } },
+        Venta: {
+          TipoRegistro: 'VENTA',
+          FechaVentaEfectiva: new Date('2026-08-01T00:00:00Z'),
+          IdEmpleadoVendedor: 1,
+          EstadoPago: 'PENDIENTE',
+          Anulado: false,
+          RutaSesion: { Id: 1, FechaSesion: new Date('2026-08-01T00:00:00Z'), Anulado: false, IdUsuarioChofer: 10, IdUsuarioVendedor: 11 },
+        },
         InventarioItem: { Nombre: 'Producto A', IdCategoriaComision: null, CategoriaComision: null },
       },
     ]);
@@ -699,7 +824,14 @@ describe('planilla-mensual.service', () => {
         IdInventarioItem: 5,
         Cantidad: 10,
         PrecioUnitario: 10,
-        Venta: { RutaSesion: { Id: 1, FechaSesion: new Date('2026-08-01T00:00:00Z'), IdUsuarioChofer: 10, IdUsuarioVendedor: 11 } },
+        Venta: {
+          TipoRegistro: 'VENTA',
+          FechaVentaEfectiva: new Date('2026-08-01T00:00:00Z'),
+          IdEmpleadoVendedor: 1,
+          EstadoPago: 'PENDIENTE',
+          Anulado: false,
+          RutaSesion: { Id: 1, FechaSesion: new Date('2026-08-01T00:00:00Z'), Anulado: false, IdUsuarioChofer: 10, IdUsuarioVendedor: 11 },
+        },
         InventarioItem: { Nombre: 'Producto sin regla', IdCategoriaComision: null, CategoriaComision: null },
       },
     ]);
@@ -718,7 +850,7 @@ describe('planilla-mensual.service', () => {
   it('vincula el borrador a la previsualización y persiste regla y fuentes de comisión', async () => {
     prismaMock.usuario.findFirst.mockResolvedValue({ Id: 9 });
     prismaMock.configuracionComision.findFirst.mockResolvedValue({ Id: 3 });
-    prismaMock.empleado.findMany.mockResolvedValue([routeEmployee(1, 10, 'Repartidor A')]);
+    prismaMock.empleado.findMany.mockResolvedValue([routeEmployee(1, null, 'Vendedor sin cuenta')]);
     prismaMock.detalleVenta.findMany.mockResolvedValue([
       {
         Id: 101,
@@ -729,15 +861,12 @@ describe('planilla-mensual.service', () => {
         Cantidad: 2,
         PrecioUnitario: 10,
         Venta: {
+          TipoRegistro: 'VENTA',
+          FechaVentaEfectiva: new Date('2026-08-12T00:00:00.000Z'),
+          IdEmpleadoVendedor: 1,
           EstadoPago: 'PAGADO',
           Anulado: false,
-          RutaSesion: {
-            Id: 700,
-            FechaSesion: new Date('2026-08-12T00:00:00.000Z'),
-            Anulado: false,
-            IdUsuarioChofer: 10,
-            IdUsuarioVendedor: 11,
-          },
+          RutaSesion: null,
         },
         InventarioItem: { Nombre: 'Producto A', IdCategoriaComision: null, CategoriaComision: null },
       },
@@ -769,10 +898,12 @@ describe('planilla-mensual.service', () => {
     const findDuplicate = vi.fn().mockResolvedValue(null);
     const createCommission = vi.fn().mockResolvedValue({ Id: 601 });
     const createSources = vi.fn().mockResolvedValue({ count: 1 });
+    const createSalarySnapshots = vi.fn().mockResolvedValue({ count: 1 });
     const transactionClient = {
       planillaMensual: { findFirst: findDuplicate, create: createPayroll },
       planillaDetalleComision: { create: createCommission },
       planillaDetalleComisionFuente: { createMany: createSources },
+      planillaDetalleSalario: { createMany: createSalarySnapshots },
       planillaDetalleAjuste: { createMany: vi.fn() },
       planillaEvento: { create: vi.fn() },
     };
@@ -800,14 +931,24 @@ describe('planilla-mensual.service', () => {
       data: [expect.objectContaining({
         IdDetalleVenta: 101,
         IdVenta: 900,
-        IdRutaSesion: 700,
-        IdUsuarioAtribuido: 10,
-        RolAtribucion: 'CHOFER',
+        IdRutaSesion: null,
+        IdEmpleadoAtribuido: 1,
+        IdUsuarioAtribuido: null,
+        RolAtribucion: 'VENDEDOR',
         EstadoPago: 'PAGADO',
         VentaAnulada: false,
         DetalleVentaAnulado: false,
         EsBonificacion: false,
         SesionAnulada: false,
+      })],
+    });
+    expect(createSalarySnapshots).toHaveBeenCalledWith({
+      data: [expect.objectContaining({
+        IdPlanillaMensual: 501,
+        IdEmpleadoSueldoVigencia: null,
+        DiasCalendario: 31,
+        SueldoMensualSnapshot: 1000,
+        MontoDevengado: 1000,
       })],
     });
   });
@@ -851,6 +992,7 @@ describe('planilla-mensual.service', () => {
         IdUsuarioVinculado: 10,
         Entidad: { Id: 99, NombreCompleto: 'Repartidor A' },
       },
+      DetallesSalario: [],
       PlanillaDetalleComision: [],
       PlanillaDetalleAjuste: [],
     });

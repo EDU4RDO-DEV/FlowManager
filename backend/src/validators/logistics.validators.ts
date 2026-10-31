@@ -115,19 +115,27 @@ export const rutaSesionFiltersSchema = z.object({
 export const createRutaSesionSchema = z.object({
   idRuta: positiveInt,
   idVehiculo: positiveInt,
-  idUsuarioChofer: positiveInt,
-  idUsuarioVendedor: positiveInt,
+  idEmpleadoChofer: positiveInt.optional(),
+  idEmpleadoVendedor: positiveInt.optional(),
+  idUsuarioChofer: positiveInt.optional(),
+  idUsuarioVendedor: positiveInt.optional(),
   idJornada: positiveInt.optional(),
   fechaSesion: dateOnlySchema,
   kmInicial: z.number().finite('kmInicial debe ser válido').min(0).optional(),
   kmFinal: z.number().finite('kmFinal debe ser válido').min(0).optional(),
   estado: rutaSesionEstadoSchema.default('PROGRAMADA'),
-});
+}).refine(
+  (data) => (data.idEmpleadoChofer !== undefined || data.idUsuarioChofer !== undefined)
+    && (data.idEmpleadoVendedor !== undefined || data.idUsuarioVendedor !== undefined),
+  { message: 'Debe seleccionar un empleado para el chofer y el vendedor' },
+);
 
 export const updateRutaSesionSchema = z
   .object({
     idRuta: positiveInt.optional(),
     idVehiculo: positiveInt.optional(),
+    idEmpleadoChofer: positiveInt.optional(),
+    idEmpleadoVendedor: positiveInt.optional(),
     idUsuarioChofer: positiveInt.optional(),
     idUsuarioVendedor: positiveInt.optional(),
     idJornada: positiveInt.nullable().optional(),

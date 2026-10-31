@@ -464,20 +464,26 @@ describe('Fase 23 - PEDIDO_ENTREGADO (updateSale)', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
-  it('notifica PEDIDO_ENTREGADO cuando estadoEntrega cambia a ENTREGADO', async () => {
+  it('no marca una entrega completa sin registrar cantidades realmente recibidas', async () => {
     prismaMock.venta.findFirst.mockResolvedValueOnce(buildExistingSaleForUpdate('EN_RUTA'));
-    prismaMock.venta.update.mockResolvedValueOnce({});
-    prismaMock.venta.findFirst.mockResolvedValueOnce(buildFullSaleRowForDto('ENTREGADO'));
 
-    await updateSale(7, { estadoEntrega: 'ENTREGADO' });
-    await Promise.resolve();
-    await Promise.resolve();
+    await expect(updateSale(7, { estadoEntrega: 'ENTREGADO' })).rejects.toThrow(
+      'No se puede registrar una entrega parcial o total sin persistir las cantidades realmente recibidas',
+    );
 
-    expect(sendMock).toHaveBeenCalledTimes(1);
-    expect(sendMock).toHaveBeenCalledWith('PEDIDO_ENTREGADO', {
-      numeroVenta: 1007,
-      cliente: 'Cliente de Prueba',
-    });
+    expect(prismaMock.venta.update).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('no marca una entrega parcial sin registrar cantidades realmente recibidas', async () => {
+    prismaMock.venta.findFirst.mockResolvedValueOnce(buildExistingSaleForUpdate('EN_RUTA'));
+
+    await expect(updateSale(7, { estadoEntrega: 'PARCIAL' })).rejects.toThrow(
+      'No se puede registrar una entrega parcial o total sin persistir las cantidades realmente recibidas',
+    );
+
+    expect(prismaMock.venta.update).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
   });
 
   it('no notifica cuando se actualizan otros campos sin tocar estadoEntrega', async () => {

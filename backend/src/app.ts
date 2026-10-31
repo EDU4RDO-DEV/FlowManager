@@ -6,6 +6,7 @@ import multer from 'multer';
 import { requireAuth } from './middlewares/auth.middleware';
 import adjustmentRouter from './routes/adjustment.routes';
 import authRouter from './routes/auth.routes';
+import cashRouter from './routes/cash.routes';
 import clientRouter from './routes/client.routes';
 import clientCatalogRouter from './routes/client-catalog.routes';
 import companyRouter from './routes/company.routes';
@@ -39,9 +40,11 @@ export function createApp() {
   app.set('trust proxy', true);
   app.use(cors());
   app.use(express.json());
+  app.use('/uploads/payroll-payments', (_req, res) => res.sendStatus(404));
   app.use('/uploads', express.static(uploadsRootPath));
 
   app.use('/api/auth', authRouter);
+  app.use('/api/cash', requireAuth, cashRouter);
   app.use('/api/adjustments', requireAuth, adjustmentRouter);
   app.use('/api/clients', requireAuth, clientRouter);
   app.use('/api/client-catalog', requireAuth, clientCatalogRouter);

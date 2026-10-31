@@ -20,7 +20,10 @@ export async function createCommercialReturnController(req: Request, res: Respon
     const { id } = saleIdParamsSchema.parse(req.params);
     const idempotencyKey = createCommercialReturnIdempotencyKeySchema.parse(req.get('Idempotency-Key'));
     const input = createCommercialReturnSchema.parse(req.body);
-    const result = await createCommercialReturn(id, idUsuario, idempotencyKey, input);
+    const result = await createCommercialReturn(id, idUsuario, idempotencyKey, input, {
+      userId: idUsuario,
+      roleName: req.auth?.nombreRol,
+    });
 
     return res.status(result.replayed ? 200 : 201).json({
       ok: true,

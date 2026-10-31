@@ -236,7 +236,8 @@ export async function updateCondicionCreditoController(req: Request, res: Respon
       message === 'fechaFinVigencia no puede ser anterior a fechaInicioVigencia' ||
       message === 'El cliente ya tiene una condición de crédito vigente sin fecha de fin' ||
       message === 'El período de vigencia se superpone con otra condición habilitada' ||
-      message === 'El tipo de crédito no se modifica en una condición existente; asigne una nueva condición'
+      message === 'El tipo de crédito no se modifica en una condición existente; asigne una nueva condición' ||
+      message === 'No se puede modificar la vigencia o las observaciones de una condición aplicada a cuentas históricas'
     ) {
       return res.status(409).json({ ok: false, message });
     }

@@ -14,12 +14,28 @@ export interface SaleUserDto {
 
 export interface SaleRouteDto {
   id: number;
+  idVehiculo: number;
+  idUsuarioVendedor: number | null;
+  idUsuarioChofer: number | null;
+  idEmpleadoVendedor: number | null;
   estado: "PROGRAMADA" | "EN_CURSO" | "CERRADA";
   fechaSesion: string | null;
+  vehiculo: {
+    id: number;
+    placa: string;
+  };
+  vendedor: {
+    id: number;
+    nombre: string;
+  } | null;
+  chofer: {
+    id: number;
+    nombre: string;
+  } | null;
   ruta: {
     id: number;
     nombre: string;
-  };
+  } | null;
 }
 
 export interface SaleTalonarioRefDto {
@@ -92,7 +108,10 @@ export interface SaleDto {
   id: number;
   idCliente: number;
   idUsuario: number;
+  idEmpleadoVendedor: number | null;
+  fechaVentaEfectiva: string | null;
   idRutaSesion: number | null;
+  origenInventario: "PLANTA" | "RUTA";
   idTalonario: number | null;
   numeroVenta: number;
   numeroProForma: number | null;
@@ -127,6 +146,7 @@ export interface SaleDto {
   fechaRegistro: string | null;
   cliente: SaleCustomerDto;
   usuario: SaleUserDto;
+  empleadoVendedor: { id: number; nombre: string } | null;
   rutaSesion?: SaleRouteDto | null;
   talonario?: SaleTalonarioRefDto | null;
   detalle?: SaleDetailItemDto[];
@@ -252,6 +272,7 @@ export interface SalePaymentPayload {
 export interface CreateSalePayload {
   idUsuario: number;
   idCliente: number;
+  idEmpleadoVendedor?: number;
   idRutaSesion?: number;
   idTalonario?: number;
   numeroProForma?: number;

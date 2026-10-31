@@ -142,7 +142,7 @@ export function ReturnsTab({
         </Card>
       ) : null}
 
-      {visibleInventory.despacho && canOperate ? (
+      {visibleInventory.productos.length > 0 && canOperate ? (
         <Card className="rounded-xl">
           <CardContent className="space-y-4 p-4">
             <div>
@@ -158,7 +158,7 @@ export function ReturnsTab({
               <TableHeader><TableRow><TableHead>Producto / saldo físico</TableHead><TableHead>Recibido</TableHead><TableHead>Vacíos</TableHead><TableHead>Llenos</TableHead><TableHead>Dañado</TableHead><TableHead>Estado antes de daño</TableHead><TableHead>Ubicación no vendible</TableHead><TableHead>Observaciones</TableHead></TableRow></TableHeader>
               <TableBody>
                 {visibleInventory.productos.filter((line) => line.pendienteConciliacion - line.reservado > 0.009).map((line) => {
-                  const isReturnableContainer = line.estadoEnvaseDespachado != null;
+                  const isReturnableContainer = line.esEnvaseRetornable;
                   return (
                   <TableRow key={line.idInventarioItem}>
                     <TableCell>{line.nombre}<span className="block text-xs text-muted-foreground">Saldo físico: {Number(Math.max(0, line.pendienteConciliacion - line.reservado).toFixed(2))}</span></TableCell>

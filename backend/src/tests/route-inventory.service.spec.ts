@@ -28,6 +28,7 @@ import {
   createRouteDispatch,
   createRouteReturn,
   getRouteInventory,
+  getRouteAvailableQuantities,
   getRouteSettlement,
   transferVerifiedRouteReturnToPlant,
 } from '../services/route-inventory.service';
@@ -634,6 +635,99 @@ describe('route inventory lifecycle', () => {
       pendienteConciliacion: 8,
       disponible: 7,
     });
+  });
+
+  it('aggregates a product dispatched in multiple container states without duplicating sales or damage', async () => {
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce(routeInventory({
+      DespachoRuta: [
+        {
+          Id: 90,
+          Detalles: [{
+            IdInventarioItem: 7,
+            NombreSnapshot: 'Garrafón',
+            UnidadMedidaSnapshot: 'unidad',
+            Cantidad: 4,
+            EstadoEnvase: 'VACIO',
+          }],
+        },
+        {
+          Id: 91,
+          Detalles: [{
+            IdInventarioItem: 7,
+            NombreSnapshot: 'Garrafón',
+            UnidadMedidaSnapshot: 'unidad',
+            Cantidad: 6,
+            EstadoEnvase: 'LLENO',
+          }],
+        },
+      ],
+      Venta: [{ DetalleVenta: [{ IdInventarioItem: 7, Cantidad: 3 }] }],
+      DevolucionRuta: [{
+        Id: 92,
+        Anulado: false,
+        Detalles: [{ IdInventarioItem: 7, CantidadRecibida: 1, CantidadDanada: 1 }],
+      }],
+    }));
+
+    const result = await getRouteInventory(40);
+
+    expect(result.productos).toHaveLength(1);
+    expect(result.productos[0]).toMatchObject({
+      despachado: 10,
+      vendido: 3,
+      devuelto: 1,
+      danado: 1,
+      disponible: 6,
+      esEnvaseRetornable: true,
+    });
+  });
+
+  it('makes confirmed transfer-only inventory available for route sales', async () => {
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce(routeInventory({
+      DespachoRuta: [],
+      TransferenciasDestino: [{
+        Detalles: [{
+          IdInventarioItem: 7,
+          NombreSnapshot: 'Garrafón',
+          UnidadMedidaSnapshot: 'unidad',
+          Cantidad: 5,
+          EstadoEnvase: 'LLENO',
+        }],
+      }],
+    }));
+
+    const available = await getRouteAvailableQuantities(prismaMock as never, 40);
+
+    expect(available.get(7)).toBe(5);
+  });
+
+  it('accepts a route return against inventory received only through a confirmed transfer', async () => {
+    prismaMock.rutaSesion.findFirst.mockResolvedValueOnce(routeInventory({
+      DespachoRuta: [],
+      TransferenciasDestino: [{
+        Detalles: [{
+          IdInventarioItem: 7,
+          NombreSnapshot: 'Agua 5 galones',
+          UnidadMedidaSnapshot: 'garrafón',
+          Cantidad: 5,
+          EstadoEnvase: null,
+        }],
+      }],
+    }));
+    prismaMock.inventarioItem.findMany.mockResolvedValueOnce([
+      { Id: 7, EsEnvaseRetornable: false },
+    ]);
+    prismaMock.devolucionRuta.create.mockResolvedValueOnce({ Id: 92, Detalles: [] });
+
+    await createRouteReturn(40, 12, {
+      detalle: [{
+        idInventarioItem: 7,
+        cantidadRecibida: 5,
+        cantidadDanada: 0,
+      }],
+    });
+
+    expect(prismaMock.devolucionRuta.create).toHaveBeenCalledOnce();
   });
 
   it('subtracts route container retirements from the remaining truck balance', async () => {

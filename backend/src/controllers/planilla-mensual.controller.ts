@@ -17,6 +17,10 @@ import {
 } from '../services/planilla-mensual.service';
 import { renderPayrollReceipt } from '../services/payroll-receipt.service';
 import {
+  getPayrollPayments,
+  registerPayrollPayment,
+} from '../services/payroll-payment.service';
+import {
   closePayrollBodySchema,
   deletePayrollBodySchema,
   generatePayrollSchema,
@@ -28,6 +32,59 @@ import {
   updatePayrollSchema,
 } from '../validators/planilla-mensual.validators';
 import { getZodErrorMessage } from '../validators/validation';
+import {
+  payrollPaymentBodySchema,
+  payrollPaymentIdParamsSchema,
+} from '../validators/payroll-payment.validators';
+
+export async function getPayrollPaymentsController(req: Request, res: Response) {
+  try {
+    const { id } = payrollPaymentIdParamsSchema.parse(req.params);
+    const data = await getPayrollPayments(id);
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+    const message = error instanceof Error ? error.message : 'Error interno';
+    return res.status(message === 'Planilla no existe' ? 404 : 500).json({ ok: false, message });
+  }
+}
+
+export async function registerPayrollPaymentController(req: Request, res: Response) {
+  try {
+    if (!req.auth?.userId) {
+      return res.status(401).json({ ok: false, message: 'Token inválido o expirado' });
+    }
+    const { id } = payrollPaymentIdParamsSchema.parse(req.params);
+    const input = payrollPaymentBodySchema.parse(req.body);
+    const rawKey = req.header('Idempotency-Key');
+    const idempotencyKey = rawKey?.trim();
+    if (!idempotencyKey || idempotencyKey.length < 8 || idempotencyKey.length > 200) {
+      return res.status(400).json({
+        ok: false,
+        message: 'El encabezado Idempotency-Key es obligatorio y debe tener entre 8 y 200 caracteres',
+      });
+    }
+    const data = await registerPayrollPayment(id, req.auth.userId, input, idempotencyKey);
+    return res.status(201).json({ ok: true, data });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });
+    }
+    const message = error instanceof Error ? error.message : 'Error interno';
+    const status = [
+      'Planilla no existe',
+      'Solo se puede pagar una planilla cerrada',
+    ].includes(message) ? 409 : [
+      'El pago no puede superar el saldo pendiente de la planilla',
+      'La planilla ya está pagada',
+      'La clave idempotente ya fue utilizada con otros datos',
+      'Debe abrir la caja antes de registrar un pago en efectivo',
+    ].includes(message) ? 400 : 500;
+    return res.status(status).json({ ok: false, message });
+  }
+}
 
 export async function listPayrollsController(req: Request, res: Response) {
   try {
@@ -146,6 +203,7 @@ export async function previewPayrollController(req: Request, res: Response) {
       message === 'Empleado inválido en los parámetros individuales.' ||
       message === 'No se puede repetir un empleado en la previsualización.' ||
       message === 'Los días trabajados deben ser un entero entre 0 y 31.' ||
+      message === 'No existe una vigencia salarial válida para todos los días trabajados del período.' ||
       message === 'Solo se permiten bonos manuales; viáticos y descuentos se calculan por empleado.' ||
       message === 'Hay parámetros individuales para un empleado que no está incluido.'
     ) {
@@ -194,6 +252,7 @@ export async function generatePayrollController(req: Request, res: Response) {
       message === 'Empleado inválido en los parámetros individuales.' ||
       message === 'No se puede repetir un empleado en la previsualización.' ||
       message === 'Los días trabajados deben ser un entero entre 0 y 31.' ||
+      message === 'No existe una vigencia salarial válida para todos los días trabajados del período.' ||
       message === 'Solo se permiten bonos manuales; viáticos y descuentos se calculan por empleado.' ||
       message === 'Hay parámetros individuales para un empleado que no está incluido.' ||
       message === 'No hay empleados activos para incluir en el período.'

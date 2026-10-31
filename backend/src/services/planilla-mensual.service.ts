@@ -11,6 +11,15 @@ type AjusteInput = {
   monto: number;
 };
 
+type SalarySnapshotInput = {
+  idEmpleadoSueldoVigencia: number | null;
+  fechaInicio: Date;
+  fechaFin: Date;
+  diasCalendario: number;
+  sueldoMensualSnapshot: number;
+  montoDevengado: number;
+};
+
 type AdjustmentDetailInput = {
   tipoAjuste: AjusteTipo | 'ADELANTO' | 'FALTANTE';
   descripcion: string;
@@ -46,10 +55,117 @@ type UpdatePayrollInput = {
   ajustes?: AjusteInput[];
 };
 
-const PAID_STATES = ['PAGADO', 'PAGADA'];
-
 function normalizeEstado(value: string | null | undefined): string {
   return (value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+}
+
+function dateOnlyUtc(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function calculateProratedSalary(
+  employee: {
+    Id: number;
+    SueldoBase: unknown;
+    FechaContratacion: Date;
+    FechaSalida: Date | null;
+    HistorialSueldos: Array<{
+      Id: number;
+      SueldoBase: unknown;
+      FechaInicioVigencia: Date;
+      FechaFinVigencia: Date | null;
+    }>;
+  },
+  range: { start: Date; end: Date },
+): { sueldoBase: number; detalleSalarios: SalarySnapshotInput[]; historialIncompleto: boolean } {
+  const employmentStart = new Date(Math.max(
+    dateOnlyUtc(employee.FechaContratacion).getTime(),
+    dateOnlyUtc(range.start).getTime(),
+  ));
+  const employmentEnd = new Date(Math.min(
+    dateOnlyUtc(employee.FechaSalida ?? range.end).getTime(),
+    dateOnlyUtc(range.end).getTime(),
+  ));
+  if (employmentStart > employmentEnd) {
+    return { sueldoBase: 0, detalleSalarios: [], historialIncompleto: false };
+  }
+
+  const versions = employee.HistorialSueldos
+    .map((version) => ({
+      ...version,
+      inicio: dateOnlyUtc(version.FechaInicioVigencia),
+      fin: version.FechaFinVigencia ? dateOnlyUtc(version.FechaFinVigencia) : null,
+      sueldo: Number(version.SueldoBase),
+    }))
+    .filter((version) => version.inicio <= employmentEnd)
+    .sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
+  const currentSalary = Number(employee.SueldoBase);
+  const daysInMonth = new Date(Date.UTC(range.start.getUTCFullYear(), range.start.getUTCMonth() + 1, 0)).getUTCDate();
+  const segments: SalarySnapshotInput[] = [];
+  let segmentStart: Date | null = null;
+  let activeVersion: (typeof versions)[number] | null = null;
+  let segmentDays = 0;
+  let historialIncompleto = false;
+
+  const flushSegment = (end: Date) => {
+    if (!segmentStart || segmentDays === 0 || !activeVersion) return;
+    const monthlySalary = activeVersion.sueldo;
+    segments.push({
+      idEmpleadoSueldoVigencia: activeVersion.Id,
+      fechaInicio: segmentStart,
+      fechaFin: end,
+      diasCalendario: segmentDays,
+      sueldoMensualSnapshot: toMoney(monthlySalary),
+      montoDevengado: toMoney((monthlySalary / daysInMonth) * segmentDays),
+    });
+  };
+
+  for (let timestamp = employmentStart.getTime(); timestamp <= employmentEnd.getTime(); timestamp += 86_400_000) {
+    const day = new Date(timestamp);
+    const applicableVersions = versions.filter(
+      (item) => item.inicio <= day && (!item.fin || item.fin >= day),
+    );
+    const version = applicableVersions[applicableVersions.length - 1] ?? null;
+    const effectiveVersion = version ?? (
+      versions.length === 0 && Number.isFinite(currentSalary) && currentSalary >= 0
+        ? {
+            Id: 0,
+            SueldoBase: currentSalary,
+            FechaInicioVigencia: employmentStart,
+            FechaFinVigencia: null,
+            inicio: employmentStart,
+            fin: null,
+            sueldo: currentSalary,
+          }
+        : null
+    );
+    if (!effectiveVersion || !Number.isFinite(effectiveVersion.sueldo) || effectiveVersion.sueldo < 0) {
+      historialIncompleto = true;
+      if (segmentStart) flushSegment(new Date(timestamp - 86_400_000));
+      segmentStart = null;
+      activeVersion = null;
+      segmentDays = 0;
+      continue;
+    }
+
+    if (activeVersion?.Id !== effectiveVersion.Id) {
+      if (segmentStart) flushSegment(new Date(timestamp - 86_400_000));
+      segmentStart = day;
+      segmentDays = 0;
+      activeVersion = effectiveVersion;
+    }
+    segmentDays += 1;
+  }
+  if (segmentStart) flushSegment(employmentEnd);
+
+  return {
+    sueldoBase: toMoney(segments.reduce((total, segment) => total + segment.montoDevengado, 0)),
+    detalleSalarios: segments.map((segment) => ({
+      ...segment,
+      idEmpleadoSueldoVigencia: segment.idEmpleadoSueldoVigencia || null,
+    })),
+    historialIncompleto,
+  };
 }
 
 function toMoney(value: number): number {
@@ -174,10 +290,10 @@ type CalculatedCommissionRow = {
   idReglaComision: number | null;
   idReglaComisionCategoria?: number;
   idCategoriaComision?: number;
-  baseCategoriaAplicada?: number;
+  baseCategoriaAplicada?: number | null;
   categoriaComisionSnapshot?: string;
-  idConfiguracionComision: number;
-  cantidadMinimaAplicada: number;
+  idConfiguracionComision: number | null;
+  cantidadMinimaAplicada: number | null;
   cantidadMaximaAplicada: number | null;
   idInventarioItem: number;
   nombreProducto: string;
@@ -189,17 +305,18 @@ type CalculatedCommissionRow = {
   fuentes: Array<{
     idDetalleVenta: number;
     idVenta: number;
-    idRutaSesion: number;
+    idRutaSesion: number | null;
+    idEmpleadoAtribuido: number;
     fechaSesion: Date;
     sesionAnulada: boolean;
     estadoPago: string;
     ventaAnulada: boolean;
     detalleVentaAnulado: boolean;
     esBonificacion: boolean;
-    idUsuarioChofer: number;
-    idUsuarioVendedor: number;
-    idUsuarioAtribuido: number;
-    rolAtribucion: 'CHOFER' | 'VENDEDOR' | 'AMBOS';
+    idUsuarioChofer: number | null;
+    idUsuarioVendedor: number | null;
+    idUsuarioAtribuido: number | null;
+    rolAtribucion: 'VENDEDOR';
     cantidad: number;
     precioUnitario: number;
     baseCalculo: number;
@@ -211,6 +328,7 @@ type EmployeeComputation = {
   nombreEmpleado: string;
   idUsuarioVinculado: number | null;
   sueldoBase: number;
+  detalleSalarios: SalarySnapshotInput[];
   totalComisiones: number;
   totalBonosMetas: number;
   totalViaticos: number;
@@ -220,17 +338,17 @@ type EmployeeComputation = {
   sueldoLiquido: number;
   detalleComisiones: CalculatedCommissionRow[];
   detalleAjustes: AdjustmentDetailInput[];
-  adelantoIds: number[];
+  adelantoAplicaciones: Array<{ idAdelantoEmpleado: number; montoAplicado: number }>;
   faltanteIds: number[];
 };
 
 type PayrollValidation = {
   idEmpleado: number;
   nombreEmpleado: string;
-  codigo: 'USUARIO_VINCULADO_FALTANTE' | 'CONFIGURACION_FALTANTE' |
+  codigo: 'CONFIGURACION_FALTANTE' |
     'CONFIGURACION_NO_DISPONIBLE' | 'REGLAS_NO_CONFIGURADAS' |
     'REGLA_FALTANTE' | 'REGLAS_SOLAPADAS' | 'DATOS_CALCULO_INVALIDOS' |
-    'PLANILLA_EXISTENTE' | 'TIPO_TRABAJADOR_FALTANTE' |
+    'PLANILLA_EXISTENTE' | 'TIPO_TRABAJADOR_FALTANTE' | 'HISTORIAL_SUELDO_INCOMPLETO' |
     'TARIFA_VIATICO_NO_CONFIGURADA' | 'CATEGORIA_COMISION_FALTANTE';
   mensaje: string;
   idInventarioItem?: number;
@@ -244,6 +362,14 @@ async function calculateEmployeePayroll(
     IdConfiguracionComision: number | null;
     IdTipoTrabajador: number | null;
     SueldoBase: unknown;
+    FechaContratacion: Date;
+    FechaSalida: Date | null;
+    HistorialSueldos: Array<{
+      Id: number;
+      SueldoBase: unknown;
+      FechaInicioVigencia: Date;
+      FechaFinVigencia: Date | null;
+    }>;
     TipoTrabajador: { Clave: string } | null;
     Entidad: { NombreCompleto: string };
   },
@@ -266,17 +392,6 @@ async function calculateEmployeePayroll(
 
   const tipoTrabajador = employee.TipoTrabajador?.Clave;
   const isPlantWorker = tipoTrabajador === 'PLANTA';
-  if (!isPlantWorker && !idUsuarioVinculado) {
-    return {
-      validaciones: [{
-        idEmpleado: employee.Id,
-        nombreEmpleado: employee.Entidad.NombreCompleto,
-        codigo: 'USUARIO_VINCULADO_FALTANTE',
-        mensaje: 'Vincule una cuenta de usuario al empleado antes de calcular.',
-      }],
-    };
-  }
-
   if (tipoTrabajador !== 'PLANTA' && tipoTrabajador !== 'RUTA') {
     return {
       validaciones: [{
@@ -340,17 +455,18 @@ async function calculateEmployeePayroll(
     };
   }
 
-  const sueldoBase = Number(employee.SueldoBase);
-  if (!Number.isFinite(sueldoBase) || sueldoBase < 0) {
+  const salary = calculateProratedSalary(employee, range);
+  if (salary.historialIncompleto) {
     return {
       validaciones: [{
         idEmpleado: employee.Id,
         nombreEmpleado: employee.Entidad.NombreCompleto,
-        codigo: 'DATOS_CALCULO_INVALIDOS',
-        mensaje: 'El sueldo base debe ser un importe finito y no negativo.',
+        codigo: 'HISTORIAL_SUELDO_INCOMPLETO',
+        mensaje: 'No existe una vigencia salarial válida para todos los días trabajados del período.',
       }],
     };
   }
+  const sueldoBase = salary.sueldoBase;
 
   const detalles = isPlantWorker ? [] : await prisma.detalleVenta.findMany({
     where: {
@@ -358,20 +474,12 @@ async function calculateEmployeePayroll(
       EsBonificacion: false,
       Venta: {
         Anulado: false,
-        EstadoPago: {
-          in: PAID_STATES,
+        TipoRegistro: 'VENTA',
+        FechaVentaEfectiva: {
+          gte: range.start,
+          lte: range.end,
         },
-        RutaSesion: {
-          Anulado: false,
-          FechaSesion: {
-            gte: range.start,
-            lte: range.end,
-          },
-          OR: [
-            { IdUsuarioChofer: idUsuarioVinculado ?? 0 },
-            { IdUsuarioVendedor: idUsuarioVinculado ?? 0 },
-          ],
-        },
+        IdEmpleadoVendedor: employee.Id,
       },
     },
     select: {
@@ -386,6 +494,9 @@ async function calculateEmployeePayroll(
         select: {
           EstadoPago: true,
           Anulado: true,
+          TipoRegistro: true,
+          FechaVentaEfectiva: true,
+          IdEmpleadoVendedor: true,
           RutaSesion: {
             select: {
               Id: true,
@@ -426,17 +537,15 @@ async function calculateEmployeePayroll(
   const uniqueDetails = new Map(detalles.map((detalle) => [detalle.Id, detalle]));
   for (const detalle of uniqueDetails.values()) {
     const sesion = detalle.Venta.RutaSesion;
-    if (!sesion) {
+    const fechaVenta = detalle.Venta.FechaVentaEfectiva;
+    if (
+      detalle.Venta.IdEmpleadoVendedor !== employee.Id ||
+      !fechaVenta ||
+      detalle.Venta.TipoRegistro !== 'VENTA'
+    ) {
       continue;
     }
 
-    const esChofer = sesion.IdUsuarioChofer === idUsuarioVinculado;
-    const esVendedor = sesion.IdUsuarioVendedor === idUsuarioVinculado;
-    const rolAtribucion = esChofer && esVendedor
-      ? 'AMBOS'
-      : esChofer
-        ? 'CHOFER'
-        : 'VENDEDOR';
     const precioUnitario = Number(detalle.PrecioUnitario);
     if (
       !Number.isFinite(detalle.Cantidad) ||
@@ -471,17 +580,18 @@ async function calculateEmployeePayroll(
     const fuente: CalculatedCommissionRow['fuentes'][number] = {
       idDetalleVenta: detalle.Id,
       idVenta: detalle.IdVenta,
-      idRutaSesion: sesion.Id,
-      fechaSesion: sesion.FechaSesion,
-      sesionAnulada: sesion.Anulado,
+      idRutaSesion: sesion?.Id ?? null,
+      idEmpleadoAtribuido: employee.Id,
+      fechaSesion: fechaVenta,
+      sesionAnulada: sesion?.Anulado ?? false,
       estadoPago: detalle.Venta.EstadoPago,
       ventaAnulada: detalle.Venta.Anulado,
       detalleVentaAnulado: detalle.Anulado,
       esBonificacion: detalle.EsBonificacion,
-      idUsuarioChofer: sesion.IdUsuarioChofer,
-      idUsuarioVendedor: sesion.IdUsuarioVendedor,
-      idUsuarioAtribuido: idUsuarioVinculado ?? 0,
-      rolAtribucion,
+      idUsuarioChofer: sesion?.IdUsuarioChofer ?? null,
+      idUsuarioVendedor: sesion?.IdUsuarioVendedor ?? null,
+      idUsuarioAtribuido: null,
+      rolAtribucion: 'VENDEDOR',
       cantidad: detalle.Cantidad,
       precioUnitario,
       baseCalculo: toMoney(subtotal),
@@ -751,6 +861,115 @@ async function calculateEmployeePayroll(
     });
   }
 
+  if (!isPlantWorker) {
+    const commissionLedger = await prisma.comisionDevengada.findMany({
+      where: {
+        IdEmpleado: employee.Id,
+        Mes: range.start.getUTCMonth() + 1,
+        Anio: range.start.getUTCFullYear(),
+      },
+      include: {
+        DetalleVenta: {
+          select: {
+            IdInventarioItem: true,
+            PrecioUnitario: true,
+            Anulado: true,
+            EsBonificacion: true,
+            InventarioItem: { select: { Id: true, Nombre: true } },
+            Venta: {
+              select: {
+                Id: true,
+                IdRutaSesion: true,
+                EstadoPago: true,
+                Anulado: true,
+                RutaSesion: {
+                  select: {
+                    FechaSesion: true,
+                    Anulado: true,
+                    IdUsuarioChofer: true,
+                    IdUsuarioVendedor: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { Id: 'asc' },
+    });
+
+    if (commissionLedger.length > 0) {
+      const bySaleDetail = new Map<number, typeof commissionLedger>();
+      for (const entry of commissionLedger) {
+        const detailEntries = bySaleDetail.get(entry.IdDetalleVenta) ?? [];
+        detailEntries.push(entry);
+        bySaleDetail.set(entry.IdDetalleVenta, detailEntries);
+      }
+
+      detalleComisiones.splice(0, detalleComisiones.length);
+      totalComisiones = 0;
+      for (const entries of bySaleDetail.values()) {
+        const latest = entries[entries.length - 1];
+        const montoComision = toMoney(entries.reduce((sum, entry) => sum + Number(entry.MontoMovimiento), 0));
+        if (montoComision === 0) continue;
+        const tipoCalculo = normalizeEstado(latest.TipoCalculoSnapshot);
+        if (tipoCalculo !== 'PORCENTAJE_VENTA' && tipoCalculo !== 'MONTO_POR_UNIDAD') continue;
+
+        const source = latest.DetalleVenta;
+        const routeSession = source.Venta.RutaSesion;
+        detalleComisiones.push({
+          idReglaComision: latest.IdReglaSnapshot,
+          idReglaComisionCategoria: latest.IdReglaCategoriaSnapshot ?? undefined,
+          idCategoriaComision: latest.IdCategoriaSnapshot ?? undefined,
+          categoriaComisionSnapshot: latest.CategoriaSnapshot ?? undefined,
+          baseCategoriaAplicada: latest.BaseCategoriaSnapshot === null
+            ? null
+            : Number(latest.BaseCategoriaSnapshot),
+          idConfiguracionComision: latest.IdConfiguracionSnapshot,
+          cantidadMinimaAplicada: null,
+          cantidadMaximaAplicada: null,
+          idInventarioItem: source.IdInventarioItem,
+          nombreProducto: latest.NombreProductoSnapshot || source.InventarioItem.Nombre,
+          cantidad: latest.CantidadSnapshot,
+          baseCalculo: Number(latest.BaseCalculoSnapshot),
+          tipoCalculo,
+          valorAplicado: Number(latest.ValorAplicadoSnapshot),
+          montoComision,
+          fuentes: [{
+            idDetalleVenta: latest.IdDetalleVenta,
+            idVenta: latest.IdVenta,
+            idRutaSesion: source.Venta.IdRutaSesion,
+            idEmpleadoAtribuido: employee.Id,
+            fechaSesion: routeSession?.FechaSesion ?? latest.FechaVentaEfectiva,
+            sesionAnulada: routeSession?.Anulado ?? false,
+            estadoPago: source.Venta.EstadoPago,
+            ventaAnulada: source.Venta.Anulado,
+            detalleVentaAnulado: source.Anulado,
+            esBonificacion: source.EsBonificacion,
+            idUsuarioChofer: routeSession?.IdUsuarioChofer ?? null,
+            idUsuarioVendedor: routeSession?.IdUsuarioVendedor ?? null,
+            idUsuarioAtribuido: null,
+            rolAtribucion: 'VENDEDOR',
+            cantidad: latest.CantidadSnapshot,
+            precioUnitario: Number(source.PrecioUnitario),
+            baseCalculo: Number(latest.BaseCalculoSnapshot),
+          }],
+        });
+        totalComisiones = toMoney(totalComisiones + montoComision);
+      }
+
+      for (let index = validaciones.length - 1; index >= 0; index -= 1) {
+        const validation = validaciones[index];
+        if (
+          ['REGLAS_NO_CONFIGURADAS', 'REGLA_FALTANTE', 'REGLAS_SOLAPADAS', 'CATEGORIA_COMISION_FALTANTE'].includes(validation.codigo) ||
+          (validation.codigo === 'DATOS_CALCULO_INVALIDOS' && validation.idInventarioItem !== undefined)
+        ) {
+          validaciones.splice(index, 1);
+        }
+      }
+    }
+  }
+
   if (validaciones.length > 0) {
     return { validaciones };
   }
@@ -766,10 +985,18 @@ async function calculateEmployeePayroll(
         IdEmpleado: employee.Id,
         IdPlanillaMensual: null,
         Anulado: false,
-        Fecha: { gte: range.start, lte: range.end },
       },
-      select: { Id: true, Monto: true, Fecha: true, Observacion: true },
-      orderBy: { Id: 'asc' },
+      select: {
+        Id: true,
+        Monto: true,
+        Fecha: true,
+        Observacion: true,
+        Aplicaciones: {
+          where: { Anulado: false },
+          select: { MontoAplicado: true },
+        },
+      },
+      orderBy: [{ Fecha: 'asc' }, { Id: 'asc' }],
     }),
     prisma.faltanteEmpleado.findMany({
       where: {
@@ -783,9 +1010,31 @@ async function calculateEmployeePayroll(
       orderBy: { Id: 'asc' },
     }),
   ]);
+  const totalFaltantes = faltantes.reduce((sum, item) => sum + Number(item.Monto), 0);
+  const deductionCapacity = Math.max(
+    0,
+    sueldoBase + totalComisiones + totalBonosMetas - totalFaltantes,
+  );
+  let remainingAdvanceCapacity = toMoney(deductionCapacity);
+  const adelantoAplicaciones: Array<{ idAdelantoEmpleado: number; montoAplicado: number }> = [];
+  for (const advance of adelantos) {
+    const alreadyApplied = advance.Aplicaciones.reduce(
+      (sum, application) => sum + Number(application.MontoAplicado),
+      0,
+    );
+    const balance = toMoney(Math.max(0, Number(advance.Monto) - alreadyApplied));
+    const applied = toMoney(Math.min(balance, remainingAdvanceCapacity));
+    if (applied > 0) {
+      adelantoAplicaciones.push({ idAdelantoEmpleado: advance.Id, montoAplicado: applied });
+      remainingAdvanceCapacity = toMoney(remainingAdvanceCapacity - applied);
+    }
+    if (remainingAdvanceCapacity <= 0) break;
+  }
+  const totalAdelantos = toMoney(
+    adelantoAplicaciones.reduce((sum, item) => sum + item.montoAplicado, 0),
+  );
   const totalDescuentos = toMoney(
-    adelantos.reduce((sum, item) => sum + Number(item.Monto), 0) +
-    faltantes.reduce((sum, item) => sum + Number(item.Monto), 0),
+    totalAdelantos + totalFaltantes,
   );
   const tarifaViaticoAplicada = isPlantWorker || diasTrabajados === 0 || !tarifaViatico
     ? null
@@ -824,6 +1073,7 @@ async function calculateEmployeePayroll(
       nombreEmpleado: employee.Entidad.NombreCompleto,
       idUsuarioVinculado,
       sueldoBase: toMoney(sueldoBase),
+      detalleSalarios: salary.detalleSalarios,
       totalComisiones: toMoney(isPlantWorker ? 0 : totalComisiones),
       totalBonosMetas,
       totalViaticos,
@@ -834,18 +1084,21 @@ async function calculateEmployeePayroll(
       detalleComisiones: isPlantWorker ? [] : detalleComisiones,
       detalleAjustes: [
         ...ajustes,
-        ...adelantos.map((item) => ({
+        ...adelantoAplicaciones.map((application) => {
+          const item = adelantos.find((advance) => advance.Id === application.idAdelantoEmpleado)!;
+          return {
           tipoAjuste: 'ADELANTO' as const,
           descripcion: `Adelanto #${item.Id}${item.Observacion ? ` - ${item.Observacion}` : ''}`,
-          monto: Number(item.Monto),
-        })),
+          monto: application.montoAplicado,
+          };
+        }),
         ...faltantes.map((item) => ({
           tipoAjuste: 'FALTANTE' as const,
           descripcion: `Faltante aprobado #${item.Id}${item.Observacion ? ` - ${item.Observacion}` : ''}`,
           monto: Number(item.Monto),
         })),
       ],
-      adelantoIds: adelantos.map((item) => item.Id),
+      adelantoAplicaciones,
       faltanteIds: faltantes.map((item) => item.Id),
     },
     validaciones,
@@ -880,6 +1133,11 @@ export async function previewPayroll(input: PreviewPayrollInput) {
   const empleados = await prisma.empleado.findMany({
     where: {
       Anulado: false,
+      FechaContratacion: { lte: range.end },
+      OR: [
+        { FechaSalida: null },
+        { FechaSalida: { gte: range.start } },
+      ],
       ...(input.idEmpleado !== undefined ? { Id: input.idEmpleado } : {}),
       Entidad: {
         Anulado: false,
@@ -890,6 +1148,8 @@ export async function previewPayroll(input: PreviewPayrollInput) {
       IdUsuarioVinculado: true,
       IdConfiguracionComision: true,
       SueldoBase: true,
+      FechaContratacion: true,
+      FechaSalida: true,
       IdTipoTrabajador: true,
       TipoTrabajador: {
         select: { Clave: true },
@@ -899,12 +1159,16 @@ export async function previewPayroll(input: PreviewPayrollInput) {
           FechaInicioVigencia: { lte: range.end },
           OR: [
             { FechaFinVigencia: null },
-            { FechaFinVigencia: { gte: range.end } },
+            { FechaFinVigencia: { gte: range.start } },
           ],
         },
-        orderBy: { FechaInicioVigencia: 'desc' },
-        take: 1,
-        select: { SueldoBase: true },
+        orderBy: { FechaInicioVigencia: 'asc' },
+        select: {
+          Id: true,
+          SueldoBase: true,
+          FechaInicioVigencia: true,
+          FechaFinVigencia: true,
+        },
       },
       Entidad: {
         select: {
@@ -937,10 +1201,7 @@ export async function previewPayroll(input: PreviewPayrollInput) {
 
   const calculated = await Promise.all(
     empleados.map((empleado) => calculateEmployeePayroll(
-      {
-        ...empleado,
-        SueldoBase: empleado.HistorialSueldos[0]?.SueldoBase ?? empleado.SueldoBase,
-      },
+      empleado,
       range,
       getEmployeeInput(employeeInputs, empleado.Id),
       tarifaViatico,
@@ -1034,6 +1295,7 @@ export async function generatePayroll(input: GeneratePayrollInput) {
           Mes: input.mes,
           Anio: input.anio,
           Estado: 'BORRADOR',
+          EstadoPago: 'PENDIENTE',
           IdUsuarioGenerador: input.idUsuarioGenerador,
           SueldoBase: row.sueldoBase,
           TotalComisiones: row.totalComisiones,
@@ -1054,6 +1316,20 @@ export async function generatePayroll(input: GeneratePayrollInput) {
           Accion: 'GENERAR',
         },
       });
+
+      if (row.detalleSalarios.length > 0) {
+        await tx.planillaDetalleSalario.createMany({
+          data: row.detalleSalarios.map((salary) => ({
+            IdPlanillaMensual: planilla.Id,
+            IdEmpleadoSueldoVigencia: salary.idEmpleadoSueldoVigencia,
+            FechaInicio: salary.fechaInicio,
+            FechaFin: salary.fechaFin,
+            DiasCalendario: salary.diasCalendario,
+            SueldoMensualSnapshot: salary.sueldoMensualSnapshot,
+            MontoDevengado: salary.montoDevengado,
+          })),
+        });
+      }
 
       if (row.detalleComisiones.length > 0) {
         for (const item of row.detalleComisiones) {
@@ -1086,6 +1362,7 @@ export async function generatePayroll(input: GeneratePayrollInput) {
               IdDetalleVenta: fuente.idDetalleVenta,
               IdVenta: fuente.idVenta,
               IdRutaSesion: fuente.idRutaSesion,
+              IdEmpleadoAtribuido: fuente.idEmpleadoAtribuido,
               FechaSesion: fuente.fechaSesion,
               SesionAnulada: fuente.sesionAnulada,
               EstadoPago: fuente.estadoPago,
@@ -1116,18 +1393,15 @@ export async function generatePayroll(input: GeneratePayrollInput) {
         });
       }
 
-      if (row.adelantoIds.length > 0) {
-        const linked = await tx.adelantoEmpleado.updateMany({
-          where: {
-            Id: { in: row.adelantoIds },
-            IdPlanillaMensual: null,
+      if (row.adelantoAplicaciones.length > 0) {
+        await tx.planillaDetalleAdelanto.createMany({
+          data: row.adelantoAplicaciones.map((application) => ({
+            IdAdelantoEmpleado: application.idAdelantoEmpleado,
+            IdPlanillaMensual: planilla.Id,
+            MontoAplicado: application.montoAplicado,
             Anulado: false,
-          },
-          data: { IdPlanillaMensual: planilla.Id },
+          })),
         });
-        if (linked.count !== row.adelantoIds.length) {
-          throw new Error('Los adelantos cambiaron durante la generación; vuelva a previsualizar.');
-        }
       }
       if (row.faltanteIds.length > 0) {
         const linked = await tx.faltanteEmpleado.updateMany({
@@ -1258,6 +1532,9 @@ export async function getPayrollById(id: number) {
         },
         orderBy: { Id: 'asc' },
       },
+      DetallesSalario: {
+        orderBy: { FechaInicio: 'asc' },
+      },
       PlanillaDetalleAjuste: {
         where: { Anulado: false },
         orderBy: { Id: 'asc' },
@@ -1271,6 +1548,15 @@ export async function getPayrollById(id: number) {
 
   return {
     ...toPlanillaDto(planilla),
+    detalleSalarios: planilla.DetallesSalario.map((salary) => ({
+      id: salary.Id,
+      idEmpleadoSueldoVigencia: salary.IdEmpleadoSueldoVigencia,
+      fechaInicio: salary.FechaInicio,
+      fechaFin: salary.FechaFin,
+      diasCalendario: salary.DiasCalendario,
+      sueldoMensualSnapshot: Number(salary.SueldoMensualSnapshot),
+      montoDevengado: Number(salary.MontoDevengado),
+    })),
     detalleComisiones: planilla.PlanillaDetalleComision.map((item) => ({
       id: item.Id,
       idInventarioItem: item.IdInventarioItem,
@@ -1294,6 +1580,7 @@ export async function getPayrollById(id: number) {
         idDetalleVenta: fuente.IdDetalleVenta,
         idVenta: fuente.IdVenta,
         idRutaSesion: fuente.IdRutaSesion,
+        idEmpleadoAtribuido: fuente.IdEmpleadoAtribuido,
         fechaSesion: fuente.FechaSesion,
         sesionAnulada: fuente.SesionAnulada,
         estadoPago: fuente.EstadoPago,
@@ -1519,6 +1806,14 @@ export async function deletePayroll(id: number, idUsuarioAnulador: number) {
   }
 
   await prisma.$transaction(async (tx) => {
+    await tx.planillaDetalleAdelanto.updateMany({
+      where: { IdPlanillaMensual: id, Anulado: false },
+      data: {
+        Anulado: true,
+        IdUsuarioAnulador: idUsuarioAnulador,
+        FechaAnulacion: new Date(),
+      },
+    });
     await tx.planillaMensual.update({
       where: { Id: id },
       data: {
@@ -1569,6 +1864,33 @@ export async function restorePayroll(id: number, idUsuarioModificador: number) {
   }
 
   await prisma.$transaction(async (tx) => {
+    const advanceApplications = await tx.planillaDetalleAdelanto.findMany({
+      where: { IdPlanillaMensual: id, Anulado: true },
+      include: { AdelantoEmpleado: { select: { Monto: true } } },
+    });
+    for (const application of advanceApplications) {
+      const activeApplications = await tx.planillaDetalleAdelanto.aggregate({
+        where: {
+          IdAdelantoEmpleado: application.IdAdelantoEmpleado,
+          Anulado: false,
+          IdPlanillaMensual: { not: id },
+        },
+        _sum: { MontoAplicado: true },
+      });
+      const alreadyApplied = Number(activeApplications._sum.MontoAplicado ?? 0);
+      const targetAmount = Number(application.MontoAplicado);
+      if (alreadyApplied + targetAmount > Number(application.AdelantoEmpleado.Monto)) {
+        throw new Error('No se puede restaurar la planilla porque el saldo del adelanto ya se aplicó a otra planilla');
+      }
+    }
+    await tx.planillaDetalleAdelanto.updateMany({
+      where: { IdPlanillaMensual: id, Anulado: true },
+      data: {
+        Anulado: false,
+        IdUsuarioAnulador: null,
+        FechaAnulacion: null,
+      },
+    });
     await tx.planillaMensual.update({
       where: { Id: id },
       data: {

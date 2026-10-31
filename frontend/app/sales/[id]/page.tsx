@@ -476,6 +476,50 @@ export default function SaleDetailPage() {
               </section>
 
               <Card>
+                <CardHeader>
+                  <CardTitle>Origen de inventario y responsables</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Origen del inventario</p>
+                    <p className="font-medium">
+                      {sale.origenInventario === "PLANTA" ? "Inventario general de planta" : "Inventario de ruta"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Usuario responsable de la venta</p>
+                    <p className="font-medium">{sale.usuario.nombre}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Empleado vendedor</p>
+                    <p className="font-medium">{sale.empleadoVendedor?.nombre ?? "Sin vendedor asignado"}</p>
+                  </div>
+                  {sale.rutaSesion ? (
+                    <>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Ruta / sesión</p>
+                        <p className="font-medium">
+                          {sale.rutaSesion.ruta?.nombre ?? "Ruta no disponible"} · #{sale.rutaSesion.id}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Vehículo asignado</p>
+                        <p className="font-medium">{sale.rutaSesion.vehiculo.placa}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Vendedor asignado</p>
+                        <p className="font-medium">{sale.rutaSesion.vendedor?.nombre ?? "Sin vendedor asignado"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Conductor asignado</p>
+                        <p className="font-medium">{sale.rutaSesion.chofer?.nombre ?? "Sin conductor asignado"}</p>
+                      </div>
+                    </>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle>Resumen financiero</CardTitle>
                   <Button variant="outline" onClick={() => void loadData()} disabled={isLoading}>

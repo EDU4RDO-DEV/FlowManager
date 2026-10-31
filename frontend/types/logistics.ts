@@ -47,8 +47,10 @@ export interface RutaSesionDto {
   id: number;
   idRuta: number;
   idVehiculo: number;
-  idUsuarioChofer: number;
-  idUsuarioVendedor: number;
+  idUsuarioChofer: number | null;
+  idUsuarioVendedor: number | null;
+  idEmpleadoChofer: number | null;
+  idEmpleadoVendedor: number | null;
   idJornada: number | null;
   fechaSesion: string;
   kmInicial: number | null;
@@ -75,12 +77,12 @@ export interface RutaSesionDto {
   chofer?: {
     id: number;
     nombre: string;
-    correo: string;
+    correo: string | null;
   };
   vendedor?: {
     id: number;
     nombre: string;
-    correo: string;
+    correo: string | null;
   };
 }
 
@@ -90,6 +92,7 @@ export interface RouteInventoryLineDto {
   unidadMedida: string | null;
   despachado: number;
   estadoEnvaseDespachado?: "VACIO" | "LLENO" | null;
+  esEnvaseRetornable: boolean;
   vendido: number;
   devolucionComercial: number;
   noVendibleComercial: number;
@@ -196,8 +199,10 @@ export type UpdateRutaPayload = {
 export type CreateRutaSesionPayload = {
   idRuta: number;
   idVehiculo: number;
-  idUsuarioChofer: number;
-  idUsuarioVendedor: number;
+  idEmpleadoChofer: number;
+  idEmpleadoVendedor: number;
+  idUsuarioChofer?: number;
+  idUsuarioVendedor?: number;
   idJornada?: number;
   fechaSesion: string;
   kmInicial?: number;
@@ -208,6 +213,8 @@ export type CreateRutaSesionPayload = {
 export type UpdateRutaSesionPayload = {
   idRuta?: number;
   idVehiculo?: number;
+  idEmpleadoChofer?: number;
+  idEmpleadoVendedor?: number;
   idUsuarioChofer?: number;
   idUsuarioVendedor?: number;
   idJornada?: number | null;
@@ -330,8 +337,10 @@ export interface JornadaDto {
   rutaSesiones: Array<{
     id: number;
     idVehiculo: number;
-    idUsuarioChofer: number;
-    idUsuarioVendedor: number;
+    idUsuarioChofer: number | null;
+    idUsuarioVendedor: number | null;
+    idEmpleadoChofer: number | null;
+    idEmpleadoVendedor: number | null;
     estado: RutaSesionEstado;
   }>;
 }
@@ -390,8 +399,8 @@ export type CreateVehicleHandoffPayload = {
   motivo: string;
   idRuta: number;
   idVehiculo: number;
-  idUsuarioChofer: number;
-  idUsuarioVendedor: number;
+  idEmpleadoChofer: number;
+  idEmpleadoVendedor: number;
   kmInicialEntrante: number;
   detalle?: TransferDetailLineInput[];
 };
@@ -412,4 +421,3 @@ export interface VehicleHandoffResultDto {
     entrante: { idRutaSesion: number; productos: RouteInventoryLineDto[] };
   };
 }
-

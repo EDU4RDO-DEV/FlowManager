@@ -25,15 +25,35 @@ function money(value: number): string {
 export async function renderPayrollReceipt(payroll: PayrollDetail) {
   const employeeName = escapeHtml(payroll.empleado?.entidad.nombreCompleto ?? `Empleado #${payroll.idEmpleado}`);
   const period = `${MONTHS[payroll.mes - 1]} ${payroll.anio}`;
-  const adjustments = payroll.detalleAjustes.map((adjustment) => `
+  const adjustments = payroll.detalleAjustes.map((adjustment: {
+    tipoAjuste: string;
+    descripcion: string;
+    monto: number;
+  }) => `
     <tr><td>${escapeHtml(adjustment.tipoAjuste)}</td><td>${escapeHtml(adjustment.descripcion)}</td>
     <td class="amount">${money(adjustment.monto)}</td></tr>`).join('');
-  const commissionRows = payroll.detalleComisiones.map((commission) => `
+  const commissionRows = payroll.detalleComisiones.map((commission: {
+    categoriaComisionSnapshot: string | null;
+    nombreProducto: string;
+    tipoCalculo: string;
+    valorAplicado: number;
+    montoComision: number;
+  }) => `
     <tr><td>${escapeHtml(commission.categoriaComisionSnapshot ?? commission.nombreProducto)}</td>
     <td>${commission.tipoCalculo === 'PORCENTAJE_VENTA'
       ? `${commission.valorAplicado}%`
       : `${money(commission.valorAplicado)} por unidad`}</td>
     <td class="amount">${money(commission.montoComision)}</td></tr>`).join('');
+  const salaryRows = payroll.detalleSalarios.map((salary: {
+    fechaInicio: Date | string;
+    fechaFin: Date | string;
+    diasCalendario: number;
+    sueldoMensualSnapshot: number;
+    montoDevengado: number;
+  }) => `
+    <tr><td>${new Date(salary.fechaInicio).toLocaleDateString('es-GT', { timeZone: 'UTC' })} – ${new Date(salary.fechaFin).toLocaleDateString('es-GT', { timeZone: 'UTC' })}</td>
+    <td>${salary.diasCalendario}</td><td class="amount">${money(salary.sueldoMensualSnapshot)}</td>
+    <td class="amount">${money(salary.montoDevengado)}</td></tr>`).join('');
 
   const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><style>
     *{box-sizing:border-box}body{font:12px Arial,sans-serif;color:#1f2937;margin:0}
@@ -58,6 +78,7 @@ export async function renderPayrollReceipt(payroll: PayrollDetail) {
       <tr><td>Descuentos</td><td class="amount">-${money(payroll.totalDescuentos)}</td></tr>
       <tr class="total"><td>Líquido</td><td class="amount">${money(payroll.sueldoLiquido)}</td></tr>
     </tbody></table>
+    ${salaryRows ? `<h2>Detalle de prorrateo salarial</h2><table><thead><tr><th>Vigencia aplicada</th><th>Días calendario</th><th class="amount">Sueldo mensual</th><th class="amount">Devengado</th></tr></thead><tbody>${salaryRows}</tbody></table>` : ''}
     <h2>Viáticos (separados)</h2>
     <table><tbody>
       <tr><td>Días trabajados</td><td class="amount">${payroll.diasTrabajados}</td></tr>

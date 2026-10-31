@@ -41,8 +41,10 @@ type UpdateRutaInput = {
 type CreateRutaSesionInput = {
   idRuta: number;
   idVehiculo: number;
-  idUsuarioChofer: number;
-  idUsuarioVendedor: number;
+  idEmpleadoChofer?: number;
+  idEmpleadoVendedor?: number;
+  idUsuarioChofer?: number;
+  idUsuarioVendedor?: number;
   idJornada?: number;
   fechaSesion: string;
   kmInicial?: number;
@@ -53,6 +55,8 @@ type CreateRutaSesionInput = {
 type UpdateRutaSesionInput = {
   idRuta?: number;
   idVehiculo?: number;
+  idEmpleadoChofer?: number;
+  idEmpleadoVendedor?: number;
   idUsuarioChofer?: number;
   idUsuarioVendedor?: number;
   idJornada?: number | null;
@@ -124,6 +128,37 @@ function toVehiculoDto(vehiculo: {
   };
 }
 
+export async function resolveEmpleadoOperativo(
+  idEmpleado: number | undefined,
+  idUsuario: number | undefined,
+  roleName: 'Chofer' | 'Vendedor',
+  fecha: Date,
+  client: LogisticsDatabaseClient = prisma,
+) {
+  const empleado = await client.empleado.findFirst({
+    where: {
+      ...(idEmpleado !== undefined ? { Id: idEmpleado } : {}),
+      ...(idEmpleado === undefined && idUsuario !== undefined ? { IdUsuarioVinculado: idUsuario } : {}),
+      Anulado: false,
+      FechaContratacion: { lte: fecha },
+      OR: [{ FechaSalida: null }, { FechaSalida: { gte: fecha } }],
+    },
+    select: { Id: true, IdUsuarioVinculado: true },
+  });
+
+  if (!empleado || (idEmpleado === undefined && idUsuario === undefined)) {
+    throw new Error(`${roleName} no tiene empleado activo vinculado`);
+  }
+  if (idUsuario !== undefined && idEmpleado !== undefined && empleado.IdUsuarioVinculado !== idUsuario) {
+    throw new Error(`${roleName} no tiene empleado activo vinculado`);
+  }
+
+  return {
+    idEmpleado: empleado.Id,
+    idUsuario: idEmpleado !== undefined ? empleado.IdUsuarioVinculado : idUsuario ?? null,
+  };
+}
+
 function toRutaDto(ruta: {
   Id: number;
   Nombre: string;
@@ -144,8 +179,8 @@ export function toRutaSesionDto(sesion: {
   Id: number;
   IdRuta: number;
   IdVehiculo: number;
-  IdUsuarioChofer: number;
-  IdUsuarioVendedor: number;
+  IdUsuarioChofer: number | null;
+  IdUsuarioVendedor: number | null;
   IdJornada?: number | null;
   FechaSesion: Date;
   KmInicial: number | null;
@@ -173,19 +208,31 @@ export function toRutaSesionDto(sesion: {
     Id: number;
     Nombre: string;
     Correo: string;
-  };
+  } | null;
   Usuario_RutaSesion_IdUsuarioVendedorToUsuario?: {
     Id: number;
     Nombre: string;
     Correo: string;
-  };
+  } | null;
+  IdEmpleadoChofer?: number | null;
+  IdEmpleadoVendedor?: number | null;
+  Empleado_RutaSesion_IdEmpleadoChoferToEmpleado?: {
+    Id: number;
+    Entidad: { NombreCompleto: string };
+  } | null;
+  Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado?: {
+    Id: number;
+    Entidad: { NombreCompleto: string };
+  } | null;
 }) {
   return {
     id: sesion.Id,
     idRuta: sesion.IdRuta,
     idVehiculo: sesion.IdVehiculo,
-    idUsuarioChofer: sesion.IdUsuarioChofer,
-    idUsuarioVendedor: sesion.IdUsuarioVendedor,
+    idUsuarioChofer: sesion.IdUsuarioChofer ?? null,
+    idUsuarioVendedor: sesion.IdUsuarioVendedor ?? null,
+    idEmpleadoChofer: sesion.IdEmpleadoChofer ?? null,
+    idEmpleadoVendedor: sesion.IdEmpleadoVendedor ?? null,
     idJornada: sesion.IdJornada ?? null,
     fechaSesion: sesion.FechaSesion,
     kmInicial: sesion.KmInicial,
@@ -213,20 +260,32 @@ export function toRutaSesionDto(sesion: {
           modelo: sesion.Vehiculo.Modelo,
         }
       : undefined,
-    chofer: sesion.Usuario_RutaSesion_IdUsuarioChoferToUsuario
+    chofer: sesion.Empleado_RutaSesion_IdEmpleadoChoferToEmpleado
       ? {
+          id: sesion.Empleado_RutaSesion_IdEmpleadoChoferToEmpleado.Id,
+          nombre: sesion.Empleado_RutaSesion_IdEmpleadoChoferToEmpleado.Entidad.NombreCompleto,
+          correo: '',
+        }
+      : sesion.Usuario_RutaSesion_IdUsuarioChoferToUsuario
+        ? {
           id: sesion.Usuario_RutaSesion_IdUsuarioChoferToUsuario.Id,
           nombre: sesion.Usuario_RutaSesion_IdUsuarioChoferToUsuario.Nombre,
           correo: sesion.Usuario_RutaSesion_IdUsuarioChoferToUsuario.Correo,
         }
-      : undefined,
-    vendedor: sesion.Usuario_RutaSesion_IdUsuarioVendedorToUsuario
+        : undefined,
+    vendedor: sesion.Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado
       ? {
+          id: sesion.Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado.Id,
+          nombre: sesion.Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado.Entidad.NombreCompleto,
+          correo: '',
+        }
+      : sesion.Usuario_RutaSesion_IdUsuarioVendedorToUsuario
+        ? {
           id: sesion.Usuario_RutaSesion_IdUsuarioVendedorToUsuario.Id,
           nombre: sesion.Usuario_RutaSesion_IdUsuarioVendedorToUsuario.Nombre,
           correo: sesion.Usuario_RutaSesion_IdUsuarioVendedorToUsuario.Correo,
         }
-      : undefined,
+        : undefined,
   };
 }
 
@@ -552,6 +611,9 @@ export async function listVehiculos(filters: {
   anulado?: boolean;
   estado?: VehiculoEstado;
   disponible?: boolean;
+  idRutaSesiones?: number[];
+  idUsuarioChofer?: number;
+  idUsuarioVendedor?: number;
 }) {
   const rows = await prisma.vehiculo.findMany({
     where: {
@@ -562,6 +624,27 @@ export async function listVehiculos(filters: {
             Estado: filters.disponible
               ? 'DISPONIBLE'
               : { in: ['EN_RUTA', 'MANTENIMIENTO', 'NO_DISPONIBLE'] },
+          }
+        : {}),
+      ...(filters.idRutaSesiones !== undefined ||
+      filters.idUsuarioChofer !== undefined ||
+      filters.idUsuarioVendedor !== undefined
+        ? {
+            RutaSesion: {
+              some: {
+                Anulado: false,
+                Estado: { in: ['PROGRAMADA', 'EN_CURSO'] },
+                ...(filters.idRutaSesiones !== undefined
+                  ? { Id: { in: filters.idRutaSesiones } }
+                  : {}),
+                ...(filters.idUsuarioChofer !== undefined
+                  ? { IdUsuarioChofer: filters.idUsuarioChofer }
+                  : {}),
+                ...(filters.idUsuarioVendedor !== undefined
+                  ? { IdUsuarioVendedor: filters.idUsuarioVendedor }
+                  : {}),
+              },
+            },
           }
         : {}),
     },
@@ -867,15 +950,21 @@ export async function restoreRuta(id: number, idUsuarioModificador: number) {
 }
 
 export async function listRutaSesiones(filters: {
+  idRutaSesiones?: number[];
   idRuta?: number;
   idVehiculo?: number;
+  idUsuarioChofer?: number;
+  idUsuarioVendedor?: number;
   anulado?: boolean;
   estado?: RutaSesionEstado;
 }) {
   const rows = await prisma.rutaSesion.findMany({
     where: {
+      ...(filters.idRutaSesiones !== undefined ? { Id: { in: filters.idRutaSesiones } } : {}),
       ...(filters.idRuta !== undefined ? { IdRuta: filters.idRuta } : {}),
       ...(filters.idVehiculo !== undefined ? { IdVehiculo: filters.idVehiculo } : {}),
+      ...(filters.idUsuarioChofer !== undefined ? { IdUsuarioChofer: filters.idUsuarioChofer } : {}),
+      ...(filters.idUsuarioVendedor !== undefined ? { IdUsuarioVendedor: filters.idUsuarioVendedor } : {}),
       ...(filters.anulado !== undefined ? { Anulado: filters.anulado } : {}),
       ...(filters.estado !== undefined ? { Estado: filters.estado } : {}),
     },
@@ -891,6 +980,12 @@ export async function listRutaSesiones(filters: {
       },
       Usuario_RutaSesion_IdUsuarioVendedorToUsuario: {
         select: { Id: true, Nombre: true, Correo: true },
+      },
+      Empleado_RutaSesion_IdEmpleadoChoferToEmpleado: {
+        select: { Id: true, Entidad: { select: { NombreCompleto: true } } },
+      },
+      Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado: {
+        select: { Id: true, Entidad: { select: { NombreCompleto: true } } },
       },
     },
     orderBy: [{ FechaSesion: 'desc' }, { Id: 'desc' }],
@@ -918,6 +1013,12 @@ export async function getRutaSesionById(id: number) {
       Usuario_RutaSesion_IdUsuarioVendedorToUsuario: {
         select: { Id: true, Nombre: true, Correo: true },
       },
+      Empleado_RutaSesion_IdEmpleadoChoferToEmpleado: {
+        select: { Id: true, Entidad: { select: { NombreCompleto: true } } },
+      },
+      Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado: {
+        select: { Id: true, Entidad: { select: { NombreCompleto: true } } },
+      },
     },
   });
 
@@ -936,8 +1037,18 @@ export async function createRutaSesion(input: CreateRutaSesionInput) {
   }
 
   await validateRutaExists(input.idRuta);
-  await validateEmpleadoVinculado(input.idUsuarioChofer, 'Chofer');
-  await validateEmpleadoVinculado(input.idUsuarioVendedor, 'Vendedor');
+  const chofer = await resolveEmpleadoOperativo(
+    input.idEmpleadoChofer,
+    input.idUsuarioChofer,
+    'Chofer',
+    fechaSesion,
+  );
+  const vendedor = await resolveEmpleadoOperativo(
+    input.idEmpleadoVendedor,
+    input.idUsuarioVendedor,
+    'Vendedor',
+    fechaSesion,
+  );
   if (input.idJornada !== undefined) {
     await assertJornadaAbierta(input.idJornada);
   }
@@ -959,8 +1070,10 @@ export async function createRutaSesion(input: CreateRutaSesionInput) {
       data: {
         IdRuta: input.idRuta,
         IdVehiculo: input.idVehiculo,
-        IdUsuarioChofer: input.idUsuarioChofer,
-        IdUsuarioVendedor: input.idUsuarioVendedor,
+        IdEmpleadoChofer: chofer.idEmpleado,
+        IdEmpleadoVendedor: vendedor.idEmpleado,
+        IdUsuarioChofer: chofer.idUsuario,
+        IdUsuarioVendedor: vendedor.idUsuario,
         IdJornada: input.idJornada,
         FechaSesion: fechaSesion,
         KmInicial: input.kmInicial,
@@ -1005,6 +1118,8 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
         IdVehiculo: true,
         IdUsuarioChofer: true,
         IdUsuarioVendedor: true,
+        IdEmpleadoChofer: true,
+        IdEmpleadoVendedor: true,
         IdJornada: true,
         FechaSesion: true,
         KmInicial: true,
@@ -1031,6 +1146,8 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
       hasOperationalRecords &&
       (input.idRuta !== undefined ||
         input.idVehiculo !== undefined ||
+        input.idEmpleadoChofer !== undefined ||
+        input.idEmpleadoVendedor !== undefined ||
         input.idUsuarioChofer !== undefined ||
         input.idUsuarioVendedor !== undefined ||
         input.fechaSesion !== undefined ||
@@ -1041,8 +1158,26 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
 
     const nextRuta = input.idRuta ?? existing.IdRuta;
     const nextVehiculo = input.idVehiculo ?? existing.IdVehiculo;
-    const nextChofer = input.idUsuarioChofer ?? existing.IdUsuarioChofer;
-    const nextVendedor = input.idUsuarioVendedor ?? existing.IdUsuarioVendedor;
+    const choferChanged = input.idEmpleadoChofer !== undefined || input.idUsuarioChofer !== undefined;
+    const vendedorChanged = input.idEmpleadoVendedor !== undefined || input.idUsuarioVendedor !== undefined;
+    const nextChofer = choferChanged
+      ? await resolveEmpleadoOperativo(
+          input.idEmpleadoChofer,
+          input.idUsuarioChofer,
+          'Chofer',
+          input.fechaSesion ? parseDateOnlyUtc(input.fechaSesion) : existing.FechaSesion,
+          tx,
+        )
+      : null;
+    const nextVendedor = vendedorChanged
+      ? await resolveEmpleadoOperativo(
+          input.idEmpleadoVendedor,
+          input.idUsuarioVendedor,
+          'Vendedor',
+          input.fechaSesion ? parseDateOnlyUtc(input.fechaSesion) : existing.FechaSesion,
+          tx,
+        )
+      : null;
     const nextJornada = input.idJornada === undefined ? existing.IdJornada : input.idJornada;
     const nextFecha = input.fechaSesion
       ? parseDateOnlyUtc(input.fechaSesion)
@@ -1052,8 +1187,6 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
     const nextKmFinal = input.kmFinal === undefined ? existing.KmFinal : input.kmFinal;
 
     await validateRutaExists(nextRuta, false, tx);
-    await validateEmpleadoVinculado(nextChofer, 'Chofer', tx);
-    await validateEmpleadoVinculado(nextVendedor, 'Vendedor', tx);
     if (input.idJornada !== undefined && input.idJornada !== null) {
       await assertJornadaAbierta(input.idJornada, tx);
     }
@@ -1083,8 +1216,12 @@ export async function updateRutaSesion(id: number, input: UpdateRutaSesionInput)
       data: {
         IdRuta: nextRuta,
         IdVehiculo: nextVehiculo,
-        IdUsuarioChofer: nextChofer,
-        IdUsuarioVendedor: nextVendedor,
+        ...(nextChofer
+          ? { IdEmpleadoChofer: nextChofer.idEmpleado, IdUsuarioChofer: nextChofer.idUsuario }
+          : {}),
+        ...(nextVendedor
+          ? { IdEmpleadoVendedor: nextVendedor.idEmpleado, IdUsuarioVendedor: nextVendedor.idUsuario }
+          : {}),
         IdJornada: nextJornada,
         FechaSesion: nextFecha,
         KmInicial: nextKmInicial,
@@ -1171,6 +1308,8 @@ export async function restoreRutaSesion(id: number, idUsuarioModificador: number
         IdVehiculo: true,
         IdUsuarioChofer: true,
         IdUsuarioVendedor: true,
+        IdEmpleadoChofer: true,
+        IdEmpleadoVendedor: true,
         FechaSesion: true,
         KmInicial: true,
         KmFinal: true,
@@ -1182,8 +1321,20 @@ export async function restoreRutaSesion(id: number, idUsuarioModificador: number
     }
 
     await validateRutaExists(existing.IdRuta, false, tx);
-    await validateEmpleadoVinculado(existing.IdUsuarioChofer, 'Chofer', tx);
-    await validateEmpleadoVinculado(existing.IdUsuarioVendedor, 'Vendedor', tx);
+    await resolveEmpleadoOperativo(
+      existing.IdEmpleadoChofer ?? undefined,
+      existing.IdUsuarioChofer ?? undefined,
+      'Chofer',
+      existing.FechaSesion,
+      tx,
+    );
+    await resolveEmpleadoOperativo(
+      existing.IdEmpleadoVendedor ?? undefined,
+      existing.IdUsuarioVendedor ?? undefined,
+      'Vendedor',
+      existing.FechaSesion,
+      tx,
+    );
 
     const defaultState: RutaSesionEstado =
       existing.KmFinal !== null ? 'CERRADA' : 'PROGRAMADA';
@@ -1224,6 +1375,12 @@ export async function restoreRutaSesion(id: number, idUsuarioModificador: number
         Usuario_RutaSesion_IdUsuarioVendedorToUsuario: {
           select: { Id: true, Nombre: true, Correo: true },
         },
+        Empleado_RutaSesion_IdEmpleadoChoferToEmpleado: {
+          select: { Id: true, Entidad: { select: { NombreCompleto: true } } },
+        },
+        Empleado_RutaSesion_IdEmpleadoVendedorToEmpleado: {
+          select: { Id: true, Entidad: { select: { NombreCompleto: true } } },
+        },
       },
     });
 
@@ -1235,18 +1392,33 @@ export async function restoreRutaSesion(id: number, idUsuarioModificador: number
 }
 
 export async function listGastosVehiculo(filters: {
+  idRutaSesiones?: number[];
   idRutaSesion?: number;
   idRuta?: number;
+  idUsuarioChofer?: number;
+  idUsuarioVendedor?: number;
   anulado?: boolean;
   estadoPago?: GastoEstadoPago;
 }) {
   const rows = await prisma.gastoVehiculo.findMany({
     where: {
       ...(filters.idRutaSesion !== undefined ? { IdRutaSesion: filters.idRutaSesion } : {}),
-      ...(filters.idRuta !== undefined
+      ...(filters.idRuta !== undefined ||
+      filters.idRutaSesiones !== undefined ||
+      filters.idUsuarioChofer !== undefined ||
+      filters.idUsuarioVendedor !== undefined
         ? {
             RutaSesion: {
-              IdRuta: filters.idRuta,
+              ...(filters.idRutaSesiones !== undefined
+                ? { Id: { in: filters.idRutaSesiones } }
+                : {}),
+              ...(filters.idRuta !== undefined ? { IdRuta: filters.idRuta } : {}),
+              ...(filters.idUsuarioChofer !== undefined
+                ? { IdUsuarioChofer: filters.idUsuarioChofer }
+                : {}),
+              ...(filters.idUsuarioVendedor !== undefined
+                ? { IdUsuarioVendedor: filters.idUsuarioVendedor }
+                : {}),
             },
           }
         : {}),

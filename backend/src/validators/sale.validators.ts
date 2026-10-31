@@ -107,6 +107,7 @@ export const createSaleSchema = z
   .object({
     idUsuario: positiveInt,
     idCliente: positiveInt,
+    idEmpleadoVendedor: positiveInt.optional(),
     idRutaSesion: positiveInt.optional(),
     idTalonario: positiveInt.optional(),
     numeroProForma: positiveInt.optional(),

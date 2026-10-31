@@ -1,7 +1,12 @@
 import { prisma } from '../config/prisma';
 import { runSerializableTransaction } from '../utils/serializable-transaction';
 import { loadRouteInventory } from './route-inventory.service';
-import { transferEnvaseBucket } from './inventory-movement.service';
+import { getEnvaseBucketQuantity, transferEnvaseBucket } from './inventory-movement.service';
+import {
+  assertRouteSessionAccess,
+  getRouteSessionVisibilityWhere,
+  type OperationalActor,
+} from './operational-scope.service';
 
 // D-DIST-04 (pendiente de ratificación): transferencia de inventario entre dos RutaSesion
 // EN_CURSO (Escenario "transferencia parcial, ambos continúan operando"). Mientras
@@ -144,11 +149,8 @@ export async function createVehicleTransferWithinTx(
   await assertSessionTransferable(tx, input.idRutaSesionDestino, 'destino');
 
   const inventory = await loadRouteInventory(tx, input.idRutaSesionOrigen);
-  const disponibleByKey = new Map(
-    inventory.lines.map((line) => [
-      `${line.idInventarioItem}|${line.estadoEnvaseDespachado ?? ''}`,
-      line.disponible,
-    ]),
+  const disponibleByItem = new Map(
+    inventory.lines.map((line) => [line.idInventarioItem, line.disponible]),
   );
 
   const products = await tx.inventarioItem.findMany({
@@ -156,6 +158,9 @@ export async function createVehicleTransferWithinTx(
     select: { Id: true, Nombre: true, UnidadMedida: true, EsEnvaseRetornable: true },
   });
   const productsById = new Map(products.map((product) => [product.Id, product]));
+  const solicitadoByItem = new Map<number, number>();
+  const solicitadoPorEstado = new Map<string, number>();
+  const detailKeys = new Set<string>();
 
   for (const line of input.detalle) {
     if (line.cantidad <= 0) {
@@ -172,10 +177,66 @@ export async function createVehicleTransferWithinTx(
       throw new Error(`${product.Nombre} no está configurado como envase retornable`);
     }
     const key = `${line.idInventarioItem}|${product.EsEnvaseRetornable ? line.estadoEnvase : ''}`;
-    const disponible = disponibleByKey.get(key) ?? 0;
-    if (line.cantidad > disponible + 0.009) {
+    if (detailKeys.has(key)) {
+      throw new Error(`No repitas el producto ${product.Nombre} con el mismo estado de envase`);
+    }
+    detailKeys.add(key);
+    solicitadoByItem.set(
+      line.idInventarioItem,
+      (solicitadoByItem.get(line.idInventarioItem) ?? 0) + line.cantidad,
+    );
+    if (product.EsEnvaseRetornable && line.estadoEnvase) {
+      const stateKey = `${line.idInventarioItem}|${line.estadoEnvase}`;
+      solicitadoPorEstado.set(
+        stateKey,
+        (solicitadoPorEstado.get(stateKey) ?? 0) + line.cantidad,
+      );
+    }
+  }
+
+  for (const [idInventarioItem, cantidadSolicitada] of solicitadoByItem) {
+    const disponible = disponibleByItem.get(idInventarioItem) ?? 0;
+    if (cantidadSolicitada > disponible + 0.009) {
+      const product = productsById.get(idInventarioItem)!;
       throw new Error(
-        `Existencia insuficiente en el vehículo de origen para ${product.Nombre}. Disponible ${disponible}, solicitado ${line.cantidad}`,
+        `Existencia insuficiente en el vehículo de origen para ${product.Nombre}. Disponible ${disponible}, solicitado ${cantidadSolicitada}`,
+      );
+    }
+  }
+
+  for (const [stateKey, cantidadSolicitada] of solicitadoPorEstado) {
+    const [idItemText, state] = stateKey.split('|');
+    const idInventarioItem = Number(idItemText);
+    const routeBucket = await getEnvaseBucketQuantity(tx, idInventarioItem, {
+      ubicacion: 'RUTA',
+      estado: state as 'VACIO' | 'LLENO',
+      idRutaSesion: input.idRutaSesionOrigen,
+    });
+    const returnedFromState = inventory.session.DevolucionRuta
+      .filter((routeReturn) => !routeReturn.Anulado)
+      .flatMap((routeReturn) => routeReturn.Detalles)
+      .filter((detail) => detail.IdInventarioItem === idInventarioItem)
+      .reduce((total, detail) => {
+        const receivedInState = state === 'VACIO'
+          ? detail.CantidadEnvaseVacio
+          : detail.CantidadEnvaseLleno;
+        const damagedInState = detail.EstadoEnvaseDanado === state
+          ? detail.CantidadDanada
+          : 0;
+        return total + receivedInState + damagedInState;
+      }, 0);
+    const pendingTransfersFromState = inventory.session.TransferenciasOrigen
+      .filter((transfer) => transfer.EstadoConfirmacion === 'PENDIENTE')
+      .flatMap((transfer) => transfer.Detalles)
+      .filter((detail) =>
+        detail.IdInventarioItem === idInventarioItem && detail.EstadoEnvase === state,
+      )
+      .reduce((total, detail) => total + detail.Cantidad, 0);
+    const stateAvailable = Math.max(0, routeBucket - returnedFromState - pendingTransfersFromState);
+    if (cantidadSolicitada > stateAvailable + 0.009) {
+      const product = productsById.get(idInventarioItem)!;
+      throw new Error(
+        `Existencia insuficiente de envase ${state} en el vehículo de origen para ${product.Nombre}. Disponible ${stateAvailable}, solicitado ${cantidadSolicitada}`,
       );
     }
   }
@@ -214,8 +275,16 @@ export async function createVehicleTransferWithinTx(
   return transfer;
 }
 
-export async function createVehicleTransfer(idUsuario: number, input: CreateVehicleTransferInput) {
+export async function createVehicleTransfer(
+  idUsuario: number,
+  input: CreateVehicleTransferInput,
+  actor?: OperationalActor,
+) {
   return runSerializableTransaction(async (tx) => {
+    if (actor) {
+      await assertRouteSessionAccess(tx, input.idRutaSesionOrigen, actor);
+      await assertRouteSessionAccess(tx, input.idRutaSesionDestino, actor);
+    }
     const transfer = await createVehicleTransferWithinTx(tx, idUsuario, input);
     return toTransferDto(transfer);
   });
@@ -235,12 +304,17 @@ async function getActiveTransferOrThrow(
   return transfer;
 }
 
-export async function confirmVehicleTransfer(idTransferencia: number, idUsuario: number) {
+export async function confirmVehicleTransfer(
+  idTransferencia: number,
+  idUsuario: number,
+  actor?: OperationalActor,
+) {
   return runSerializableTransaction(async (tx) => {
     const transfer = await getActiveTransferOrThrow(tx, idTransferencia);
     if (transfer.EstadoConfirmacion !== 'PENDIENTE') {
       throw new Error('Solo una transferencia PENDIENTE puede confirmarse');
     }
+    if (actor) await assertRouteSessionAccess(tx, transfer.IdRutaSesionDestino, actor);
     await assertSessionTransferable(tx, transfer.IdRutaSesionDestino, 'destino');
     await assertSessionTransferable(tx, transfer.IdRutaSesionOrigen, 'origen');
 
@@ -259,12 +333,18 @@ export async function confirmVehicleTransfer(idTransferencia: number, idUsuario:
   });
 }
 
-export async function rejectVehicleTransfer(idTransferencia: number, idUsuario: number, motivo: string) {
+export async function rejectVehicleTransfer(
+  idTransferencia: number,
+  idUsuario: number,
+  motivo: string,
+  actor?: OperationalActor,
+) {
   return runSerializableTransaction(async (tx) => {
     const transfer = await getActiveTransferOrThrow(tx, idTransferencia);
     if (transfer.EstadoConfirmacion !== 'PENDIENTE') {
       throw new Error('Solo una transferencia PENDIENTE puede rechazarse');
     }
+    if (actor) await assertRouteSessionAccess(tx, transfer.IdRutaSesionDestino, actor);
 
     const rejected = await tx.transferenciaVehiculo.update({
       where: { Id: transfer.Id },
@@ -280,12 +360,18 @@ export async function rejectVehicleTransfer(idTransferencia: number, idUsuario: 
   });
 }
 
-export async function cancelVehicleTransfer(idTransferencia: number, idUsuario: number, motivo: string) {
+export async function cancelVehicleTransfer(
+  idTransferencia: number,
+  idUsuario: number,
+  motivo: string,
+  actor?: OperationalActor,
+) {
   return runSerializableTransaction(async (tx) => {
     const transfer = await getActiveTransferOrThrow(tx, idTransferencia);
     if (transfer.EstadoConfirmacion !== 'PENDIENTE') {
       throw new Error('Solo una transferencia PENDIENTE puede anularse; una transferencia CONFIRMADA requiere una contra-transferencia');
     }
+    if (actor) await assertRouteSessionAccess(tx, transfer.IdRutaSesionOrigen, actor);
 
     const cancelled = await tx.transferenciaVehiculo.update({
       where: { Id: transfer.Id },
@@ -304,7 +390,16 @@ export async function cancelVehicleTransfer(idTransferencia: number, idUsuario: 
 export async function listVehicleTransfers(filters: {
   idRutaSesion?: number;
   estadoConfirmacion?: string;
-}) {
+}, actor?: OperationalActor) {
+  const visibilityWhere = actor ? getRouteSessionVisibilityWhere(actor) : undefined;
+  const visibleSessionIds = visibilityWhere
+    ? (await prisma.rutaSesion.findMany({
+        where: { Anulado: false, ...visibilityWhere },
+        select: { Id: true },
+      })).map((session) => session.Id)
+    : undefined;
+  if (visibleSessionIds?.length === 0) return [];
+
   const rows = await prisma.transferenciaVehiculo.findMany({
     where: {
       Anulado: false,
@@ -317,6 +412,16 @@ export async function listVehicleTransfers(filters: {
               { IdRutaSesionOrigen: filters.idRutaSesion },
               { IdRutaSesionDestino: filters.idRutaSesion },
             ],
+          }
+        : {}),
+      ...(visibleSessionIds
+        ? {
+            AND: [{
+              OR: [
+                { IdRutaSesionOrigen: { in: visibleSessionIds } },
+                { IdRutaSesionDestino: { in: visibleSessionIds } },
+              ],
+            }],
           }
         : {}),
     },

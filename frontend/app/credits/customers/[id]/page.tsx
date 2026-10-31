@@ -44,6 +44,7 @@ function formatDate(value: string | null): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleDateString("es-GT", {
+    timeZone: "UTC",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -182,7 +183,7 @@ export default function CreditCustomerPage() {
           ) : (
             <>
               <Card>
-                <CardContent className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-5">
+                <CardContent className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-6">
                   <div>
                     <p className="text-xs text-muted-foreground">Cliente</p>
                     <p className="font-semibold">{customer.nombre}</p>
@@ -200,6 +201,12 @@ export default function CreditCustomerPage() {
                     <p className="text-xs text-muted-foreground">Crédito disponible</p>
                     <p className="text-xl font-bold text-emerald-700">
                       {formatMoney(creditAuthorization?.creditoDisponible ?? 0)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Saldo vencido</p>
+                    <p className="text-xl font-bold text-rose-700">
+                      {formatMoney(creditAuthorization?.saldoVencido ?? 0)}
                     </p>
                   </div>
                   <div>
@@ -245,6 +252,7 @@ export default function CreditCustomerPage() {
                           <TableHead className="text-right">Importe original</TableHead>
                           <TableHead className="text-right">Abonado</TableHead>
                           <TableHead className="text-right">Saldo del documento</TableHead>
+                          <TableHead>Vencimiento</TableHead>
                           <TableHead>Estado</TableHead>
                           <TableHead className="text-right">Acción</TableHead>
                         </TableRow>
@@ -276,6 +284,22 @@ export default function CreditCustomerPage() {
                             </TableCell>
                             <TableCell className="whitespace-nowrap text-right font-semibold">
                               {formatMoney(credit.saldo)}
+                              {credit.totalDevuelto > 0 ? (
+                                <p className="text-xs text-muted-foreground">
+                                  Devuelto: {formatMoney(credit.totalDevuelto)}
+                                </p>
+                              ) : null}
+                              {credit.saldoAFavor > 0 ? (
+                                <p className="text-xs text-emerald-700">
+                                  Saldo a favor: {formatMoney(credit.saldoAFavor)}
+                                </p>
+                              ) : null}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {formatDate(credit.fechaVencimiento)}
+                              {credit.saldoVencido > 0 ? (
+                                <p className="text-xs font-medium text-rose-700">Vencido</p>
+                              ) : null}
                             </TableCell>
                             <TableCell>
                               <Badge

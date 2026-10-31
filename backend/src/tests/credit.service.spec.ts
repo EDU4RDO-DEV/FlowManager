@@ -37,7 +37,10 @@ function buildPayment(id: number, monto: number, anulado: boolean) {
   };
 }
 
-function buildCredit(pagos: ReturnType<typeof buildPayment>[]) {
+function buildCredit(
+  pagos: ReturnType<typeof buildPayment>[],
+  devoluciones: Array<{ Detalles: Array<{ Cantidad: number; DetalleVenta: { PrecioUnitario: number; EsBonificacion: boolean } }> }> = [],
+) {
   return {
     Id: 12,
     IdVenta: 45,
@@ -70,6 +73,7 @@ function buildCredit(pagos: ReturnType<typeof buildPayment>[]) {
         Entidad: { NombreCompleto: 'Cliente de Prueba', Nit: '1234567-8' },
       },
       PagoVenta: pagos,
+      DevolucionesComerciales: devoluciones,
     },
   };
 }
@@ -138,6 +142,27 @@ describe('credit service', () => {
         where: { Venta: { IdCliente: 7 } },
       }),
     );
+  });
+
+  it('reconciles returned value against receivable balance without changing original amount or payments', async () => {
+    prismaMock.cuentaPorCobrar.findMany.mockResolvedValue([
+      buildCredit(
+        [buildPayment(10, 20, false)],
+        [{
+          Detalles: [{
+            Cantidad: 2,
+            DetalleVenta: { PrecioUnitario: 15, EsBonificacion: false },
+          }],
+        }],
+      ),
+    ]);
+
+    const [credit] = await listCreditsByCustomer(7);
+
+    expect(credit.totalOriginal).toBe(100);
+    expect(credit.totalDevuelto).toBe(30);
+    expect(credit.totalAbonado).toBe(20);
+    expect(credit.saldo).toBe(50);
   });
 
   it('retains annulled invoice history without counting it as an outstanding balance', async () => {

@@ -5,7 +5,13 @@ const { prismaMock, sendMock, routeAvailableQuantitiesMock } = vi.hoisted(() => 
     usuario: { findFirst: vi.fn() },
     cliente: { findFirst: vi.fn() },
     clienteCondicionCredito: { findFirst: vi.fn() },
-    cuentaPorCobrar: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn() },
+    cuentaPorCobrar: {
+      findMany: vi.fn(),
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+    },
     venta: {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
@@ -18,6 +24,8 @@ const { prismaMock, sendMock, routeAvailableQuantitiesMock } = vi.hoisted(() => 
     inventarioItem: { findFirst: vi.fn(), update: vi.fn() },
     reglaBonificacion: { findMany: vi.fn() },
     pagoVenta: { create: vi.fn() },
+    cajaSesion: { findFirst: vi.fn() },
+    movimientoCaja: { create: vi.fn() },
     $transaction: vi.fn(),
   },
   sendMock: vi.fn(),
@@ -47,6 +55,7 @@ import {
   confirmRouteProforma,
   createSale,
   getCustomerCreditAuthorization,
+  syncSaleReceivableAfterCommercialReturn,
 } from '../services/sale.service';
 
 function saleInput(condicionPago: 'CONTADO' | 'CREDITO', pagoInicial?: number) {
@@ -149,11 +158,72 @@ describe('Sale credit authorization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prismaMock.usuario.findFirst.mockResolvedValue({ Id: 1 });
+    prismaMock.cajaSesion.findFirst.mockResolvedValue({ Id: 99 });
+    prismaMock.pagoVenta.create.mockResolvedValue({ Id: 501 });
     prismaMock.$transaction.mockImplementation(
       async (callback: (tx: typeof prismaMock) => unknown) => callback(prismaMock),
     );
     sendMock.mockResolvedValue({ ok: true });
     routeAvailableQuantitiesMock.mockResolvedValue([]);
+  });
+
+  it('reduces credit use by returned quantities without changing the original receivable', async () => {
+    prismaMock.cliente.findFirst.mockResolvedValue({
+      Id: 4,
+      HabilitadoCredito: true,
+      LimiteCredito: 200,
+      Entidad: { NombreCompleto: 'Cliente de prueba', Nit: null },
+    });
+    prismaMock.clienteCondicionCredito.findFirst.mockResolvedValue(activeCreditCondition());
+    prismaMock.cuentaPorCobrar.findMany.mockResolvedValue([
+      {
+        TotalOriginal: 100,
+        FechaVencimiento: null,
+        Venta: {
+          PagoVenta: [{ Monto: 20 }],
+          DevolucionesComerciales: [{
+            Detalles: [{
+              Cantidad: 2,
+              DetalleVenta: { PrecioUnitario: 15, EsBonificacion: false },
+            }],
+          }],
+        },
+      },
+    ]);
+
+    const result = await getCustomerCreditAuthorization(4);
+
+    expect(result.saldoPendiente).toBe(50);
+    expect(result.creditoDisponible).toBe(150);
+  });
+
+  it('recalculates the receivable after a return without changing original payments', async () => {
+    prismaMock.venta.findFirst.mockResolvedValue({
+      Id: 7,
+      Anulado: false,
+      DetalleVenta: [{ Cantidad: 10, PrecioUnitario: 10, EsBonificacion: false }],
+      PagoVenta: [{ Monto: 50 }],
+      DevolucionesComerciales: [{
+        Detalles: [{
+          Cantidad: 5,
+          DetalleVenta: { PrecioUnitario: 10, EsBonificacion: false },
+        }],
+      }],
+    });
+    prismaMock.cuentaPorCobrar.findFirst.mockResolvedValue({ Id: 21, Estado: 'ACTIVO' });
+    prismaMock.cuentaPorCobrar.update.mockResolvedValue({});
+    prismaMock.venta.update.mockResolvedValue({});
+
+    await syncSaleReceivableAfterCommercialReturn(prismaMock as never, 7, 1);
+
+    expect(prismaMock.venta.update).toHaveBeenCalledWith({
+      where: { Id: 7 },
+      data: { EstadoPago: 'PAGADO' },
+    });
+    expect(prismaMock.cuentaPorCobrar.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { Id: 21 },
+      data: expect.objectContaining({ Estado: 'PAGADO' }),
+    }));
   });
 
   it('rejects direct credit-sale requests when client credit is disabled', async () => {
@@ -247,7 +317,7 @@ describe('Sale credit authorization', () => {
       });
     prismaMock.clienteCondicionCredito.findFirst.mockResolvedValue(activeCreditCondition());
     prismaMock.cuentaPorCobrar.findMany.mockResolvedValue([
-      { TotalOriginal: 5, Venta: { PagoVenta: [{ Monto: 2 }] } },
+      { TotalOriginal: 5, FechaVencimiento: null, Venta: { PagoVenta: [{ Monto: 2 }], DevolucionesComerciales: [] } },
     ]);
     prismaMock.venta.findFirst.mockResolvedValue(createdSaleRow());
     prismaMock.reglaBonificacion.findMany.mockResolvedValue([]);
@@ -278,14 +348,15 @@ describe('Sale credit authorization', () => {
 
     prismaMock.clienteCondicionCredito.findFirst.mockResolvedValue(activeCreditCondition());
     prismaMock.cuentaPorCobrar.findMany.mockResolvedValue([
-      { TotalOriginal: 100, Venta: { PagoVenta: [{ Monto: 20 }, { Monto: 30 }] } },
-      { TotalOriginal: 50, Venta: { PagoVenta: [{ Monto: 50 }] } },
-      { TotalOriginal: 80, Venta: { PagoVenta: [{ Monto: 20 }] } },
+      { TotalOriginal: 100, FechaVencimiento: null, Venta: { PagoVenta: [{ Monto: 20 }, { Monto: 30 }], DevolucionesComerciales: [] } },
+      { TotalOriginal: 50, FechaVencimiento: null, Venta: { PagoVenta: [{ Monto: 50 }], DevolucionesComerciales: [] } },
+      { TotalOriginal: 80, FechaVencimiento: null, Venta: { PagoVenta: [{ Monto: 20 }], DevolucionesComerciales: [] } },
     ]);
 
     const result = await getCustomerCreditAuthorization(4);
 
     expect(result.saldoPendiente).toBe(110);
+    expect(result.saldoVencido).toBe(0);
     expect(result.creditoDisponible).toBe(90);
     expect(prismaMock.cuentaPorCobrar.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -296,9 +367,10 @@ describe('Sale credit authorization', () => {
         }),
         select: expect.objectContaining({
           Venta: {
-            select: {
+            select: expect.objectContaining({
               PagoVenta: { where: { Anulado: false }, select: { Monto: true } },
-            },
+              DevolucionesComerciales: expect.any(Object),
+            }),
           },
         }),
       }),
@@ -373,6 +445,7 @@ describe('Sale credit authorization', () => {
         Anulado: false,
         DetalleVenta: [{ Cantidad: 1, PrecioUnitario: 10, EsBonificacion: false }],
         PagoVenta: [{ Monto: 2 }],
+        DevolucionesComerciales: [],
       })
       .mockResolvedValueOnce(finalSale);
     prismaMock.venta.updateMany.mockResolvedValue({ count: 1 });

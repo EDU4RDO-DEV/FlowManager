@@ -28,7 +28,7 @@ interface HandoffTabProps {
   // Historial de sesiones, usado únicamente para sugerir el chofer/vendedor habitual
   // del vehículo entrante seleccionado (no obliga a usarlo).
   sessionsHistory: RutaSesionDto[];
-  employeeOptions: Array<{ userId: number; nombre: string }>;
+  employeeOptions: Array<{ employeeId: number; userId: number | null; nombre: string }>;
   handoffProductOptions: DispatchProductDto[];
   handoffProductId: string;
   setHandoffProductId: (value: string) => void;
@@ -81,7 +81,7 @@ export function HandoffTab({
             Sustituye este vehículo por otro sin cerrar la sesión actual: ambos pueden seguir operando.
             Indica solo lo que se transfiera ahora; el resto permanece bajo custodia de este vehículo
             hasta transferirse después o hasta cerrar esta sesión por el flujo normal.
-            {!canCreate ? " Tu rol no tiene permiso para registrar relevos." : ""}
+            {!canCreate ? " Tu rol no cuenta con los permisos requeridos para registrar relevos y consultar los catálogos necesarios." : ""}
           </p>
         </div>
 
@@ -112,8 +112,12 @@ export function HandoffTab({
                 setHandoffForm((prev) => ({
                   ...prev,
                   idVehiculo,
-                  idUsuarioChofer: !prev.idUsuarioChofer && habitual ? String(habitual.idUsuarioChofer) : prev.idUsuarioChofer,
-                  idUsuarioVendedor: !prev.idUsuarioVendedor && habitual ? String(habitual.idUsuarioVendedor) : prev.idUsuarioVendedor,
+                  idEmpleadoChofer: !prev.idEmpleadoChofer && habitual
+                    ? String(habitual.idEmpleadoChofer ?? employeeOptions.find((item) => item.userId === habitual.idUsuarioChofer)?.employeeId ?? "")
+                    : prev.idEmpleadoChofer,
+                  idEmpleadoVendedor: !prev.idEmpleadoVendedor && habitual
+                    ? String(habitual.idEmpleadoVendedor ?? employeeOptions.find((item) => item.userId === habitual.idUsuarioVendedor)?.employeeId ?? "")
+                    : prev.idEmpleadoVendedor,
                 }));
               }}
             >
@@ -127,17 +131,17 @@ export function HandoffTab({
             <Label>Chofer entrante</Label>
             <select
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={handoffForm.idUsuarioChofer}
-              onChange={(event) => setHandoffForm((prev) => ({ ...prev, idUsuarioChofer: event.target.value }))}
+              value={handoffForm.idEmpleadoChofer}
+              onChange={(event) => setHandoffForm((prev) => ({ ...prev, idEmpleadoChofer: event.target.value }))}
             >
               <option value="">Seleccionar</option>
               {employeeOptions.map((item) => (
-                <option key={item.userId} value={item.userId}>{item.nombre}</option>
+                <option key={item.employeeId} value={item.employeeId}>{item.nombre}</option>
               ))}
             </select>
             {employeeOptions.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                No hay personal disponible. Solo aparecen empleados con cuenta de usuario vinculada.{" "}
+                No hay empleados activos disponibles para asignar.{" "}
                 <Link href="/employees" target="_blank" className="underline">Revisar empleados</Link>.
               </p>
             ) : null}
@@ -146,12 +150,12 @@ export function HandoffTab({
             <Label>Vendedor entrante</Label>
             <select
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={handoffForm.idUsuarioVendedor}
-              onChange={(event) => setHandoffForm((prev) => ({ ...prev, idUsuarioVendedor: event.target.value }))}
+              value={handoffForm.idEmpleadoVendedor}
+              onChange={(event) => setHandoffForm((prev) => ({ ...prev, idEmpleadoVendedor: event.target.value }))}
             >
               <option value="">Seleccionar</option>
               {employeeOptions.map((item) => (
-                <option key={item.userId} value={item.userId}>{item.nombre}</option>
+                <option key={item.employeeId} value={item.employeeId}>{item.nombre}</option>
               ))}
             </select>
           </div>

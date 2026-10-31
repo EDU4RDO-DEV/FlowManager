@@ -27,7 +27,10 @@ export interface CreditDto {
   idVenta: number;
   totalOriginal: number;
   totalAbonado: number;
+  totalDevuelto: number;
   saldo: number;
+  saldoAFavor: number;
+  saldoVencido: number;
   estado: "ACTIVO" | "PAGADO" | "ANULADO";
   fechaCreacion: string | null;
   fechaVencimiento: string | null;
@@ -62,6 +65,7 @@ export interface CustomerCreditAuthorization {
   habilitadoCredito: boolean;
   limiteCredito: number;
   saldoPendiente: number;
+  saldoVencido: number;
   creditoDisponible: number;
   condicionVigente: {
     id: number;

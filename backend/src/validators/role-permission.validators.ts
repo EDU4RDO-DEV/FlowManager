@@ -15,6 +15,7 @@ export const rbacModuleKeys = [
   'compras',
   'inventario',
   'planilla',
+  'caja',
   'sesiones',
   'produccion',
   'envases',

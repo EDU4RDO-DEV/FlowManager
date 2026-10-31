@@ -44,7 +44,11 @@ export async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion:
       DespachoRuta: {
         where: { Anulado: false },
         orderBy: { FechaRegistro: 'asc' },
-        include: { Detalles: true },
+        include: {
+          Detalles: {
+            include: { InventarioItem: { select: { EsEnvaseRetornable: true } } },
+          },
+        },
       },
       DevolucionRuta: {
         orderBy: { FechaRegistro: 'desc' },
@@ -77,11 +81,20 @@ export async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion:
       },
       TransferenciasOrigen: {
         where: { Anulado: false, EstadoConfirmacion: { in: ['PENDIENTE', 'CONFIRMADA'] } },
-        select: { Detalles: true },
+        select: {
+          EstadoConfirmacion: true,
+          Detalles: {
+            include: { InventarioItem: { select: { EsEnvaseRetornable: true } } },
+          },
+        },
       },
       TransferenciasDestino: {
         where: { Anulado: false, EstadoConfirmacion: 'CONFIRMADA' },
-        select: { Detalles: true },
+        select: {
+          Detalles: {
+            include: { InventarioItem: { select: { EsEnvaseRetornable: true } } },
+          },
+        },
       },
     },
   });
@@ -215,48 +228,72 @@ export async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion:
     ? session.DespachoRuta[session.DespachoRuta.length - 1]
     : null;
 
-  // Varios despachos activos (reabastecimiento, T-F2-DIST-02) se agregan por
-  // item + estado de envase; de lo contrario cada despacho duplicaría el cálculo
-  // de "disponible" al compararse contra el total vendido/devuelto de la sesión completa.
+  // La carga se presenta por producto. Mantener una fila por estado de envase
+  // duplicaba ventas, devoluciones, reservas y daños en el saldo de la sesión.
   type DispatchLine = {
     idInventarioItem: number;
     nombre: string;
     unidadMedida: string | null;
-    estadoEnvase: string | null;
     cantidad: number;
+    esEnvaseRetornable: boolean;
   };
-  const dispatchByKey = new Map<string, DispatchLine>();
+  const dispatchByItem = new Map<number, DispatchLine>();
   for (const dispatch of session.DespachoRuta) {
     for (const detail of dispatch.Detalles) {
-      const key = `${detail.IdInventarioItem}|${detail.EstadoEnvase ?? ''}`;
-      const existing = dispatchByKey.get(key);
-      dispatchByKey.set(key, {
+      const existing = dispatchByItem.get(detail.IdInventarioItem);
+      dispatchByItem.set(detail.IdInventarioItem, {
         idInventarioItem: detail.IdInventarioItem,
-        nombre: detail.NombreSnapshot,
-        unidadMedida: detail.UnidadMedidaSnapshot,
-        estadoEnvase: detail.EstadoEnvase,
+        nombre: existing?.nombre ?? detail.NombreSnapshot,
+        unidadMedida: existing?.unidadMedida ?? detail.UnidadMedidaSnapshot,
         cantidad: roundQuantity((existing?.cantidad ?? 0) + detail.Cantidad),
+        esEnvaseRetornable: Boolean(
+          existing?.esEnvaseRetornable || detail.InventarioItem?.EsEnvaseRetornable || detail.EstadoEnvase,
+        ),
       });
     }
   }
 
-  const transferOutByKey = new Map<string, number>();
+  const transferOutByItem = new Map<number, number>();
+  const transferInByItem = new Map<number, number>();
   for (const transfer of session.TransferenciasOrigen) {
     for (const detail of transfer.Detalles) {
-      const key = `${detail.IdInventarioItem}|${detail.EstadoEnvase ?? ''}`;
-      transferOutByKey.set(key, roundQuantity((transferOutByKey.get(key) ?? 0) + detail.Cantidad));
+      const existing = dispatchByItem.get(detail.IdInventarioItem);
+      dispatchByItem.set(detail.IdInventarioItem, {
+        idInventarioItem: detail.IdInventarioItem,
+        nombre: existing?.nombre ?? detail.NombreSnapshot,
+        unidadMedida: existing?.unidadMedida ?? detail.UnidadMedidaSnapshot,
+        cantidad: existing?.cantidad ?? 0,
+        esEnvaseRetornable: Boolean(
+          existing?.esEnvaseRetornable || detail.InventarioItem?.EsEnvaseRetornable || detail.EstadoEnvase,
+        ),
+      });
+      transferOutByItem.set(
+        detail.IdInventarioItem,
+        roundQuantity((transferOutByItem.get(detail.IdInventarioItem) ?? 0) + detail.Cantidad),
+      );
     }
   }
 
-  const transferInByKey = new Map<string, number>();
   for (const transfer of session.TransferenciasDestino) {
     for (const detail of transfer.Detalles) {
-      const key = `${detail.IdInventarioItem}|${detail.EstadoEnvase ?? ''}`;
-      transferInByKey.set(key, roundQuantity((transferInByKey.get(key) ?? 0) + detail.Cantidad));
+      const existing = dispatchByItem.get(detail.IdInventarioItem);
+      dispatchByItem.set(detail.IdInventarioItem, {
+        idInventarioItem: detail.IdInventarioItem,
+        nombre: existing?.nombre ?? detail.NombreSnapshot,
+        unidadMedida: existing?.unidadMedida ?? detail.UnidadMedidaSnapshot,
+        cantidad: existing?.cantidad ?? 0,
+        esEnvaseRetornable: Boolean(
+          existing?.esEnvaseRetornable || detail.InventarioItem?.EsEnvaseRetornable || detail.EstadoEnvase,
+        ),
+      });
+      transferInByItem.set(
+        detail.IdInventarioItem,
+        roundQuantity((transferInByItem.get(detail.IdInventarioItem) ?? 0) + detail.Cantidad),
+      );
     }
   }
 
-  const lines = Array.from(dispatchByKey.entries()).map(([key, detail]) => {
+  const lines = Array.from(dispatchByItem.values()).map((detail) => {
     const sold = soldByItem.get(detail.idInventarioItem) ?? 0;
     const commercialReturn = commercialReturnByItem.get(detail.idInventarioItem);
     const commercialReturned = commercialReturn?.cantidad ?? 0;
@@ -268,8 +305,8 @@ export async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion:
     const envasePrestado = envaseLoanedByItem.get(detail.idInventarioItem) ?? 0;
     const envaseDevuelto = envaseReturnedByItem.get(detail.idInventarioItem) ?? 0;
     const envaseBaja = envaseRetiredByItem.get(detail.idInventarioItem) ?? 0;
-    const transferidoSaliente = transferOutByKey.get(key) ?? 0;
-    const transferidoRecibido = transferInByKey.get(key) ?? 0;
+    const transferidoSaliente = transferOutByItem.get(detail.idInventarioItem) ?? 0;
+    const transferidoRecibido = transferInByItem.get(detail.idInventarioItem) ?? 0;
     const pendingReconciliation = roundQuantity(
       detail.cantidad
         - sold
@@ -288,7 +325,8 @@ export async function loadRouteInventory(tx: RouteInventoryClient, idRutaSesion:
       nombre: detail.nombre,
       unidadMedida: detail.unidadMedida,
       despachado: detail.cantidad,
-      estadoEnvaseDespachado: detail.estadoEnvase,
+      estadoEnvaseDespachado: null,
+      esEnvaseRetornable: detail.esEnvaseRetornable,
       vendido: sold,
       devolucionComercial: commercialReturned,
       noVendibleComercial: commercialNonSellable,
@@ -319,8 +357,8 @@ export async function getRouteAvailableQuantities(tx: RouteInventoryClient, idRu
   if (inventory.session.Estado !== 'EN_CURSO') {
     throw new Error('La sesión de ruta debe estar EN_CURSO para vender desde el vehículo');
   }
-  if (!inventory.despacho) {
-    throw new Error('No existe un despacho confirmado para la sesión de ruta');
+  if (inventory.lines.length === 0) {
+    throw new Error('No existe carga disponible para la sesión de ruta');
   }
   // D-DIST-06: una devolución (incluso parcial/intermedia) ya no bloquea ventas por sí
   // sola. El cálculo agregado de "disponible" (que ya descuenta lo devuelto) es la única
@@ -697,8 +735,8 @@ export async function createRouteReturn(
     if (inventory.session.Estado !== 'EN_CURSO') {
       throw new Error('La sesión de ruta debe estar EN_CURSO para registrar devoluciones');
     }
-    if (!inventory.despacho) {
-      throw new Error('La sesión no tiene un despacho confirmado');
+    if (inventory.lines.length === 0) {
+      throw new Error('La sesión no tiene inventario recibido para devolver');
     }
     // D-DIST-06 (aprobado): se permiten varias devoluciones por sesión (p. ej. un conteo
     // físico intermedio seguido de reabastecimiento y venta, con la devolución final del
