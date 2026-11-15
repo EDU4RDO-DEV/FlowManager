@@ -203,7 +203,7 @@ export default function EditEmployeePage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="empleados" action="update">
       <DashboardShell
         title="Editar Empleado"
         description="Submodulo para actualizar informacion laboral y de contacto."

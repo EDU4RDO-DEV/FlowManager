@@ -394,7 +394,7 @@ export default function LogisticsRoutesPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="logistica" action="read">
       <DashboardShell
         title="Rutas y Distribución"
         description="Gestión de rutas, sesiones operativas y asignación de chofer, vendedor y vehículo."

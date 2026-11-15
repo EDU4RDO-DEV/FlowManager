@@ -223,7 +223,7 @@ export default function LogisticsVehiclesPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="logistica" action="read">
       <DashboardShell
         title="Vehículos"
         description="Administración de unidades de flota, estado operativo y disponibilidad para rutas."

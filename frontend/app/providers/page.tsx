@@ -30,6 +30,7 @@ import {
   ProvidersTableSkeleton,
 } from "@/app/providers/_components/providers-skeletons";
 import { getApiErrorMessage } from "@/lib/api";
+import { hasModulePermission } from "@/lib/rbac";
 import {
   deleteProvider,
   listAnulatedProviders,
@@ -47,6 +48,9 @@ function formatDate(value: string | null): string {
 
 export default function ProvidersPage() {
   const { user } = useAuth();
+  const canCreateProviders = hasModulePermission(user, "proveedores", "create");
+  const canUpdateProviders = hasModulePermission(user, "proveedores", "update");
+  const canDeleteProviders = hasModulePermission(user, "proveedores", "delete");
   const [activeProviders, setActiveProviders] = useState<ProviderDto[]>([]);
   const [anulatedProviders, setAnulatedProviders] = useState<ProviderDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -153,6 +157,11 @@ export default function ProvidersPage() {
   }
 
   async function restoreProviderFromTrash(candidate: ProviderDto) {
+    if (!canUpdateProviders) {
+      toast.error("No tienes permisos para restaurar proveedores.");
+      return;
+    }
+
     try {
       const restored = await restoreProvider(
         candidate.id,
@@ -167,7 +176,7 @@ export default function ProvidersPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="proveedores" action="read">
       <DashboardShell
         title="Proveedores"
         description="Gestion de abastecimiento, contactos comerciales y cartera de proveedores."
@@ -223,15 +232,17 @@ export default function ProvidersPage() {
               {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
               Recargar
             </Button>
-            <Button
-              asChild
-              className="h-10 px-4 text-sm bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
-            >
-              <Link href="/providers/create">
-                <Plus className="size-4" />
-                Nuevo proveedor
-              </Link>
-            </Button>
+            {canCreateProviders ? (
+              <Button
+                asChild
+                className="h-10 px-4 text-sm bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
+              >
+                <Link href="/providers/create">
+                  <Plus className="size-4" />
+                  Nuevo proveedor
+                </Link>
+              </Button>
+            ) : null}
           </div>
 
           <Card className="module-page-card rounded-xl bg-background">
@@ -286,25 +297,29 @@ export default function ProvidersPage() {
                                 <TableCell>{formatDate(provider.fechaRegistro)}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-2">
-                                    <Button
-                                      size="xs"
-                                      variant="outline"
-                                      asChild
-                                      className="hover:bg-muted/50 transition-colors"
-                                    >
-                                      <Link href={`/providers/edit/${provider.id}`}>
-                                        <Pencil className="size-3.5" />
-                                        Editar
-                                      </Link>
-                                    </Button>
-                                    <Button
-                                      size="xs"
-                                      variant="destructive"
-                                      onClick={() => setDeleteCandidate(provider)}
-                                    >
-                                      <Trash2 className="size-3.5" />
-                                      Anular
-                                    </Button>
+                                    {canUpdateProviders ? (
+                                      <Button
+                                        size="xs"
+                                        variant="outline"
+                                        asChild
+                                        className="hover:bg-muted/50 transition-colors"
+                                      >
+                                        <Link href={`/providers/edit/${provider.id}`}>
+                                          <Pencil className="size-3.5" />
+                                          Editar
+                                        </Link>
+                                      </Button>
+                                    ) : null}
+                                    {canDeleteProviders ? (
+                                      <Button
+                                        size="xs"
+                                        variant="destructive"
+                                        onClick={() => setDeleteCandidate(provider)}
+                                      >
+                                        <Trash2 className="size-3.5" />
+                                        Anular
+                                      </Button>
+                                    ) : null}
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -356,6 +371,7 @@ export default function ProvidersPage() {
                                       size="xs"
                                       variant="secondary"
                                       onClick={() => restoreProviderFromTrash(provider)}
+                                      disabled={!canUpdateProviders}
                                     >
                                       <RotateCcw className="size-3.5" />
                                       Restaurar

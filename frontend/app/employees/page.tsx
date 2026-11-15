@@ -30,6 +30,7 @@ import {
   EmployeesTableSkeleton,
 } from "@/app/employees/_components/employees-skeletons";
 import { getApiErrorMessage } from "@/lib/api";
+import { hasModulePermission } from "@/lib/rbac";
 import {
   deleteEmployee,
   listAnulatedEmployees,
@@ -55,6 +56,9 @@ function formatCurrency(value: number): string {
 
 export default function EmployeesPage() {
   const { user } = useAuth();
+  const canCreateEmployees = hasModulePermission(user, "empleados", "create");
+  const canUpdateEmployees = hasModulePermission(user, "empleados", "update");
+  const canDeleteEmployees = hasModulePermission(user, "empleados", "delete");
   const [activeEmployees, setActiveEmployees] = useState<EmployeeDto[]>([]);
   const [anulatedEmployees, setAnulatedEmployees] = useState<EmployeeDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -163,6 +167,11 @@ export default function EmployeesPage() {
   }
 
   async function restoreEmployeeFromTrash(candidate: EmployeeDto) {
+    if (!canUpdateEmployees) {
+      toast.error("No tienes permisos para restaurar empleados.");
+      return;
+    }
+
     try {
       const restored = await restoreEmployee(
         candidate.id,
@@ -177,7 +186,7 @@ export default function EmployeesPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="empleados" action="read">
       <DashboardShell
         title="Empleados"
         description="Gestion de personal, estructura salarial y control operativo por puesto."
@@ -233,15 +242,17 @@ export default function EmployeesPage() {
               {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
               Recargar
             </Button>
-            <Button
-              asChild
-              className="h-10 px-4 text-sm bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
-            >
-              <Link href="/employees/create">
-                <Plus className="size-4" />
-                Nuevo empleado
-              </Link>
-            </Button>
+            {canCreateEmployees ? (
+              <Button
+                asChild
+                className="h-10 px-4 text-sm bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
+              >
+                <Link href="/employees/create">
+                  <Plus className="size-4" />
+                  Nuevo empleado
+                </Link>
+              </Button>
+            ) : null}
           </div>
 
           <Card className="module-page-card rounded-xl bg-background">
@@ -318,25 +329,29 @@ export default function EmployeesPage() {
                                 <TableCell>{formatDate(employee.fechaContratacion)}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-2">
-                                    <Button
-                                      size="xs"
-                                      variant="outline"
-                                      asChild
-                                      className="hover:bg-muted/50 transition-colors"
-                                    >
-                                      <Link href={`/employees/edit/${employee.id}`}>
-                                        <Pencil className="size-3.5" />
-                                        Editar
-                                      </Link>
-                                    </Button>
-                                    <Button
-                                      size="xs"
-                                      variant="destructive"
-                                      onClick={() => setDeleteCandidate(employee)}
-                                    >
-                                      <Trash2 className="size-3.5" />
-                                      Anular
-                                    </Button>
+                                    {canUpdateEmployees ? (
+                                      <Button
+                                        size="xs"
+                                        variant="outline"
+                                        asChild
+                                        className="hover:bg-muted/50 transition-colors"
+                                      >
+                                        <Link href={`/employees/edit/${employee.id}`}>
+                                          <Pencil className="size-3.5" />
+                                          Editar
+                                        </Link>
+                                      </Button>
+                                    ) : null}
+                                    {canDeleteEmployees ? (
+                                      <Button
+                                        size="xs"
+                                        variant="destructive"
+                                        onClick={() => setDeleteCandidate(employee)}
+                                      >
+                                        <Trash2 className="size-3.5" />
+                                        Anular
+                                      </Button>
+                                    ) : null}
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -390,6 +405,7 @@ export default function EmployeesPage() {
                                       size="xs"
                                       variant="secondary"
                                       onClick={() => restoreEmployeeFromTrash(employee)}
+                                      disabled={!canUpdateEmployees}
                                     >
                                       <RotateCcw className="size-3.5" />
                                       Restaurar

@@ -135,7 +135,7 @@ sin sobrescribir la factura original.
 
 - RBAC por modulo/accion (`read`, `create`, `update`, `delete`).
 - Middleware `requireModulePermission(module, action)`.
-- Matriz de permisos centralizada por grupos de rol.
+- Matriz de permisos centralizada por grupos de rol; cualquier rol puede configurarse como solo-lectura otorgando únicamente la acción `read` en cada módulo desde Roles → Permisos por módulo.
 - `produccion:allow-negative-stock` habilita saldos negativos sólo al confirmar fabricación; el seed lo concede al Administrador y no a los demás roles.
 
 ## Relacion Usuario-Empleado

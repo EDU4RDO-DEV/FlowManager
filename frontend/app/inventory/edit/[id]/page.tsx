@@ -182,7 +182,7 @@ export default function EditProductPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="inventario" action="update">
       <DashboardShell
         title="Editar Producto"
         description="Submodulo para actualizar catalogo, costos y precios."

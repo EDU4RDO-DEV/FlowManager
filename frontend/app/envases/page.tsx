@@ -417,7 +417,7 @@ export default function EnvasesPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="envases" action="read">
       <DashboardShell
         title="Envases Retornables"
         description="Control de préstamos y devoluciones de envases a clientes."

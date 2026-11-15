@@ -216,7 +216,7 @@ export default function QualityPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="calidad" action="read">
       <DashboardShell
         title="Control de Calidad"
         description="Registro diario de pH y cloro del agua, antes y después de filtrado."

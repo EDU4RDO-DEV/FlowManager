@@ -38,6 +38,7 @@ import {
 import { InventoryEmptyState } from "@/app/inventory/_components/inventory-empty-state";
 import { CardSkeleton, TableSkeleton } from "@/app/inventory/_components/inventory-skeletons";
 import { getApiErrorMessage } from "@/lib/api";
+import { hasModulePermission } from "@/lib/rbac";
 import {
   deleteProduct,
   listReturnableInventoryBalances,
@@ -68,6 +69,9 @@ type CategoryFilter = "" | "PRODUCTO_TERMINADO" | "MATERIA_PRIMA" | "INSUMO";
 
 export default function InventoryPage() {
   const { user } = useAuth();
+  const canCreateProducts = hasModulePermission(user, "inventario", "create");
+  const canUpdateProducts = hasModulePermission(user, "inventario", "update");
+  const canDeleteProducts = hasModulePermission(user, "inventario", "delete");
   const [activeProducts, setActiveProducts] = useState<ProductDto[]>([]);
   const [anulatedProducts, setAnulatedProducts] = useState<ProductDto[]>([]);
   const [returnableBalances, setReturnableBalances] = useState<ReturnableInventoryBalancesDto | null>(null);
@@ -208,6 +212,11 @@ export default function InventoryPage() {
   }
 
   async function restoreProductFromTrash(candidate: ProductDto) {
+    if (!canUpdateProducts) {
+      toast.error("No tienes permisos para restaurar productos.");
+      return;
+    }
+
     try {
       const restored = await restoreProduct(
         candidate.id,
@@ -223,7 +232,7 @@ export default function InventoryPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="inventario" action="read">
       <DashboardShell
         title="Inventario"
         description="Catalogo maestro de productos, costos, precios y existencias."
@@ -279,15 +288,17 @@ export default function InventoryPage() {
               {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
               Recargar
             </Button>
-            <Button
-              asChild
-              className="h-10 px-4 text-sm bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
-            >
-              <Link href="/inventory/create">
-                <Plus className="size-4" />
-                Nuevo producto
-              </Link>
-            </Button>
+            {canCreateProducts ? (
+              <Button
+                asChild
+                className="h-10 px-4 text-sm bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
+              >
+                <Link href="/inventory/create">
+                  <Plus className="size-4" />
+                  Nuevo producto
+                </Link>
+              </Button>
+            ) : null}
           </div>
 
           <Card className="module-page-card rounded-xl bg-background">
@@ -446,25 +457,29 @@ export default function InventoryPage() {
                                         </Link>
                                       </Button>
                                     )}
-                                    <Button
-                                      size="xs"
-                                      variant="outline"
-                                      asChild
-                                      className="hover:bg-muted/50 transition-colors"
-                                    >
-                                      <Link href={`/inventory/edit/${product.id}`}>
-                                        <Pencil className="size-3.5" />
-                                        Editar
-                                      </Link>
-                                    </Button>
-                                    <Button
-                                      size="xs"
-                                      variant="destructive"
-                                      onClick={() => setDeleteCandidate(product)}
-                                    >
-                                      <Trash2 className="size-3.5" />
-                                      Anular
-                                    </Button>
+                                    {canUpdateProducts ? (
+                                      <Button
+                                        size="xs"
+                                        variant="outline"
+                                        asChild
+                                        className="hover:bg-muted/50 transition-colors"
+                                      >
+                                        <Link href={`/inventory/edit/${product.id}`}>
+                                          <Pencil className="size-3.5" />
+                                          Editar
+                                        </Link>
+                                      </Button>
+                                    ) : null}
+                                    {canDeleteProducts ? (
+                                      <Button
+                                        size="xs"
+                                        variant="destructive"
+                                        onClick={() => setDeleteCandidate(product)}
+                                      >
+                                        <Trash2 className="size-3.5" />
+                                        Anular
+                                      </Button>
+                                    ) : null}
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -527,6 +542,7 @@ export default function InventoryPage() {
                                       size="xs"
                                       variant="secondary"
                                       onClick={() => restoreProductFromTrash(product)}
+                                      disabled={!canUpdateProducts}
                                     >
                                       <RotateCcw className="size-3.5" />
                                       Restaurar

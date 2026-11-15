@@ -23,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { hasModulePermission } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { ClientsEmptyState } from "@/app/clients/_components/clients-empty-state";
 import {
@@ -47,6 +48,9 @@ function formatDate(value: string | null): string {
 
 export default function ClientsPage() {
   const { user } = useAuth();
+  const canCreateClients = hasModulePermission(user, "clientes", "create");
+  const canUpdateClients = hasModulePermission(user, "clientes", "update");
+  const canDeleteClients = hasModulePermission(user, "clientes", "delete");
   const [activeClients, setActiveClients] = useState<ClientDto[]>([]);
   const [anulatedClients, setAnulatedClients] = useState<ClientDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -155,6 +159,11 @@ export default function ClientsPage() {
   }
 
   async function restoreClientFromTrash(candidate: ClientDto) {
+    if (!canUpdateClients) {
+      toast.error("No tienes permisos para restaurar clientes.");
+      return;
+    }
+
     try {
       const restored = await restoreClient(
         candidate.id,
@@ -225,15 +234,17 @@ export default function ClientsPage() {
               {isLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
               Recargar
             </Button>
-            <Button
-              asChild
-              className="h-10 px-4 text-sm bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
-            >
-              <Link href="/clients/create">
-                <Plus className="size-4" />
-                Nuevo cliente
-              </Link>
-            </Button>
+            {canCreateClients ? (
+              <Button
+                asChild
+                className="h-10 px-4 text-sm bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400 transition-colors"
+              >
+                <Link href="/clients/create">
+                  <Plus className="size-4" />
+                  Nuevo cliente
+                </Link>
+              </Button>
+            ) : null}
           </div>
 
           <Card className="module-page-card rounded-xl bg-background">
@@ -292,25 +303,29 @@ export default function ClientsPage() {
                                 <TableCell>{formatDate(client.fechaRegistro)}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-2">
-                                    <Button
-                                      size="xs"
-                                      variant="outline"
-                                      asChild
-                                      className="hover:bg-muted/50 transition-colors"
-                                    >
-                                      <Link href={`/clients/edit/${client.id}`}>
-                                        <Pencil className="size-3.5" />
-                                        Editar
-                                      </Link>
-                                    </Button>
-                                    <Button
-                                      size="xs"
-                                      variant="destructive"
-                                      onClick={() => setDeleteCandidate(client)}
-                                    >
-                                      <Trash2 className="size-3.5" />
-                                      Anular
-                                    </Button>
+                                    {canUpdateClients ? (
+                                      <Button
+                                        size="xs"
+                                        variant="outline"
+                                        asChild
+                                        className="hover:bg-muted/50 transition-colors"
+                                      >
+                                        <Link href={`/clients/edit/${client.id}`}>
+                                          <Pencil className="size-3.5" />
+                                          Editar
+                                        </Link>
+                                      </Button>
+                                    ) : null}
+                                    {canDeleteClients ? (
+                                      <Button
+                                        size="xs"
+                                        variant="destructive"
+                                        onClick={() => setDeleteCandidate(client)}
+                                      >
+                                        <Trash2 className="size-3.5" />
+                                        Anular
+                                      </Button>
+                                    ) : null}
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -364,6 +379,7 @@ export default function ClientsPage() {
                                       size="xs"
                                       variant="secondary"
                                       onClick={() => restoreClientFromTrash(client)}
+                                      disabled={!canUpdateClients}
                                     >
                                       <RotateCcw className="size-3.5" />
                                       Restaurar

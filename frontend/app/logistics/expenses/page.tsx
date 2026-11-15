@@ -246,7 +246,7 @@ export default function LogisticsExpensesPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="logistica" action="read">
       <DashboardShell
         title="Gastos de Vehículo"
         description="Registro de gastos por sesión de ruta con control de pago y comprobantes."

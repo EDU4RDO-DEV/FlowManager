@@ -4,15 +4,16 @@ const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
     $transaction: vi.fn(),
     rol: { findFirst: vi.fn() },
+    usuario: { findFirst: vi.fn() },
     moduloSistema: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), findMany: vi.fn() },
     accionSistema: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), findMany: vi.fn() },
-    rolPermiso: { findMany: vi.fn() },
+    rolPermiso: { findMany: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn(), update: vi.fn(), create: vi.fn() },
   },
 }));
 
 vi.mock('../config/prisma', () => ({ prisma: prismaMock }));
 
-import { listRolePermissions } from '../services/role-permission.service';
+import { listRolePermissions, updateRolePermissions } from '../services/role-permission.service';
 import { rbacActionKeys, rbacModuleKeys } from '../validators/role-permission.validators';
 
 describe('role permission catalog', () => {
@@ -22,6 +23,7 @@ describe('role permission catalog', () => {
       async (callback: (tx: typeof prismaMock) => Promise<unknown>) => callback(prismaMock),
     );
     prismaMock.rol.findFirst.mockResolvedValue({ Id: 1 });
+    prismaMock.usuario.findFirst.mockResolvedValue({ Id: 2 });
     prismaMock.moduloSistema.findFirst.mockImplementation(
       ({ where }: { where: { Clave: string } }) =>
         where.Clave === 'despacho'
@@ -67,5 +69,30 @@ describe('role permission catalog', () => {
       'update',
       'delete',
     ]);
+  });
+
+  it('revokes every active duplicate grant when a permission is disabled', async () => {
+    prismaMock.rolPermiso.updateMany.mockResolvedValue({ count: 2 });
+
+    await updateRolePermissions(1, 2, [
+      { moduleKey: 'ventas', action: 'create', permitido: false },
+    ]);
+
+    expect(prismaMock.rolPermiso.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          IdRol: 1,
+          IdModuloSistema: rbacModuleKeys.indexOf('ventas') + 1,
+          IdAccionSistema: rbacActionKeys.indexOf('create') + 1,
+          Anulado: false,
+        },
+        data: expect.objectContaining({
+          Permitido: false,
+          Anulado: true,
+          IdUsuarioModificador: 2,
+          IdUsuarioAnulador: 2,
+        }),
+      }),
+    );
   });
 });

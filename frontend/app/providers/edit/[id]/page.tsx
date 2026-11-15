@@ -118,7 +118,7 @@ export default function EditProviderPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="proveedores" action="update">
       <DashboardShell
         title="Editar Proveedor"
         description="Submodulo para actualizar datos comerciales y de contacto."

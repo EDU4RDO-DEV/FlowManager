@@ -142,6 +142,38 @@ describe('A01 auth middleware invalidation', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('allows read-only roles access when the persisted read grant exists', async () => {
+    prismaMock.rol.findFirst.mockResolvedValueOnce({ Id: 7 });
+    prismaMock.$queryRaw
+      .mockResolvedValueOnce([{ total: 3 }])
+      .mockResolvedValueOnce([{ total: 1 }])
+      .mockResolvedValueOnce([{ total: 1 }]);
+    const request = { auth: { idRol: 7 } } as unknown as Request;
+    const response = makeResponse();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await requireModulePermission('ventas', 'read')(request, response, next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(response.status).not.toHaveBeenCalled();
+  });
+
+  it('denies read-only roles write access when no persisted create grant exists', async () => {
+    prismaMock.rol.findFirst.mockResolvedValueOnce({ Id: 7 });
+    prismaMock.$queryRaw
+      .mockResolvedValueOnce([{ total: 3 }])
+      .mockResolvedValueOnce([{ total: 1 }])
+      .mockResolvedValueOnce([{ total: 0 }]);
+    const request = { auth: { idRol: 7 } } as unknown as Request;
+    const response = makeResponse();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await requireModulePermission('ventas', 'create')(request, response, next);
+
+    expect(response.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('allows bootstrap registration only while no active administrator exists', async () => {
     prismaMock.rol.findFirst.mockResolvedValueOnce(null);
     const response = makeResponse();

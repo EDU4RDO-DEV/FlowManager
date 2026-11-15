@@ -240,7 +240,7 @@ export default function LogisticsMaintenancePage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="logistica" action="read">
       <DashboardShell
         title="Mantenimiento de Vehículos"
         description="Control de mantenimiento preventivo y correctivo de la flota."

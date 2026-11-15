@@ -95,7 +95,7 @@ export default function InventoryStructureIndexPage() {
   }, [query]);
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="inventario" action="read">
       <DashboardShell
         title="Estructura / Recetas (BOM)"
         description="Selecciona un producto que permita recetas para gestionar su estructura"

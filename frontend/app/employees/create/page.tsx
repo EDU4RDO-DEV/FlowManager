@@ -143,7 +143,7 @@ export default function CreateEmployeePage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="empleados" action="create">
       <DashboardShell
         title="Crear Empleado"
         description="Submodulo para registrar personal operativo y administrativo."

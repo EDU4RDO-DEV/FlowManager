@@ -79,7 +79,7 @@ export default function CreateProviderPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="proveedores" action="create">
       <DashboardShell
         title="Crear Proveedor"
         description="Submodulo para registrar proveedores y contactos de abastecimiento."

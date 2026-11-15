@@ -37,6 +37,7 @@ import { AdjustmentEmptyState } from "@/app/inventory/adjustments/_components/ad
 import { AdjustmentOperationDetail } from "@/app/inventory/adjustments/_components/adjustment-operation-detail";
 import { TableSkeleton } from "@/app/inventory/adjustments/_components/adjustment-skeletons";
 import { getApiErrorMessage } from "@/lib/api";
+import { hasModulePermission } from "@/lib/rbac";
 import {
   deleteAdjustmentOperation,
   getAdjustmentOperation,
@@ -61,6 +62,9 @@ function formatDate(value: string | null): string {
 export default function AdjustmentsPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const canCreateAdjustments = hasModulePermission(user, "inventario", "create");
+  const canUpdateAdjustments = hasModulePermission(user, "inventario", "update");
+  const canDeleteAdjustments = hasModulePermission(user, "inventario", "delete");
   const [activeAdjustments, setActiveAdjustments] = useState<AdjustmentOperationDto[]>([]);
   const [anulatedAdjustments, setAnulatedAdjustments] = useState<AdjustmentOperationDto[]>([]);
   const [activePagination, setActivePagination] = useState({
@@ -159,6 +163,10 @@ export default function AdjustmentsPage() {
 
   async function restoreAdjustmentFromTrash(adj: AdjustmentOperationDto) {
     if (!user) return;
+    if (!canUpdateAdjustments) {
+      toast.error("No tienes permisos para restaurar ajustes.");
+      return;
+    }
 
     try {
       await restoreAdjustmentOperation(adj.numeroAjuste);
@@ -190,7 +198,7 @@ export default function AdjustmentsPage() {
   }, [detailCandidate]);
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="inventario" action="read">
       <DashboardShell
         title="Ajustes de Inventario"
         description="Gestiona entradas y salidas por ajustes de existencias"
@@ -297,10 +305,12 @@ export default function AdjustmentsPage() {
                 </select>
               </div>
 
-              <Button onClick={() => router.push("/inventory/adjustments/create")} className="h-10 shrink-0 px-4 text-sm">
-                <Plus className="mr-2 h-4 w-4" />
-                Registrar Ajuste
-              </Button>
+              {canCreateAdjustments ? (
+                <Button onClick={() => router.push("/inventory/adjustments/create")} className="h-10 shrink-0 px-4 text-sm">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Registrar Ajuste
+                </Button>
+              ) : null}
 
               <Button
                 variant="outline"
@@ -381,14 +391,16 @@ export default function AdjustmentsPage() {
                                 >
                                   <Eye className="h-4 w-4" />
                                 </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => setDeleteCandidate(adj)}
-                                  title="Anular ajuste completo"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                {canDeleteAdjustments ? (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => setDeleteCandidate(adj)}
+                                    title="Anular ajuste completo"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                ) : null}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -477,14 +489,16 @@ export default function AdjustmentsPage() {
                                 >
                                   <Eye className="h-4 w-4" />
                                 </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => void restoreAdjustmentFromTrash(adj)}
-                                  title="Restaurar ajuste completo"
-                                >
-                                  <RotateCcw className="h-4 w-4" />
-                                </Button>
+                                {canUpdateAdjustments ? (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => void restoreAdjustmentFromTrash(adj)}
+                                    title="Restaurar ajuste completo"
+                                  >
+                                    <RotateCcw className="h-4 w-4" />
+                                  </Button>
+                                ) : null}
                               </div>
                             </TableCell>
                           </TableRow>

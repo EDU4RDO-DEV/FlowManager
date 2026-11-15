@@ -240,21 +240,37 @@ export async function updateRolePermissions(
         throw new Error('Catalogo de modulos/acciones incompleto');
       }
 
-      const existing = await tx.rolPermiso.findFirst({
-        where: {
-          IdRol: idRol,
-          IdModuloSistema: moduleId,
-          IdAccionSistema: actionId,
-        },
-        orderBy: { Id: 'desc' },
-        select: {
-          Id: true,
-          Anulado: true,
-          Permitido: true,
-        },
-      });
-
       if (permission.permitido) {
+        const updated = await tx.rolPermiso.updateMany({
+          where: {
+            IdRol: idRol,
+            IdModuloSistema: moduleId,
+            IdAccionSistema: actionId,
+            Anulado: false,
+          },
+          data: {
+            Permitido: true,
+            IdUsuarioModificador: idUsuarioModificador,
+            FechaModificacion: new Date(),
+            IdUsuarioAnulador: null,
+            FechaAnulacion: null,
+          },
+        });
+
+        if (updated.count > 0) {
+          continue;
+        }
+
+        const existing = await tx.rolPermiso.findFirst({
+          where: {
+            IdRol: idRol,
+            IdModuloSistema: moduleId,
+            IdAccionSistema: actionId,
+          },
+          orderBy: { Id: 'desc' },
+          select: { Id: true },
+        });
+
         if (!existing) {
           await tx.rolPermiso.create({
             data: {
@@ -284,12 +300,13 @@ export async function updateRolePermissions(
         continue;
       }
 
-      if (!existing || existing.Anulado) {
-        continue;
-      }
-
-      await tx.rolPermiso.update({
-        where: { Id: existing.Id },
+      await tx.rolPermiso.updateMany({
+        where: {
+          IdRol: idRol,
+          IdModuloSistema: moduleId,
+          IdAccionSistema: actionId,
+          Anulado: false,
+        },
         data: {
           Permitido: false,
           Anulado: true,

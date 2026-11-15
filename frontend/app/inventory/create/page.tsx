@@ -143,7 +143,7 @@ export default function CreateProductPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth moduleKey="inventario" action="create">
       <DashboardShell
         title="Crear Producto"
         description="Submodulo para registrar productos, costos y precios de venta."
