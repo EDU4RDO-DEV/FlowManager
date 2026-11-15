@@ -8,6 +8,11 @@ import { streamReportPdf } from '../modules/reports/export/pdf.renderer';
 import { logReportGeneration } from '../modules/reports/history.service';
 import type { ReportParamField, ReportResult } from '../modules/reports/types';
 
+type ReportExecutionContext = {
+  idUsuario: number;
+  roleName?: string | null;
+};
+
 export class ReportNotFoundError extends Error {
   constructor(id: string) {
     super(`El reporte "${id}" no existe`);
@@ -57,11 +62,13 @@ function summarizeParams(report: ReturnType<typeof getReportOrThrow>, rawParams:
 export async function executeReport(
   id: string,
   rawParams: Record<string, unknown>,
-  context: { idUsuario: number },
+  context: ReportExecutionContext,
 ): Promise<ReportResult & { parametrosResumen: string[]; reportNombre: string; categoriaLabel: string; orientacionPdf: 'portrait' | 'landscape' }> {
   const report = getReportOrThrow(id);
   const params = parseReportParams(report, rawParams);
-  const result = await report.run(params);
+  const result = await report.run(params, {
+    actor: { userId: context.idUsuario, roleName: context.roleName },
+  });
 
   await logReportGeneration({
     idUsuario: context.idUsuario,
@@ -84,12 +91,14 @@ export async function executeReport(
 export async function exportReportPdf(
   id: string,
   rawParams: Record<string, unknown>,
-  context: { idUsuario: number; generatedByName: string },
+  context: ReportExecutionContext & { generatedByName: string },
   res: Response,
 ): Promise<void> {
   const report = getReportOrThrow(id);
   const params = parseReportParams(report, rawParams);
-  const result = await report.run(params);
+  const result = await report.run(params, {
+    actor: { userId: context.idUsuario, roleName: context.roleName },
+  });
   const company = await resolveCompanyInfo();
 
   await logReportGeneration({
@@ -118,12 +127,14 @@ export async function exportReportPdf(
 export async function exportReportExcel(
   id: string,
   rawParams: Record<string, unknown>,
-  context: { idUsuario: number; generatedByName: string },
+  context: ReportExecutionContext & { generatedByName: string },
   res: Response,
 ): Promise<void> {
   const report = getReportOrThrow(id);
   const params = parseReportParams(report, rawParams);
-  const result = await report.run(params);
+  const result = await report.run(params, {
+    actor: { userId: context.idUsuario, roleName: context.roleName },
+  });
   const company = await resolveCompanyInfo();
 
   await logReportGeneration({

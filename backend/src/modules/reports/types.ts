@@ -77,7 +77,10 @@ export type ReportDefinition<TParams = Record<string, unknown>> = {
   orientacionPdf?: 'portrait' | 'landscape';
   papelFormato?: 'letter' | 'a4' | 'legal';
   layout?: 'standard' | 'financial' | 'inventory-landscape';
-  run: (params: TParams) => Promise<ReportResult>;
+  run: (
+    params: TParams,
+    context?: { actor?: { userId: number; roleName?: string | null } },
+  ) => Promise<ReportResult>;
 };
 
 // Versión sin genéricos para almacenarse homogéneamente en el registro.

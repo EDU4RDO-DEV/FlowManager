@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { ReportDefinition, ReportParamField } from '../types';
 import { buildDateTimeRangeFilter, nowIso, round2, sumByKey } from '../helpers';
 import { optionalDateParam, optionalPositiveIntParam, withDateRangeValidation } from '../params';
-import { prisma } from './_shared';
+import { applySaleVisibility, prisma } from './_shared';
 
 const CATEGORIA = 'creditos';
 const CATEGORIA_LABEL = 'Créditos / Cuentas por Cobrar';
@@ -346,7 +346,7 @@ const abonosPorPeriodo: ReportDefinition<AbonosPorPeriodoParams> = {
     clienteParam(),
   ],
   schema: abonosPorPeriodoSchema,
-  async run(params) {
+  async run(params, context) {
     const pagos = await prisma.pagoVenta.findMany({
       where: {
         Anulado: false,
@@ -354,8 +354,12 @@ const abonosPorPeriodo: ReportDefinition<AbonosPorPeriodoParams> = {
           ? { FechaPago: buildDateTimeRangeFilter(params.fechaInicio, params.fechaFin) }
           : {}),
         Venta: {
-          CondicionPago: 'CREDITO',
-          ...(params.idCliente ? { IdCliente: params.idCliente } : {}),
+          is: applySaleVisibility({
+            Anulado: false,
+            TipoRegistro: 'VENTA',
+            CondicionPago: 'CREDITO',
+            ...(params.idCliente ? { IdCliente: params.idCliente } : {}),
+          }, context?.actor),
         },
       },
       include: {

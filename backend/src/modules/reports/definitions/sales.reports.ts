@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { ReportDefinition, ReportParamField } from '../types';
 import {
   limitRows,
+  MAX_REPORT_ROWS,
   nowIso,
   periodKey,
   round2,
@@ -20,8 +21,10 @@ import {
   prisma,
   ventaSubtotal,
   ventaTotalBonificado,
+  applySaleVisibility,
   type VentaReportRow,
 } from './_shared';
+import { getSaleVisibilityWhere, type OperationalActor } from '../../../services/operational-scope.service';
 
 const CATEGORIA = 'ventas';
 const CATEGORIA_LABEL = 'Ventas';
@@ -65,12 +68,15 @@ function productoParam(): ReportParamField {
   return { key: 'idProducto', label: 'Producto', type: 'select', optionsEndpoint: '/api/products' };
 }
 
-async function fetchVentas(where: ReturnType<typeof buildVentaWhere>): Promise<VentaReportRow[]> {
+async function fetchVentas(
+  where: ReturnType<typeof buildVentaWhere>,
+  actor?: OperationalActor,
+): Promise<VentaReportRow[]> {
   return prisma.venta.findMany({
-    where,
+    where: applySaleVisibility(where, actor),
     orderBy: { FechaRegistro: 'desc' },
     include: VENTA_REPORT_INCLUDE,
-    take: 5000,
+    take: MAX_REPORT_ROWS,
   });
 }
 
@@ -84,6 +90,7 @@ const ventasPorPeriodoSchema = withDateRangeValidation(
     idRuta: optionalPositiveIntParam,
     idProducto: optionalPositiveIntParam,
     condicionPago: z.enum(['CONTADO', 'CREDITO']).optional(),
+    estadoPago: z.enum(['PENDIENTE', 'PARCIAL', 'PAGADO']).optional(),
     estadoEntrega: z.enum(['PENDIENTE', 'EN_RUTA', 'ENTREGADO', 'PARCIAL']).optional(),
     vista: z.enum(['resumen', 'detalle']).default('resumen'),
     agrupacion: z.enum(['dia', 'semana', 'mes']).default('dia'),
@@ -106,6 +113,7 @@ const ventasPorPeriodo: ReportDefinition<VentasPorPeriodoParams> = {
     rutaParam(),
     productoParam(),
     { key: 'condicionPago', label: 'Condición de pago', type: 'select', options: condicionPagoOptions },
+    { key: 'estadoPago', label: 'Estado de pago', type: 'select', options: estadoPagoOptions },
     { key: 'estadoEntrega', label: 'Estado de entrega', type: 'select', options: estadoEntregaOptions },
     {
       key: 'vista',
@@ -128,17 +136,18 @@ const ventasPorPeriodo: ReportDefinition<VentasPorPeriodoParams> = {
     },
   ],
   schema: ventasPorPeriodoSchema,
-  async run(params) {
-    const ventas = await fetchVentas(buildVentaWhere(params));
+  async run(params, context) {
+    const ventas = await fetchVentas(buildVentaWhere(params), context?.actor);
     const granularity: PeriodGranularity = params.agrupacion;
 
-    type Row = Record<string, unknown> & { __fecha: Date };
+    type Row = Record<string, unknown> & { __fecha: Date | null };
     const rows: Row[] = [];
 
     if (params.vista === 'detalle') {
       for (const venta of ventas) {
-        const fecha = venta.FechaRegistro ?? new Date();
+        const fecha = venta.FechaRegistro ?? venta.FechaVentaEfectiva;
         for (const detalle of venta.DetalleVenta) {
+          if (params.idProducto && detalle.IdInventarioItem !== params.idProducto) continue;
           rows.push({
             __fecha: fecha,
             fecha,
@@ -148,13 +157,15 @@ const ventasPorPeriodo: ReportDefinition<VentasPorPeriodoParams> = {
             cantidad: detalle.Cantidad,
             precioUnitario: Number(detalle.PrecioUnitario),
             bonificacion: detalle.EsBonificacion ? 'Sí' : 'No',
-            subtotal: round2(detalle.Cantidad * Number(detalle.PrecioUnitario)),
+            subtotal: detalle.EsBonificacion
+              ? 0
+              : round2(detalle.Cantidad * Number(detalle.PrecioUnitario)),
           });
         }
       }
     } else {
       for (const venta of ventas) {
-        const fecha = venta.FechaRegistro ?? new Date();
+        const fecha = venta.FechaRegistro ?? venta.FechaVentaEfectiva;
         rows.push({
           __fecha: fecha,
           fecha,
@@ -164,14 +175,21 @@ const ventasPorPeriodo: ReportDefinition<VentasPorPeriodoParams> = {
           ruta: getRutaNombre(venta),
           condicionPago: venta.CondicionPago,
           estadoEntrega: venta.EstadoEntrega,
-          subtotal: round2(ventaSubtotal(venta)),
+          subtotal: round2(
+            venta.DetalleVenta
+              .filter((detalle) => !params.idProducto || detalle.IdInventarioItem === params.idProducto)
+              .filter((detalle) => !detalle.EsBonificacion)
+              .reduce((sum, detalle) => sum + detalle.Cantidad * Number(detalle.PrecioUnitario), 0),
+          ),
         });
       }
     }
 
     const groupsMap = new Map<string, { label: string; rows: Row[] }>();
     for (const row of rows) {
-      const { key, label } = periodKey(row.__fecha, granularity);
+      const { key, label } = row.__fecha
+        ? periodKey(row.__fecha, granularity)
+        : { key: 'sin-fecha', label: 'Sin fecha' };
       const group = groupsMap.get(key) ?? { label, rows: [] };
       group.rows.push(row);
       groupsMap.set(key, group);
@@ -188,7 +206,7 @@ const ventasPorPeriodo: ReportDefinition<VentasPorPeriodoParams> = {
 
     const totalVendido = sumByKey(rows, (r) => Number(r.subtotal));
     const transacciones = params.vista === 'resumen' ? rows.length : ventas.length;
-    const { truncado } = limitRows(ventas);
+    const { truncado: limitTruncado } = limitRows(ventas);
 
     const columns =
       params.vista === 'detalle'
@@ -223,7 +241,11 @@ const ventasPorPeriodo: ReportDefinition<VentasPorPeriodoParams> = {
         { label: 'Transacciones', value: transacciones },
         { label: 'Ticket promedio', value: `Q ${(transacciones > 0 ? round2(totalVendido / transacciones) : 0).toFixed(2)}` },
       ],
-      meta: { totalRegistros: rows.length, truncado, generadoEn: nowIso() },
+      meta: {
+        totalRegistros: rows.length,
+        truncado: limitTruncado || ventas.length >= MAX_REPORT_ROWS,
+        generadoEn: nowIso(),
+      },
     };
   },
 };
@@ -248,8 +270,8 @@ const ventasPorCliente: ReportDefinition<VentasPorClienteParams> = {
   moduloPermiso: 'ventas',
   parametros: [...FECHA_PARAMS, { key: 'top', label: 'Mostrar top N', type: 'number' }],
   schema: ventasPorClienteSchema,
-  async run(params) {
-    const ventas = await fetchVentas(buildVentaWhere(params));
+  async run(params, context) {
+    const ventas = await fetchVentas(buildVentaWhere(params), context?.actor);
 
     const byCliente = new Map<string, { nombre: string; total: number; transacciones: number }>();
     for (const venta of ventas) {
@@ -289,7 +311,7 @@ const ventasPorCliente: ReportDefinition<VentasPorClienteParams> = {
         { label: 'Clientes con compras', value: byCliente.size },
         { label: 'Total vendido', value: `Q ${round2(totalGeneral).toFixed(2)}` },
       ],
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
+      meta: { totalRegistros: rows.length, truncado: ventas.length >= MAX_REPORT_ROWS, generadoEn: nowIso() },
     };
   },
 };
@@ -314,8 +336,8 @@ const productosMasVendidos: ReportDefinition<ProductosMasVendidosParams> = {
   moduloPermiso: 'ventas',
   parametros: [...FECHA_PARAMS, { key: 'top', label: 'Mostrar top N', type: 'number' }],
   schema: productosMasVendidosSchema,
-  async run(params) {
-    const ventas = await fetchVentas(buildVentaWhere(params));
+  async run(params, context) {
+    const ventas = await fetchVentas(buildVentaWhere(params), context?.actor);
 
     const byProducto = new Map<string, { nombre: string; cantidad: number; monto: number }>();
     for (const venta of ventas) {
@@ -352,7 +374,7 @@ const productosMasVendidos: ReportDefinition<ProductosMasVendidosParams> = {
       ],
       rows,
       totals: { montoVendido: sumByKey(rows, (r) => Number(r.montoVendido)) },
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
+      meta: { totalRegistros: rows.length, truncado: ventas.length >= MAX_REPORT_ROWS, generadoEn: nowIso() },
     };
   },
 };
@@ -377,8 +399,8 @@ const ventasPorVendedor: ReportDefinition<VentasPorVendedorParams> = {
   moduloPermiso: 'ventas',
   parametros: [...FECHA_PARAMS, vendedorParam()],
   schema: ventasPorVendedorSchema,
-  async run(params) {
-    const ventas = await fetchVentas(buildVentaWhere(params));
+  async run(params, context) {
+    const ventas = await fetchVentas(buildVentaWhere(params), context?.actor);
 
     const byVendedor = new Map<string, { nombre: string; total: number; transacciones: number }>();
     for (const venta of ventas) {
@@ -407,7 +429,7 @@ const ventasPorVendedor: ReportDefinition<VentasPorVendedorParams> = {
       ],
       rows,
       totals: { total: sumByKey(rows, (r) => Number(r.total)) },
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
+      meta: { totalRegistros: rows.length, truncado: ventas.length >= MAX_REPORT_ROWS, generadoEn: nowIso() },
     };
   },
 };
@@ -432,8 +454,8 @@ const ventasPorRuta: ReportDefinition<VentasPorRutaParams> = {
   moduloPermiso: 'ventas',
   parametros: [...FECHA_PARAMS, rutaParam()],
   schema: ventasPorRutaSchema,
-  async run(params) {
-    const ventas = await fetchVentas(buildVentaWhere(params));
+  async run(params, context) {
+    const ventas = await fetchVentas(buildVentaWhere(params), context?.actor);
 
     const byRuta = new Map<string, { nombre: string; total: number; transacciones: number }>();
     for (const venta of ventas) {
@@ -456,7 +478,7 @@ const ventasPorRuta: ReportDefinition<VentasPorRutaParams> = {
       ],
       rows,
       totals: { total: sumByKey(rows, (r) => Number(r.total)) },
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
+      meta: { totalRegistros: rows.length, truncado: ventas.length >= MAX_REPORT_ROWS, generadoEn: nowIso() },
     };
   },
 };
@@ -477,8 +499,8 @@ const ventasContadoCredito: ReportDefinition<VentasContadoCreditoParams> = {
   moduloPermiso: 'ventas',
   parametros: [...FECHA_PARAMS],
   schema: ventasContadoCreditoSchema,
-  async run(params) {
-    const ventas = await fetchVentas(buildVentaWhere(params));
+  async run(params, context) {
+    const ventas = await fetchVentas(buildVentaWhere(params), context?.actor);
 
     const byCondicion = new Map<string, { total: number; transacciones: number }>();
     for (const venta of ventas) {
@@ -505,7 +527,7 @@ const ventasContadoCredito: ReportDefinition<VentasContadoCreditoParams> = {
       ],
       rows,
       totals: { total: round2(totalGeneral) },
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
+      meta: { totalRegistros: rows.length, truncado: ventas.length >= MAX_REPORT_ROWS, generadoEn: nowIso() },
     };
   },
 };
@@ -530,8 +552,8 @@ const pedidosPorEstado: ReportDefinition<PedidosPorEstadoParams> = {
   moduloPermiso: 'ventas',
   parametros: [...FECHA_PARAMS, { key: 'estadoEntrega', label: 'Estado de entrega', type: 'select', options: estadoEntregaOptions }],
   schema: pedidosPorEstadoSchema,
-  async run(params) {
-    const ventas = await fetchVentas(buildVentaWhere(params));
+  async run(params, context) {
+    const ventas = await fetchVentas(buildVentaWhere(params), context?.actor);
 
     const byEstado = new Map<string, { conteo: number; total: number }>();
     for (const venta of ventas) {
@@ -555,7 +577,7 @@ const pedidosPorEstado: ReportDefinition<PedidosPorEstadoParams> = {
       ],
       rows,
       totals: { conteo: rows.reduce((s, r) => s + r.conteo, 0), total: sumByKey(rows, (r) => Number(r.total)) },
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
+      meta: { totalRegistros: rows.length, truncado: ventas.length >= MAX_REPORT_ROWS, generadoEn: nowIso() },
     };
   },
 };
@@ -576,13 +598,14 @@ const bonificacionesOtorgadas: ReportDefinition<BonificacionesParams> = {
   moduloPermiso: 'ventas',
   parametros: [...FECHA_PARAMS, productoParam()],
   schema: bonificacionesSchema,
-  async run(params) {
-    const ventas = await fetchVentas(buildVentaWhere(params));
+  async run(params, context) {
+    const ventas = await fetchVentas(buildVentaWhere(params), context?.actor);
 
     const byProducto = new Map<string, { nombre: string; cantidad: number; valor: number }>();
     for (const venta of ventas) {
       for (const detalle of venta.DetalleVenta) {
         if (!detalle.EsBonificacion) continue;
+        if (params.idProducto && detalle.IdInventarioItem !== params.idProducto) continue;
         const key = String(detalle.IdInventarioItem);
         const nombre = detalle.InventarioItem?.Nombre ?? detalle.Nombre;
         const entry = byProducto.get(key) ?? { nombre, cantidad: 0, valor: 0 };
@@ -604,7 +627,7 @@ const bonificacionesOtorgadas: ReportDefinition<BonificacionesParams> = {
       ],
       rows,
       totals: { valorBonificado: sumByKey(rows, (r) => Number(r.valorBonificado)) },
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
+      meta: { totalRegistros: rows.length, truncado: ventas.length >= MAX_REPORT_ROWS, generadoEn: nowIso() },
     };
   },
 };
@@ -625,15 +648,26 @@ const formasPagoVentas: ReportDefinition<FormasPagoParams> = {
   moduloPermiso: 'ventas',
   parametros: [...FECHA_PARAMS],
   schema: formasPagoSchema,
-  async run(params) {
+  async run(params, context) {
     const fechaFilter = params.fechaInicio || params.fechaFin
       ? { FechaPago: { ...(params.fechaInicio ? { gte: new Date(`${params.fechaInicio}T00:00:00`) } : {}), ...(params.fechaFin ? { lt: new Date(new Date(`${params.fechaFin}T00:00:00`).getTime() + 86400000) } : {}) } }
       : {};
+    const visibilityWhere = context?.actor ? getSaleVisibilityWhere(context.actor) : undefined;
 
     const pagos = await prisma.pagoVenta.findMany({
-      where: { Anulado: false, ...fechaFilter },
+      where: {
+        Anulado: false,
+        ...fechaFilter,
+        Venta: {
+          is: {
+            Anulado: false,
+            TipoRegistro: 'VENTA',
+            ...(visibilityWhere ?? {}),
+          },
+        },
+      },
       select: { Monto: true, MetodoPago: true },
-      take: 5000,
+      take: MAX_REPORT_ROWS,
     });
 
     const byMetodo = new Map<string, { conteo: number; total: number }>();
@@ -658,7 +692,11 @@ const formasPagoVentas: ReportDefinition<FormasPagoParams> = {
       ],
       rows,
       totals: { total: sumByKey(rows, (r) => Number(r.total)) },
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
+      meta: {
+        totalRegistros: rows.length,
+        truncado: pagos.length >= MAX_REPORT_ROWS,
+        generadoEn: nowIso(),
+      },
     };
   },
 };
@@ -673,6 +711,22 @@ const comparativoVentasSchema = z
   })
   .refine((data) => Boolean(data.periodoAInicio && data.periodoAFin && data.periodoBInicio && data.periodoBFin), {
     message: 'Debe indicar ambos períodos completos',
+  })
+  .superRefine((data, context) => {
+    if (data.periodoAInicio && data.periodoAFin && data.periodoAInicio > data.periodoAFin) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'La fecha inicial del período A debe ser anterior o igual a la fecha final',
+        path: ['periodoAFin'],
+      });
+    }
+    if (data.periodoBInicio && data.periodoBFin && data.periodoBInicio > data.periodoBFin) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'La fecha inicial del período B debe ser anterior o igual a la fecha final',
+        path: ['periodoBFin'],
+      });
+    }
   });
 
 type ComparativoVentasParams = z.infer<typeof comparativoVentasSchema>;
@@ -691,10 +745,16 @@ const comparativoVentas: ReportDefinition<ComparativoVentasParams> = {
     { key: 'periodoBFin', label: 'Período B - fin', type: 'date', required: true },
   ],
   schema: comparativoVentasSchema,
-  async run(params) {
+  async run(params, context) {
     const [ventasA, ventasB] = await Promise.all([
-      fetchVentas(buildVentaWhere({ fechaInicio: params.periodoAInicio, fechaFin: params.periodoAFin })),
-      fetchVentas(buildVentaWhere({ fechaInicio: params.periodoBInicio, fechaFin: params.periodoBFin })),
+      fetchVentas(
+        buildVentaWhere({ fechaInicio: params.periodoAInicio, fechaFin: params.periodoAFin }),
+        context?.actor,
+      ),
+      fetchVentas(
+        buildVentaWhere({ fechaInicio: params.periodoBInicio, fechaFin: params.periodoBFin }),
+        context?.actor,
+      ),
     ]);
 
     const totalA = sumByKey(ventasA, (v) => ventaSubtotal(v));
@@ -718,7 +778,11 @@ const comparativoVentas: ReportDefinition<ComparativoVentasParams> = {
         { label: 'Período B', value: `Q ${totalB.toFixed(2)}` },
         { label: 'Variación', value: `${variacion > 0 ? '+' : ''}${variacion.toFixed(2)} %` },
       ],
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
+      meta: {
+        totalRegistros: rows.length,
+        truncado: ventasA.length >= MAX_REPORT_ROWS || ventasB.length >= MAX_REPORT_ROWS,
+        generadoEn: nowIso(),
+      },
     };
   },
 };
@@ -739,10 +803,13 @@ const ventasAnuladas: ReportDefinition<VentasAnuladasParams> = {
   moduloPermiso: 'ventas',
   parametros: [...FECHA_PARAMS],
   schema: ventasAnuladasSchema,
-  async run(params) {
+  async run(params, context) {
+    const visibilityWhere = context?.actor ? getSaleVisibilityWhere(context.actor) : undefined;
     const ventas = await prisma.venta.findMany({
       where: {
         Anulado: true,
+        TipoRegistro: 'VENTA',
+        ...(visibilityWhere ? { AND: [visibilityWhere] } : {}),
         ...(params.fechaInicio || params.fechaFin
           ? {
               FechaAnulacion: {
@@ -754,7 +821,7 @@ const ventasAnuladas: ReportDefinition<VentasAnuladasParams> = {
       },
       orderBy: { FechaAnulacion: 'desc' },
       include: VENTA_REPORT_INCLUDE,
-      take: 5000,
+      take: MAX_REPORT_ROWS,
     });
 
     const rows = ventas.map((venta) => ({
@@ -774,7 +841,7 @@ const ventasAnuladas: ReportDefinition<VentasAnuladasParams> = {
       rows,
       totals: { montoAnulado: sumByKey(rows, (r) => Number(r.montoAnulado)) },
       indicators: [{ label: 'Ventas anuladas', value: rows.length }],
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
+      meta: { totalRegistros: rows.length, truncado: ventas.length >= MAX_REPORT_ROWS, generadoEn: nowIso() },
     };
   },
 };

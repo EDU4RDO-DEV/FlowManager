@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ReportDefinition } from '../types';
 import { buildDateTimeRangeFilter, nowIso, round2, sumByKey } from '../helpers';
-import { optionalDateParam, optionalPositiveIntParam, withDateRangeValidation } from '../params';
+import { optionalBooleanParam, optionalDateParam, optionalPositiveIntParam, withDateRangeValidation } from '../params';
 import { prisma } from './_shared';
 
 const CATEGORIA = 'inventario';
@@ -15,7 +15,7 @@ const CATEGORIA_LABEL = 'Inventario';
 const existenciasValorizadasSchema = z.object({
   categoria: z.string().trim().min(1).optional(),
   idProveedor: optionalPositiveIntParam,
-  incluirAnulados: z.coerce.boolean().optional(),
+  incluirAnulados: optionalBooleanParam,
 });
 
 type ExistenciasValorizadasParams = z.infer<typeof existenciasValorizadasSchema>;

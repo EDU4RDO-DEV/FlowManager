@@ -8,7 +8,10 @@ import { getZodErrorMessage } from '../validators/validation';
 export async function getDashboardController(req: Request, res: Response) {
   try {
     const query = dashboardQuerySchema.parse(req.query);
-    const data = await getDashboardData(query);
+    const actor = req.auth
+      ? { userId: req.auth.userId, roleName: req.auth.nombreRol }
+      : undefined;
+    const data = await getDashboardData(query, actor);
     return res.status(200).json({ ok: true, data });
   } catch (error) {
     if (error instanceof ZodError) {

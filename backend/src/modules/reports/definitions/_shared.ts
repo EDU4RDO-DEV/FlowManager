@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import { prisma } from '../../../config/prisma';
 import { buildDateTimeRangeFilter } from '../helpers';
+import { getSaleVisibilityWhere, type OperationalActor } from '../../../services/operational-scope.service';
 
 export { prisma };
 
@@ -31,7 +32,7 @@ export function buildVentaWhere(params: VentaFilterParams): Prisma.VentaWhereInp
     ...(params.condicionPago ? { CondicionPago: params.condicionPago } : {}),
     ...(params.estadoPago ? { EstadoPago: params.estadoPago } : {}),
     ...(params.estadoEntrega ? { EstadoEntrega: params.estadoEntrega } : {}),
-    ...(params.tipoRegistro ? { TipoRegistro: params.tipoRegistro } : {}),
+    TipoRegistro: params.tipoRegistro ?? 'VENTA',
     ...(params.idRuta || params.idVendedor
       ? {
           RutaSesion: {
@@ -45,6 +46,14 @@ export function buildVentaWhere(params: VentaFilterParams): Prisma.VentaWhereInp
       : {}),
     ...(fechaFilter ? { FechaRegistro: fechaFilter } : {}),
   };
+}
+
+export function applySaleVisibility(
+  where: Prisma.VentaWhereInput,
+  actor?: OperationalActor,
+): Prisma.VentaWhereInput {
+  const visibilityWhere = actor ? getSaleVisibilityWhere(actor) : undefined;
+  return visibilityWhere ? { AND: [where, visibilityWhere] } : where;
 }
 
 export const VENTA_REPORT_INCLUDE = {

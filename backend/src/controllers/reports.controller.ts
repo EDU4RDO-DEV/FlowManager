@@ -48,7 +48,10 @@ export async function executeReportController(req: Request, res: Response) {
       return res.status(401).json({ ok: false, message: 'Sesión inválida' });
     }
 
-    const data = await executeReport(id, params, { idUsuario: req.auth.userId });
+    const data = await executeReport(id, params, {
+      idUsuario: req.auth.userId,
+      roleName: req.auth.nombreRol,
+    });
     return res.status(200).json({ ok: true, data });
   } catch (error) {
     if (error instanceof ZodError) {
@@ -71,7 +74,16 @@ export async function exportReportPdfController(req: Request, res: Response) {
       return res.status(401).json({ ok: false, message: 'Sesión inválida' });
     }
 
-    await exportReportPdf(id, params, { idUsuario: req.auth.userId, generatedByName: resolveGeneratedByName(req) }, res);
+    await exportReportPdf(
+      id,
+      params,
+      {
+        idUsuario: req.auth.userId,
+        roleName: req.auth.nombreRol,
+        generatedByName: resolveGeneratedByName(req),
+      },
+      res,
+    );
     return undefined;
   } catch (error) {
     if (error instanceof ZodError) {
@@ -94,7 +106,16 @@ export async function exportReportExcelController(req: Request, res: Response) {
       return res.status(401).json({ ok: false, message: 'Sesión inválida' });
     }
 
-    await exportReportExcel(id, params, { idUsuario: req.auth.userId, generatedByName: resolveGeneratedByName(req) }, res);
+    await exportReportExcel(
+      id,
+      params,
+      {
+        idUsuario: req.auth.userId,
+        roleName: req.auth.nombreRol,
+        generatedByName: resolveGeneratedByName(req),
+      },
+      res,
+    );
     return undefined;
   } catch (error) {
     if (error instanceof ZodError) {

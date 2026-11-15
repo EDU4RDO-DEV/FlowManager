@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { ReportDefinition, ReportParamField } from '../types';
 import { buildDateTimeRangeFilter, nowIso, round2, sumByKey } from '../helpers';
 import { optionalDateParam, optionalPositiveIntParam, optionalTopNParam, withDateRangeValidation } from '../params';
-import { buildVentaWhere, prisma, ventaSubtotal, VENTA_REPORT_INCLUDE } from './_shared';
+import { applySaleVisibility, buildVentaWhere, prisma, ventaSubtotal, VENTA_REPORT_INCLUDE } from './_shared';
 
 const CATEGORIA = 'clientes';
 const CATEGORIA_LABEL = 'Clientes';
@@ -95,10 +95,13 @@ const cliente360: ReportDefinition<Cliente360Params> = {
     { key: 'fechaFin', label: 'Fecha final', type: 'date' },
   ],
   schema: cliente360Schema,
-  async run(params) {
+  async run(params, context) {
     const idCliente = params.idCliente as number;
     const ventas = await prisma.venta.findMany({
-      where: buildVentaWhere({ idCliente, fechaInicio: params.fechaInicio, fechaFin: params.fechaFin }),
+      where: applySaleVisibility(
+        buildVentaWhere({ idCliente, fechaInicio: params.fechaInicio, fechaFin: params.fechaFin }),
+        context?.actor,
+      ),
       include: VENTA_REPORT_INCLUDE,
       orderBy: { FechaRegistro: 'desc' },
       take: 5000,
@@ -170,11 +173,14 @@ const clientesSinCompras: ReportDefinition<ClientesSinComprasParams> = {
     { key: 'fechaFin', label: 'Fecha final', type: 'date', required: true },
   ],
   schema: clientesSinComprasSchema,
-  async run(params) {
+  async run(params, context) {
     const fechaFilter = buildDateTimeRangeFilter(params.fechaInicio, params.fechaFin);
 
     const clientesConCompras = await prisma.venta.findMany({
-      where: { Anulado: false, FechaRegistro: fechaFilter },
+      where: applySaleVisibility(
+        { Anulado: false, TipoRegistro: 'VENTA', FechaRegistro: fechaFilter },
+        context?.actor,
+      ),
       select: { IdCliente: true },
       distinct: ['IdCliente'],
     });
@@ -228,9 +234,9 @@ const topClientesVolumen: ReportDefinition<TopClientesParams> = {
     { key: 'top', label: 'Mostrar top N', type: 'number' },
   ],
   schema: topClientesSchema,
-  async run(params) {
+  async run(params, context) {
     const ventas = await prisma.venta.findMany({
-      where: buildVentaWhere(params),
+      where: applySaleVisibility(buildVentaWhere(params), context?.actor),
       include: VENTA_REPORT_INCLUDE,
       take: 5000,
     });

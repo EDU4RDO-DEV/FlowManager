@@ -1,10 +1,11 @@
 import { z } from 'zod';
 
 import type { ReportDefinition } from '../types';
-import { buildDateTimeRangeFilter, nowIso, round2, sumByKey } from '../helpers';
+import { buildDateTimeRangeFilter, MAX_REPORT_ROWS, nowIso, round2, sumByKey } from '../helpers';
 import { optionalDateParam, optionalPositiveIntParam, withDateRangeValidation } from '../params';
 import {
   VENTA_REPORT_INCLUDE,
+  applySaleVisibility,
   getClienteNombre,
   prisma,
   ventaSubtotal,
@@ -41,17 +42,18 @@ const documentosFelEmitidos: ReportDefinition<DocumentosFelParams> = {
   ],
   schema: documentosFelSchema,
   orientacionPdf: 'landscape',
-  async run(params) {
+  async run(params, context) {
     const fechaFilter = buildDateTimeRangeFilter(params.fechaInicio, params.fechaFin);
     const ventas = await prisma.venta.findMany({
-      where: {
+      where: applySaleVisibility({
         Anulado: false,
+        TipoRegistro: 'VENTA',
         NumeroFel: { not: null },
         ...(fechaFilter ? { FechaEmisionFel: fechaFilter } : {}),
-      },
+      }, context?.actor),
       include: VENTA_REPORT_INCLUDE,
       orderBy: { FechaEmisionFel: 'desc' },
-      take: 5000,
+      take: MAX_REPORT_ROWS,
     });
 
     const rows = ventas.map((venta) => ({
@@ -75,7 +77,7 @@ const documentosFelEmitidos: ReportDefinition<DocumentosFelParams> = {
       rows,
       totals: { total: sumByKey(rows, (r) => Number(r.total)) },
       indicators: [{ label: 'Documentos emitidos', value: rows.length }],
-      meta: { totalRegistros: rows.length, truncado: ventas.length >= 5000, generadoEn: nowIso() },
+      meta: { totalRegistros: rows.length, truncado: ventas.length >= MAX_REPORT_ROWS, generadoEn: nowIso() },
     };
   },
 };
@@ -98,12 +100,17 @@ const facturacionPorCliente: ReportDefinition<FacturacionPorClienteParams> = {
     { key: 'fechaFin', label: 'Fecha final', type: 'date' },
   ],
   schema: facturacionPorClienteSchema,
-  async run(params) {
+  async run(params, context) {
     const fechaFilter = buildDateTimeRangeFilter(params.fechaInicio, params.fechaFin);
     const ventas = await prisma.venta.findMany({
-      where: { Anulado: false, NumeroFel: { not: null }, ...(fechaFilter ? { FechaEmisionFel: fechaFilter } : {}) },
+      where: applySaleVisibility({
+        Anulado: false,
+        TipoRegistro: 'VENTA',
+        NumeroFel: { not: null },
+        ...(fechaFilter ? { FechaEmisionFel: fechaFilter } : {}),
+      }, context?.actor),
       include: VENTA_REPORT_INCLUDE,
-      take: 5000,
+      take: MAX_REPORT_ROWS,
     });
 
     const byCliente = new Map<string, { total: number; documentos: number }>();
@@ -127,7 +134,7 @@ const facturacionPorCliente: ReportDefinition<FacturacionPorClienteParams> = {
       ],
       rows,
       totals: { total: sumByKey(rows, (r) => Number(r.total)) },
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
+      meta: { totalRegistros: rows.length, truncado: ventas.length >= MAX_REPORT_ROWS, generadoEn: nowIso() },
     };
   },
 };
@@ -150,12 +157,17 @@ const facturacionPorProducto: ReportDefinition<FacturacionPorProductoParams> = {
     { key: 'fechaFin', label: 'Fecha final', type: 'date' },
   ],
   schema: facturacionPorProductoSchema,
-  async run(params) {
+  async run(params, context) {
     const fechaFilter = buildDateTimeRangeFilter(params.fechaInicio, params.fechaFin);
     const ventas = await prisma.venta.findMany({
-      where: { Anulado: false, NumeroFel: { not: null }, ...(fechaFilter ? { FechaEmisionFel: fechaFilter } : {}) },
+      where: applySaleVisibility({
+        Anulado: false,
+        TipoRegistro: 'VENTA',
+        NumeroFel: { not: null },
+        ...(fechaFilter ? { FechaEmisionFel: fechaFilter } : {}),
+      }, context?.actor),
       include: VENTA_REPORT_INCLUDE,
-      take: 5000,
+      take: MAX_REPORT_ROWS,
     });
 
     const byProducto = new Map<string, { cantidad: number; monto: number }>();
@@ -181,7 +193,7 @@ const facturacionPorProducto: ReportDefinition<FacturacionPorProductoParams> = {
       ],
       rows,
       totals: { monto: sumByKey(rows, (r) => Number(r.monto)) },
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
+      meta: { totalRegistros: rows.length, truncado: ventas.length >= MAX_REPORT_ROWS, generadoEn: nowIso() },
     };
   },
 };
@@ -204,12 +216,17 @@ const facturacionContadoCredito: ReportDefinition<FacturacionContadoCreditoParam
     { key: 'fechaFin', label: 'Fecha final', type: 'date' },
   ],
   schema: facturacionContadoCreditoSchema,
-  async run(params) {
+  async run(params, context) {
     const fechaFilter = buildDateTimeRangeFilter(params.fechaInicio, params.fechaFin);
     const ventas = await prisma.venta.findMany({
-      where: { Anulado: false, NumeroFel: { not: null }, ...(fechaFilter ? { FechaEmisionFel: fechaFilter } : {}) },
+      where: applySaleVisibility({
+        Anulado: false,
+        TipoRegistro: 'VENTA',
+        NumeroFel: { not: null },
+        ...(fechaFilter ? { FechaEmisionFel: fechaFilter } : {}),
+      }, context?.actor),
       include: VENTA_REPORT_INCLUDE,
-      take: 5000,
+      take: MAX_REPORT_ROWS,
     });
 
     const byCondicion = new Map<string, { documentos: number; total: number }>();
@@ -237,7 +254,7 @@ const facturacionContadoCredito: ReportDefinition<FacturacionContadoCreditoParam
       ],
       rows,
       totals: { total: round2(totalGeneral) },
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
+      meta: { totalRegistros: rows.length, truncado: ventas.length >= MAX_REPORT_ROWS, generadoEn: nowIso() },
     };
   },
 };
@@ -255,12 +272,17 @@ const ventasPendientesFacturar: ReportDefinition<VentasPendientesFacturarParams>
   moduloPermiso: 'ventas',
   parametros: [],
   schema: ventasPendientesFacturarSchema,
-  async run() {
+  async run(_params, context) {
     const ventas = await prisma.venta.findMany({
-      where: { Anulado: false, RequiereFactura: true, NumeroFel: null },
+      where: applySaleVisibility({
+        Anulado: false,
+        TipoRegistro: 'VENTA',
+        RequiereFactura: true,
+        NumeroFel: null,
+      }, context?.actor),
       include: VENTA_REPORT_INCLUDE,
       orderBy: { FechaRegistro: 'desc' },
-      take: 5000,
+      take: MAX_REPORT_ROWS,
     });
 
     const rows = ventas.map((venta) => ({
@@ -280,7 +302,7 @@ const ventasPendientesFacturar: ReportDefinition<VentasPendientesFacturarParams>
       rows,
       totals: { total: sumByKey(rows, (r) => Number(r.total)) },
       indicators: [{ label: 'Ventas pendientes de facturar', value: rows.length }],
-      meta: { totalRegistros: rows.length, truncado: false, generadoEn: nowIso() },
+      meta: { totalRegistros: rows.length, truncado: ventas.length >= MAX_REPORT_ROWS, generadoEn: nowIso() },
     };
   },
 };
@@ -299,12 +321,17 @@ const detalleDocumentosFel: ReportDefinition<DetalleDocumentosFelParams> = {
   parametros: [{ key: 'idCliente', label: 'Cliente', type: 'select', optionsEndpoint: '/api/clients' }],
   schema: detalleDocumentosFelSchema,
   orientacionPdf: 'landscape',
-  async run(params) {
+  async run(params, context) {
     const ventas = await prisma.venta.findMany({
-      where: { Anulado: false, NumeroFel: { not: null }, ...(params.idCliente ? { IdCliente: params.idCliente } : {}) },
+      where: applySaleVisibility({
+        Anulado: false,
+        TipoRegistro: 'VENTA',
+        NumeroFel: { not: null },
+        ...(params.idCliente ? { IdCliente: params.idCliente } : {}),
+      }, context?.actor),
       include: VENTA_REPORT_INCLUDE,
       orderBy: { FechaEmisionFel: 'desc' },
-      take: 5000,
+      take: MAX_REPORT_ROWS,
     });
 
     const rows = ventas.map((venta) => ({
@@ -326,7 +353,7 @@ const detalleDocumentosFel: ReportDefinition<DetalleDocumentosFelParams> = {
         { key: 'nitFacturado', label: 'NIT facturado', type: 'text' },
       ],
       rows,
-      meta: { totalRegistros: rows.length, truncado: ventas.length >= 5000, generadoEn: nowIso() },
+      meta: { totalRegistros: rows.length, truncado: ventas.length >= MAX_REPORT_ROWS, generadoEn: nowIso() },
     };
   },
 };

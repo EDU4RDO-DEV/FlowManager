@@ -103,4 +103,19 @@ describe('dashboard.service', () => {
       'ORDER BY SUM(CAST(dv.Cantidad AS decimal(18, 4))) DESC, i.Nombre ASC',
     );
   });
+
+  it('limits dashboard queries to the operational actor assigned to the sales', async () => {
+    prismaMock.$queryRaw.mockResolvedValue([]);
+
+    await getDashboardData(
+      { fechaInicio: '2026-01-01', fechaFin: '2026-01-01' },
+      { userId: 42, roleName: 'Vendedor' },
+    );
+
+    expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(6);
+    for (const [query] of prismaMock.$queryRaw.mock.calls) {
+      expect(query.sql).toContain('RutaSesion');
+      expect(query.values).toContain(42);
+    }
+  });
 });

@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
+import type { OperationalActor } from './operational-scope.service';
 import type { DashboardQuery } from '../validators/dashboard.validators';
 
 type SummaryRow = {
@@ -107,7 +108,58 @@ function bucketStartKeys(
   return keys;
 }
 
-async function getSummary(start: Date, endExclusive: Date): Promise<DashboardSummary> {
+function saleVisibilityFilter(actor?: OperationalActor): Prisma.Sql {
+  const role = actor?.roleName?.trim().toLocaleLowerCase('es');
+  if (!actor || (role !== 'vendedor' && role !== 'chofer')) {
+    return Prisma.empty;
+  }
+
+  if (role === 'vendedor') {
+    return Prisma.sql`AND (
+      v.IdUsuario = ${actor.userId}
+      OR EXISTS (
+        SELECT 1
+        FROM RutaSesion rs
+        WHERE rs.Id = v.IdRutaSesion
+          AND (
+            rs.IdUsuarioVendedor = ${actor.userId}
+            OR EXISTS (
+              SELECT 1 FROM Empleado re
+              WHERE re.Id = rs.IdEmpleadoVendedor
+                AND re.IdUsuarioVinculado = ${actor.userId}
+                AND re.Anulado = 0
+            )
+          )
+      )
+      OR EXISTS (
+        SELECT 1 FROM Empleado ve
+        WHERE ve.Id = v.IdEmpleadoVendedor
+          AND ve.IdUsuarioVinculado = ${actor.userId}
+      )
+    )`;
+  }
+
+  return Prisma.sql`AND EXISTS (
+    SELECT 1
+    FROM RutaSesion rs
+    WHERE rs.Id = v.IdRutaSesion
+      AND (
+        rs.IdUsuarioChofer = ${actor.userId}
+        OR EXISTS (
+          SELECT 1 FROM Empleado ce
+          WHERE ce.Id = rs.IdEmpleadoChofer
+            AND ce.IdUsuarioVinculado = ${actor.userId}
+            AND ce.Anulado = 0
+        )
+      )
+  )`;
+}
+
+async function getSummary(
+  start: Date,
+  endExclusive: Date,
+  actor?: OperationalActor,
+): Promise<DashboardSummary> {
   const [row] = await prisma.$queryRaw<SummaryRow[]>(Prisma.sql`
     SELECT
       COALESCE(SUM(CASE WHEN dv.EsBonificacion = 0
@@ -125,6 +177,7 @@ async function getSummary(start: Date, endExclusive: Date): Promise<DashboardSum
       AND v.TipoRegistro = 'VENTA'
       AND v.FechaRegistro >= ${start}
       AND v.FechaRegistro < ${endExclusive}
+      ${saleVisibilityFilter(actor)}
   `);
 
   return {
@@ -139,6 +192,7 @@ async function getSalesTrend(
   start: Date,
   endExclusive: Date,
   granularity: 'day' | 'week' | 'month',
+  actor?: OperationalActor,
 ): Promise<TrendRow[]> {
   const bucketExpression =
     granularity === 'day'
@@ -160,12 +214,17 @@ async function getSalesTrend(
       AND v.TipoRegistro = 'VENTA'
       AND v.FechaRegistro >= ${start}
       AND v.FechaRegistro < ${endExclusive}
+      ${saleVisibilityFilter(actor)}
     GROUP BY ${bucketExpression}
     ORDER BY ${bucketExpression}
   `);
 }
 
-async function getTopProducts(start: Date, endExclusive: Date): Promise<TopProductRow[]> {
+async function getTopProducts(
+  start: Date,
+  endExclusive: Date,
+  actor?: OperationalActor,
+): Promise<TopProductRow[]> {
   return prisma.$queryRaw<TopProductRow[]>(Prisma.sql`
     SELECT TOP (10)
       i.Id AS productId,
@@ -181,12 +240,17 @@ async function getTopProducts(start: Date, endExclusive: Date): Promise<TopProdu
       AND dv.EsBonificacion = 0
       AND v.FechaRegistro >= ${start}
       AND v.FechaRegistro < ${endExclusive}
+      ${saleVisibilityFilter(actor)}
     GROUP BY i.Id, i.Nombre
     ORDER BY SUM(CAST(dv.Cantidad AS decimal(18, 4))) DESC, i.Nombre ASC
   `);
 }
 
-async function getTopCustomers(start: Date, endExclusive: Date): Promise<TopCustomerRow[]> {
+async function getTopCustomers(
+  start: Date,
+  endExclusive: Date,
+  actor?: OperationalActor,
+): Promise<TopCustomerRow[]> {
   return prisma.$queryRaw<TopCustomerRow[]>(Prisma.sql`
     SELECT TOP (10)
       c.Id AS customerId,
@@ -204,6 +268,7 @@ async function getTopCustomers(start: Date, endExclusive: Date): Promise<TopCust
       AND v.TipoRegistro = 'VENTA'
       AND v.FechaRegistro >= ${start}
       AND v.FechaRegistro < ${endExclusive}
+      ${saleVisibilityFilter(actor)}
     GROUP BY c.Id, e.NombreCompleto
     ORDER BY COALESCE(SUM(CASE WHEN dv.EsBonificacion = 0
       THEN CAST(dv.Cantidad AS decimal(18, 4)) * dv.PrecioUnitario
@@ -211,7 +276,11 @@ async function getTopCustomers(start: Date, endExclusive: Date): Promise<TopCust
   `);
 }
 
-async function getOrderStatuses(start: Date, endExclusive: Date): Promise<OrderStatusRow[]> {
+async function getOrderStatuses(
+  start: Date,
+  endExclusive: Date,
+  actor?: OperationalActor,
+): Promise<OrderStatusRow[]> {
   return prisma.$queryRaw<OrderStatusRow[]>(Prisma.sql`
     SELECT v.EstadoEntrega AS status, COUNT_BIG(*) AS orderCount
     FROM Venta v
@@ -219,6 +288,7 @@ async function getOrderStatuses(start: Date, endExclusive: Date): Promise<OrderS
       AND v.TipoRegistro = 'VENTA'
       AND v.FechaRegistro >= ${start}
       AND v.FechaRegistro < ${endExclusive}
+      ${saleVisibilityFilter(actor)}
     GROUP BY v.EstadoEntrega
   `);
 }
@@ -228,7 +298,7 @@ function percentageChange(current: number, previous: number): number | null {
   return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 
-export async function getDashboardData(query: DashboardQuery) {
+export async function getDashboardData(query: DashboardQuery, actor?: OperationalActor) {
   const start = parseDate(query.fechaInicio);
   const end = parseDate(query.fechaFin);
   const endExclusive = addDays(end, 1);
@@ -239,12 +309,12 @@ export async function getDashboardData(query: DashboardQuery) {
   const granularity = resolveGranularity(start, end);
 
   const [current, previous, trendRows, topProducts, topCustomers, statusRows] = await Promise.all([
-    getSummary(start, endExclusive),
-    getSummary(previousStart, previousEndExclusive),
-    getSalesTrend(start, endExclusive, granularity),
-    getTopProducts(start, endExclusive),
-    getTopCustomers(start, endExclusive),
-    getOrderStatuses(start, endExclusive),
+    getSummary(start, endExclusive, actor),
+    getSummary(previousStart, previousEndExclusive, actor),
+    getSalesTrend(start, endExclusive, granularity, actor),
+    getTopProducts(start, endExclusive, actor),
+    getTopCustomers(start, endExclusive, actor),
+    getOrderStatuses(start, endExclusive, actor),
   ]);
 
   const trendByDate = new Map(trendRows.map((row) => [row.dateKey, asNumber(row.salesAmount)]));
