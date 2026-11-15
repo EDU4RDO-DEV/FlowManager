@@ -1325,6 +1325,41 @@ export function notifyFacturaEmitida(sale: ReturnType<typeof toSaleDto>): void {
     });
 }
 
+// El proveedor FEL (sobre todo en el entorno de pruebas de Ecofactura) puede devolver un
+// documento ya certificado anteriormente en lugar de uno nuevo: mismo UUID/Serie/Numero y una
+// FechaCertificacion muy anterior al momento real de la operación. Si se acepta esa respuesta
+// tal cual, la venta nueva queda con los datos (y el PDF) de una factura distinta e incluso ya
+// anulada. Esta validación rechaza la emisión antes de persistirla para no corromper la venta.
+const MAX_FEL_CERTIFICATION_DRIFT_MS = 24 * 60 * 60 * 1000; // 24 horas
+
+async function assertFreshFelEmission(
+  tx: Prisma.TransactionClient,
+  felResult: { autorizacionFel: string; fechaEmisionFel: Date },
+  fechaOperacion: Date,
+  excludeIdVenta: number,
+) {
+  const duplicate = await tx.venta.findFirst({
+    where: {
+      AutorizacionFel: felResult.autorizacionFel,
+      NOT: { Id: excludeIdVenta },
+    },
+    select: { Id: true, NumeroVenta: true },
+  });
+
+  if (duplicate) {
+    throw new Error(
+      `FEL: El proveedor devolvió un documento (UUID ${felResult.autorizacionFel}) ya asociado a la venta #${duplicate.NumeroVenta}; no se completó la emisión para evitar datos duplicados. Intente nuevamente.`,
+    );
+  }
+
+  const driftMs = Math.abs(fechaOperacion.getTime() - felResult.fechaEmisionFel.getTime());
+  if (driftMs > MAX_FEL_CERTIFICATION_DRIFT_MS) {
+    throw new Error(
+      `FEL: El proveedor devolvió una fecha de certificación (${felResult.fechaEmisionFel.toISOString()}) muy distinta al momento real de esta venta; parece un documento desactualizado o reutilizado. No se completó la emisión; intente nuevamente.`,
+    );
+  }
+}
+
 export async function createSale(
   input: CreateSaleInput,
   claveSolicitud: string = crypto.randomUUID(),
@@ -1926,6 +1961,9 @@ export async function createSale(
           },
           tx,
         );
+
+        await assertFreshFelEmission(tx, felResult, fechaOperacion, createdSale.Id);
+
         emittedFelResults.push({
           saleId: createdSale.Id,
           uuid: felResult.autorizacionFel,
