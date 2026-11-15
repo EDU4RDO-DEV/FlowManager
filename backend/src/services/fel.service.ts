@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest, type RequestOptions as HttpsRequestOptions } from 'node:https';
 import type { IncomingMessage } from 'node:http';
@@ -363,6 +364,11 @@ function savePdfFile(pdfBase64: string | null, fileName: string): string | null 
     }
 
     const filePath = path.join(dir, fileName);
+    if (fs.existsSync(filePath)) {
+      // No debería ocurrir: el nombre incluye un sufijo local único. Si pasa, es una señal
+      // de que algo externo generó el mismo nombre; se registra para no sobrescribir en silencio.
+      console.error(`[FEL] El archivo ${fileName} ya existía y será sobrescrito; posible colisión de nombre`);
+    }
     fs.writeFileSync(filePath, Buffer.from(pdfBase64, 'base64'));
 
     return `/uploads/sales/fel/${fileName}`;
@@ -859,7 +865,13 @@ export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.Transacti
 
     response = await fetchDocumentoRaw(xml, config);
     const parsed = parseFelIssueResponse(response.body);
-    const rutaPdfFel = savePdfFile(parsed.pdfBase64, `venta-${input.idVenta}-${parsed.serieFel}-${parsed.numeroFel}.pdf`);
+    // El proveedor (especialmente en el entorno de pruebas) puede repetir Serie/Numero entre
+    // documentos distintos, y el Id de venta se recicla si la base de datos se restaura o
+    // reinicia su secuencia. Un sufijo local aleatorio evita que un PDF sobreescriba a otro.
+    const rutaPdfFel = savePdfFile(
+      parsed.pdfBase64,
+      `venta-${input.idVenta}-${parsed.serieFel}-${parsed.numeroFel}-${crypto.randomUUID()}.pdf`,
+    );
     logFelOperation({
       operation: 'emission',
       input,
@@ -992,9 +1004,11 @@ export async function anulateFelInvoice(
   try {
     response = await fetchAnulacionRaw(input.autorizacionFel, input.motivo, config);
     const { pdfBase64, fechaAnulacionFel, yaAnuladoEnProveedor } = parseFelAnulateResponse(response.body);
+    // Mismo motivo que en emitFelInvoice: sufijo local único para que el PDF de anulación
+    // nunca reutilice el nombre de archivo de un documento distinto.
     const rutaPdfFel = savePdfFile(
       pdfBase64,
-      `venta-${input.idVenta}-${input.serieFel}-${input.numeroFel}-anulado.pdf`,
+      `venta-${input.idVenta}-${input.serieFel}-${input.numeroFel}-anulado-${crypto.randomUUID()}.pdf`,
     );
 
     logFelOperation({
