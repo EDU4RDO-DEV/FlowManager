@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import crypto from 'crypto';
 
 const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
@@ -10,6 +11,11 @@ const { prismaMock } = vi.hoisted(() => ({
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+    },
+    intentoEmisionFel: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
     },
     detalleVenta: { create: vi.fn() },
     inventarioItem: { findFirst: vi.fn(), update: vi.fn() },
@@ -32,6 +38,7 @@ vi.mock('../services/notification.service', () => ({
 vi.mock('../services/fel.service', () => ({
   anulateFelInvoice: vi.fn(),
   emitFelInvoice: emitFelInvoiceMock,
+  buildQrUrl: (uuid: string) => `https://example.test/qr?uuid=${uuid}`,
 }));
 vi.mock('../services/inventory-movement.service', () => ({
   registerInventoryMovement: vi.fn(),
@@ -150,6 +157,9 @@ describe('FEL emission integrity on createSale', () => {
     prismaMock.venta.create.mockResolvedValue({ Id: 7, NumeroVenta: 1 });
     prismaMock.pagoVenta.create.mockResolvedValue({ Id: 2 });
     sendMock.mockResolvedValue({ ok: true });
+    prismaMock.intentoEmisionFel.findUnique.mockResolvedValue(null); // sin intento previo
+    prismaMock.intentoEmisionFel.create.mockResolvedValue({ Id: 501 });
+    prismaMock.intentoEmisionFel.update.mockResolvedValue({ Id: 501 });
   });
 
   it('rejects the sale when the provider returns a UUID already used by another sale', async () => {
@@ -170,6 +180,18 @@ describe('FEL emission integrity on createSale', () => {
     );
 
     expect(prismaMock.venta.update).not.toHaveBeenCalled();
+    // La confirmación del proveedor se registró ANTES de la validación...
+    expect(prismaMock.intentoEmisionFel.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ Estado: 'CONFIRMADO', AutorizacionFel: 'DUPLICADO-UUID-0000' }),
+    });
+    // ...y quedó marcada como rechazada, con motivo, en vez de perderse.
+    expect(prismaMock.intentoEmisionFel.update).toHaveBeenCalledWith({
+      where: { Id: 501 },
+      data: expect.objectContaining({
+        Estado: 'RECHAZADO_DUPLICADO',
+        MotivoRechazo: expect.stringContaining('ya asociado a la venta #5'),
+      }),
+    });
   });
 
   it('rejects the sale when the certification date is far from the real operation time (stale/reused document)', async () => {
@@ -192,9 +214,13 @@ describe('FEL emission integrity on createSale', () => {
     );
 
     expect(prismaMock.venta.update).not.toHaveBeenCalled();
+    expect(prismaMock.intentoEmisionFel.update).toHaveBeenCalledWith({
+      where: { Id: 501 },
+      data: expect.objectContaining({ Estado: 'RECHAZADO_FECHA_INVALIDA' }),
+    });
   });
 
-  it('accepts a fresh, unique FEL emission and persists it', async () => {
+  it('accepts a fresh, unique FEL emission, persists it, and marks the audit record as applied', async () => {
     prismaMock.venta.findFirst
       .mockResolvedValueOnce(null) // getNextNumeroVenta
       .mockResolvedValueOnce(null) // assertFreshFelEmission: sin dueño previo del UUID
@@ -223,5 +249,67 @@ describe('FEL emission integrity on createSale', () => {
         RutaPdfFel: '/uploads/sales/fel/venta-7-SERIE-1-abc.pdf',
       }),
     });
+    expect(prismaMock.intentoEmisionFel.update).toHaveBeenCalledWith({
+      where: { Id: 501 },
+      data: expect.objectContaining({ Estado: 'APLICADO' }),
+    });
+  });
+
+  it('reuses a CONFIRMADO prior attempt instead of calling the provider again on retry', async () => {
+    const certificadoHace2Minutos = new Date(Date.now() - 2 * 60 * 1000);
+    prismaMock.intentoEmisionFel.findUnique.mockResolvedValue({
+      Id: 501,
+      ClaveSolicitud: 'clave-retry',
+      HuellaSolicitud: crypto.createHash('sha256').update(JSON.stringify(saleInput())).digest('hex'),
+      AutorizacionFel: 'UUID-YA-CONFIRMADO',
+      SerieFel: 'SERIE',
+      NumeroFel: '1',
+      FechaCertificacionProveedor: certificadoHace2Minutos,
+      RutaPdfFel: '/uploads/sales/fel/venta-7-SERIE-1-previo.pdf',
+      Estado: 'CONFIRMADO',
+    });
+    prismaMock.venta.findFirst
+      .mockResolvedValueOnce(null) // getNextNumeroVenta
+      .mockResolvedValueOnce(null) // assertFreshFelEmission: sin dueño previo del UUID
+      .mockResolvedValueOnce(createdSaleRow({
+        AutorizacionFel: 'UUID-YA-CONFIRMADO',
+        NumeroFel: '1',
+        SerieFel: 'SERIE',
+      }));
+
+    await createSale(saleInput(), 'clave-retry');
+
+    expect(emitFelInvoiceMock).not.toHaveBeenCalled();
+    expect(prismaMock.intentoEmisionFel.create).not.toHaveBeenCalled();
+    expect(prismaMock.venta.update).toHaveBeenCalledWith({
+      where: { Id: 7 },
+      data: expect.objectContaining({ AutorizacionFel: 'UUID-YA-CONFIRMADO' }),
+    });
+    expect(prismaMock.intentoEmisionFel.update).toHaveBeenCalledWith({
+      where: { Id: 501 },
+      data: expect.objectContaining({ Estado: 'APLICADO' }),
+    });
+  });
+
+  it('fails fast without calling the provider when retrying a request already rejected', async () => {
+    prismaMock.intentoEmisionFel.findUnique.mockResolvedValue({
+      Id: 501,
+      ClaveSolicitud: 'clave-rechazada',
+      HuellaSolicitud: crypto.createHash('sha256').update(JSON.stringify(saleInput())).digest('hex'),
+      AutorizacionFel: 'UUID-RECHAZADO',
+      SerieFel: 'SERIE',
+      NumeroFel: '1',
+      FechaCertificacionProveedor: new Date(),
+      RutaPdfFel: null,
+      Estado: 'RECHAZADO_DUPLICADO',
+      MotivoRechazo: 'FEL: documento ya asociado a la venta #5',
+    });
+
+    await expect(createSale(saleInput(), 'clave-rechazada')).rejects.toThrow(
+      /ya fue rechazada previamente/,
+    );
+
+    expect(emitFelInvoiceMock).not.toHaveBeenCalled();
+    expect(prismaMock.venta.create).not.toHaveBeenCalled();
   });
 });

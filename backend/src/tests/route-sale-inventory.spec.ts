@@ -19,6 +19,7 @@ const {
       },
       devolucionComercialDetalle: { findMany: vi.fn().mockResolvedValue([]) },
       venta: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
+      intentoEmisionFel: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn(), update: vi.fn() },
       detalleVenta: { create: vi.fn() },
       detalleVentaEnvase: { create: vi.fn().mockResolvedValue({ Id: 12 }) },
       envaseClienteSaldo: {

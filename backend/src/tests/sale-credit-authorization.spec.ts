@@ -19,6 +19,11 @@ const { prismaMock, sendMock, routeAvailableQuantitiesMock } = vi.hoisted(() => 
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    intentoEmisionFel: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
     reservaProforma: { updateMany: vi.fn() },
     detalleVenta: { create: vi.fn() },
     inventarioItem: { findFirst: vi.fn(), update: vi.fn() },
@@ -165,6 +170,7 @@ describe('Sale credit authorization', () => {
     );
     sendMock.mockResolvedValue({ ok: true });
     routeAvailableQuantitiesMock.mockResolvedValue([]);
+    prismaMock.intentoEmisionFel.findUnique.mockResolvedValue(null);
   });
 
   it('reduces credit use by returned quantities without changing the original receivable', async () => {

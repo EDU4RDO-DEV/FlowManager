@@ -1590,6 +1590,32 @@ model Venta {
   @@index([IdEmpleadoVendedor, FechaVentaEfectiva], map: "IX_Venta_EmpleadoVendedor_Fecha")
 }
 
+// Auditoría independiente de cada confirmación de certificación FEL recibida del proveedor,
+// escrita con una conexión separada de la transacción que crea/actualiza la Venta. Así la
+// confirmación del proveedor sobrevive aunque esa transacción revierta por cualquier motivo
+// (documento duplicado/desactualizado, u otro fallo posterior no relacionado con FEL), evitando
+// perder trazabilidad y evitando reemitir accidentalmente la misma solicitud en un reintento.
+// Sin relación/FK a Venta: al momento de insertar, la fila de Venta puede no estar confirmada
+// aún en su propia transacción (no sería visible para esta conexión independiente).
+model IntentoEmisionFel {
+  Id                          Int       @id(map: "PK_IntentoEmisionFel") @default(autoincrement())
+  ClaveSolicitud               String    @unique(map: "UQ_IntentoEmisionFel_ClaveSolicitud") @db.UniqueIdentifier
+  HuellaSolicitud              String    @db.Char(64)
+  IdVentaIntento               Int
+  NumeroVentaIntento           Int
+  AutorizacionFel              String    @db.VarChar(255)
+  SerieFel                     String    @db.VarChar(255)
+  NumeroFel                    String    @db.VarChar(255)
+  FechaCertificacionProveedor  DateTime  @db.DateTime
+  RutaPdfFel                   String?   @db.VarChar(255)
+  Estado                       String    @db.VarChar(30)
+  MotivoRechazo                String?   @db.VarChar(500)
+  FechaRegistro                DateTime? @default(now(), map: "DF_IntentoEmisionFel_FechaRegistro") @db.DateTime
+  FechaActualizacion           DateTime? @db.DateTime
+
+  @@index([IdVentaIntento], map: "IX_IntentoEmisionFel_Venta")
+}
+
 // Bitácora de control de pH y Cloro Residual (registro diario de planta).
 model ControlCalidadAgua {
   Id                   Int       @id(map: "PK_ControlCalidadAgua") @default(autoincrement())

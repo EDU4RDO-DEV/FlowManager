@@ -346,7 +346,7 @@ function getQrBaseUrl(): string {
   ).trim();
 }
 
-function buildQrUrl(numeroAutorizacion: string): string {
+export function buildQrUrl(numeroAutorizacion: string): string {
   const base = getQrBaseUrl();
   const separator = base.includes('?') ? '&' : '?';
   return `${base}${separator}tipo=autorizacion&numero=${encodeURIComponent(numeroAutorizacion)}`;

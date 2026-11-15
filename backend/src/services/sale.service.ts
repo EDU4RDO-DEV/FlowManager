@@ -6,7 +6,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
 import { uploadsRootPath } from '../utils/paths';
-import { anulateFelInvoice, emitFelInvoice } from './fel.service';
+import { anulateFelInvoice, buildQrUrl, emitFelInvoice } from './fel.service';
 import { anulateEnvaseMovementInTransaction } from './envase.service';
 import {
   ensurePlantEnvaseBucketQuantity,
@@ -1332,6 +1332,14 @@ export function notifyFacturaEmitida(sale: ReturnType<typeof toSaleDto>): void {
 // anulada. Esta validación rechaza la emisión antes de persistirla para no corromper la venta.
 const MAX_FEL_CERTIFICATION_DRIFT_MS = 24 * 60 * 60 * 1000; // 24 horas
 
+class FelDuplicateDocumentError extends Error {
+  readonly estadoIntento = 'RECHAZADO_DUPLICADO' as const;
+}
+
+class FelStaleCertificationError extends Error {
+  readonly estadoIntento = 'RECHAZADO_FECHA_INVALIDA' as const;
+}
+
 async function assertFreshFelEmission(
   tx: Prisma.TransactionClient,
   felResult: { autorizacionFel: string; fechaEmisionFel: Date },
@@ -1347,14 +1355,14 @@ async function assertFreshFelEmission(
   });
 
   if (duplicate) {
-    throw new Error(
+    throw new FelDuplicateDocumentError(
       `FEL: El proveedor devolvió un documento (UUID ${felResult.autorizacionFel}) ya asociado a la venta #${duplicate.NumeroVenta}; no se completó la emisión para evitar datos duplicados. Intente nuevamente.`,
     );
   }
 
   const driftMs = Math.abs(fechaOperacion.getTime() - felResult.fechaEmisionFel.getTime());
   if (driftMs > MAX_FEL_CERTIFICATION_DRIFT_MS) {
-    throw new Error(
+    throw new FelStaleCertificationError(
       `FEL: El proveedor devolvió una fecha de certificación (${felResult.fechaEmisionFel.toISOString()}) muy distinta al momento real de esta venta; parece un documento desactualizado o reutilizado. No se completó la emisión; intente nuevamente.`,
     );
   }
@@ -1381,6 +1389,24 @@ export async function createSale(
       throw new Error('La clave de idempotencia ya fue utilizada con datos diferentes');
     }
     return getSaleById(existingRequest.Id, actor);
+  }
+
+  // Si esta misma solicitud ya intentó certificarse con el proveedor FEL antes (por ejemplo,
+  // en un reintento tras una caída o un rechazo local), se recupera aquí para no volver a
+  // llamar a emitFelInvoice. Ver IntentoEmisionFel: auditoría escrita fuera de la transacción
+  // de la venta, por lo que sobrevive aunque esa transacción se revierta.
+  const priorFelAttempt = await prisma.intentoEmisionFel.findUnique({
+    where: { ClaveSolicitud: claveSolicitud },
+  });
+  if (priorFelAttempt) {
+    if (priorFelAttempt.HuellaSolicitud !== huellaSolicitud) {
+      throw new Error('La clave de idempotencia ya fue utilizada con datos diferentes');
+    }
+    if (priorFelAttempt.Estado.startsWith('RECHAZADO')) {
+      throw new Error(
+        `FEL: esta solicitud ya fue rechazada previamente (${priorFelAttempt.MotivoRechazo ?? 'motivo no registrado'}). Genere una nueva clave de idempotencia para reintentar.`,
+      );
+    }
   }
 
   await validateUsuarioExists(input.idUsuario);
@@ -1410,6 +1436,7 @@ export async function createSale(
     numero: string;
     fechaCertificacion: Date;
   }> = [];
+  let felAttemptId: number | null = null;
   try {
     created = await prisma.$transaction(
     async (tx) => {
@@ -1943,26 +1970,82 @@ export async function createSale(
           throw new Error('FEL: nitFacturado y nombreClienteFacturado son obligatorios');
         }
 
-        const felResult = await emitFelInvoice(
-          {
-            idVenta: createdSale.Id,
-            numeroVenta: createdSale.NumeroVenta,
-            nitFacturado,
-            nombreClienteFacturado,
-            direccionClienteFacturado: input.direccionClienteFacturado,
-            items: detailRows.map((item) => ({
-              nombre: item.nombre,
-              cantidad: item.cantidad,
-              precioUnitario: item.precioUnitario,
-              esBonificacion: item.esBonificacion,
-            })),
-            total: totals.total,
-            fechaEmision: fechaOperacion,
-          },
-          tx,
-        );
+        let felResult: Awaited<ReturnType<typeof emitFelInvoice>>;
 
-        await assertFreshFelEmission(tx, felResult, fechaOperacion, createdSale.Id);
+        if (priorFelAttempt?.Estado === 'CONFIRMADO') {
+          // El proveedor ya certificó este documento en un intento previo de la MISMA
+          // solicitud (misma ClaveSolicitud/HuellaSolicitud); nunca se vuelve a llamar a
+          // emitFelInvoice para evitar una doble certificación real ante SAT/Ecofactura.
+          felResult = {
+            autorizacionFel: priorFelAttempt.AutorizacionFel,
+            numeroFel: priorFelAttempt.NumeroFel,
+            serieFel: priorFelAttempt.SerieFel,
+            qrFel: buildQrUrl(priorFelAttempt.AutorizacionFel),
+            fechaEmisionFel: priorFelAttempt.FechaCertificacionProveedor,
+            rutaPdfFel: priorFelAttempt.RutaPdfFel,
+          };
+          felAttemptId = priorFelAttempt.Id;
+        } else {
+          felResult = await emitFelInvoice(
+            {
+              idVenta: createdSale.Id,
+              numeroVenta: createdSale.NumeroVenta,
+              nitFacturado,
+              nombreClienteFacturado,
+              direccionClienteFacturado: input.direccionClienteFacturado,
+              items: detailRows.map((item) => ({
+                nombre: item.nombre,
+                cantidad: item.cantidad,
+                precioUnitario: item.precioUnitario,
+                esBonificacion: item.esBonificacion,
+              })),
+              total: totals.total,
+              fechaEmision: fechaOperacion,
+            },
+            tx,
+          );
+
+          // Auditoría durable: se escribe con `prisma` (no `tx`) para que esta confirmación
+          // del proveedor sobreviva aunque la transacción de la venta se revierta después,
+          // sin importar el motivo (duplicado/desactualizado u otro fallo posterior).
+          const felAttempt = await prisma.intentoEmisionFel.create({
+            data: {
+              ClaveSolicitud: claveSolicitud,
+              HuellaSolicitud: huellaSolicitud,
+              IdVentaIntento: createdSale.Id,
+              NumeroVentaIntento: createdSale.NumeroVenta,
+              AutorizacionFel: felResult.autorizacionFel,
+              SerieFel: felResult.serieFel,
+              NumeroFel: felResult.numeroFel,
+              FechaCertificacionProveedor: felResult.fechaEmisionFel,
+              RutaPdfFel: felResult.rutaPdfFel,
+              Estado: 'CONFIRMADO',
+            },
+          });
+          felAttemptId = felAttempt.Id;
+        }
+
+        try {
+          await assertFreshFelEmission(tx, felResult, fechaOperacion, createdSale.Id);
+        } catch (validationError) {
+          if (felAttemptId) {
+            await prisma.intentoEmisionFel.update({
+              where: { Id: felAttemptId },
+              data: {
+                Estado:
+                  validationError instanceof FelDuplicateDocumentError
+                    ? 'RECHAZADO_DUPLICADO'
+                    : validationError instanceof FelStaleCertificationError
+                      ? 'RECHAZADO_FECHA_INVALIDA'
+                      : 'RECHAZADO_OTRO',
+                MotivoRechazo:
+                  validationError instanceof Error ? validationError.message.slice(0, 500) : 'Error desconocido',
+                FechaActualizacion: new Date(),
+              },
+            });
+          }
+          throw validationError;
+        }
 
         emittedFelResults.push({
           saleId: createdSale.Id,
@@ -2045,6 +2128,15 @@ export async function createSale(
       numero: emittedFel.numero,
       providerDate: emittedFel.fechaCertificacion.toISOString(),
     }));
+  }
+
+  // La venta se creó con éxito: marcar el intento FEL como aplicado definitivamente
+  // para que no vuelva a reutilizarse ni a bloquear una futura solicitud distinta.
+  if (felAttemptId) {
+    await prisma.intentoEmisionFel.update({
+      where: { Id: felAttemptId },
+      data: { Estado: 'APLICADO', FechaActualizacion: new Date() },
+    });
   }
 
   // Efecto secundario: la venta ya quedó confirmada en la transacción anterior.
