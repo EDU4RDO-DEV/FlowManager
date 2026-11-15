@@ -428,7 +428,11 @@ export async function anulateSaleController(req: Request, res: Response) {
 
     const data = await anulateSale(id, req.auth?.userId ?? idUsuarioAnulador);
 
-    return res.status(200).json({ ok: true, data, message: 'Venta anulada correctamente' });
+    const message = data.felAnulacion?.yaAnuladoEnProveedor
+      ? 'Venta anulada correctamente. La factura ya estaba anulada en el proveedor FEL (posiblemente desde el portal de Ecofactura); se sincronizó el estado local.'
+      : 'Venta anulada correctamente';
+
+    return res.status(200).json({ ok: true, data, message });
   } catch (error) {
     if (error instanceof ZodError) {
       return res.status(400).json({ ok: false, message: getZodErrorMessage(error) });

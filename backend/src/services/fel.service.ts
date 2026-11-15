@@ -50,6 +50,7 @@ type FelAnulateResult = {
   confirmada: boolean;
   fechaAnulacionFel: Date | null;
   rutaPdfFel: string | null;
+  yaAnuladoEnProveedor: boolean;
 };
 
 type ActiveFelConfig = {
@@ -232,6 +233,31 @@ function escapeXml(value: string): string {
 
 function toFechaGT(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+// El webservice de Ecofactura devuelve FechaAnulacion en formato local de Guatemala
+// "DD/MM/YYYY HH:mm:ss" sin offset (ver manual "webservice documento V1.2.pdf", WS aanulacion),
+// a diferencia de FechaCertificacion que sí es ISO-8601 con offset. new Date(...) interpreta
+// ese formato como MM/DD/YYYY y falla (o invierte día/mes) para cualquier día > 12.
+function parseFelProviderDate(value: string): Date | null {
+  const trimmed = value.trim();
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    const iso = new Date(trimmed);
+    return Number.isNaN(iso.getTime()) ? null : iso;
+  }
+
+  const localMatch = trimmed.match(
+    /^(\d{2})\/(\d{2})\/(\d{4})(?:[ T](\d{2}):(\d{2}):(\d{2}))?$/,
+  );
+  if (localMatch) {
+    const [, day, month, year, hour = '00', minute = '00', second = '00'] = localMatch;
+    // Sin offset explícito en la respuesta; se asume hora local de Guatemala (UTC-6).
+    const parsed = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}-06:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  return null;
 }
 
 // Cada afiliación de IVA solo puede emitir ciertos tipos de DTE (ver manual Ecofactura "Tipos de DTE por afiliación").
@@ -877,7 +903,9 @@ export async function emitFelInvoice(input: IssueFelInput, tx?: Prisma.Transacti
   }
 }
 
-function parseFelAnulateResponse(rawResponse: string): { pdfBase64: string | null; fechaAnulacionFel: Date } {
+function parseFelAnulateResponse(
+  rawResponse: string,
+): { pdfBase64: string | null; fechaAnulacionFel: Date; yaAnuladoEnProveedor: boolean } {
   const decoded = decodeXmlEntities(rawResponse);
 
   const fatalErrorMatch = decoded.match(/<Errores>[\s\S]*?<\/Errores>/i);
@@ -892,12 +920,23 @@ function parseFelAnulateResponse(rawResponse: string): { pdfBase64: string | nul
     throw new Error('FEL: Respuesta de anulación sin confirmación');
   }
 
-  const fechaAnulacionFel = new Date(fechaAnulacion);
-  if (Number.isNaN(fechaAnulacionFel.getTime())) {
+  const fechaAnulacionFel = parseFelProviderDate(fechaAnulacion);
+  if (!fechaAnulacionFel) {
     throw new Error('FEL: Respuesta de anulación con fecha inválida');
   }
 
-  return { pdfBase64: extractXmlTagValue(decoded, 'Pdf'), fechaAnulacionFel };
+  // Dentro de un <DTE> exitoso, el proveedor incluye <Error Codigo="116"> únicamente cuando
+  // el documento ya se encontraba anulado previamente (p. ej. anulado directamente en el
+  // portal de Ecofactura/SAT). No es un error fatal: confirma la anulación igual.
+  const dteTagMatch = decoded.match(/<DTE\b[^>]*>[\s\S]*?<\/DTE>/i);
+  const embeddedErrorMatch = dteTagMatch?.[0].match(/<Error\s+Codigo="116"\s*>/i);
+  const yaAnuladoEnProveedor = Boolean(embeddedErrorMatch);
+
+  return {
+    pdfBase64: extractXmlTagValue(decoded, 'Pdf'),
+    fechaAnulacionFel,
+    yaAnuladoEnProveedor,
+  };
 }
 
 async function fetchAnulacionRaw(
@@ -947,12 +986,12 @@ export async function anulateFelInvoice(
       startedAt,
       outcome: 'simulated',
     });
-    return { confirmada: false, fechaAnulacionFel: null, rutaPdfFel: null };
+    return { confirmada: false, fechaAnulacionFel: null, rutaPdfFel: null, yaAnuladoEnProveedor: false };
   }
 
   try {
     response = await fetchAnulacionRaw(input.autorizacionFel, input.motivo, config);
-    const { pdfBase64, fechaAnulacionFel } = parseFelAnulateResponse(response.body);
+    const { pdfBase64, fechaAnulacionFel, yaAnuladoEnProveedor } = parseFelAnulateResponse(response.body);
     const rutaPdfFel = savePdfFile(
       pdfBase64,
       `venta-${input.idVenta}-${input.serieFel}-${input.numeroFel}-anulado.pdf`,
@@ -974,7 +1013,7 @@ export async function anulateFelInvoice(
       },
     });
 
-    return { confirmada: true, fechaAnulacionFel, rutaPdfFel };
+    return { confirmada: true, fechaAnulacionFel, rutaPdfFel, yaAnuladoEnProveedor };
   } catch (error) {
     logFelOperation({
       operation: 'annulment',

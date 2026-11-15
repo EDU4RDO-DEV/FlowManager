@@ -160,4 +160,53 @@ describe('FEL provider response handling', () => {
     expect(requestPath).toBe('/fel/aanulacion');
     expect(result.fechaAnulacionFel?.toISOString()).toBe('2026-10-15T18:34:56.000Z');
   });
+
+  it('parses the provider FechaAnulacion local format (DD/MM/YYYY HH:mm:ss) from the real manual example', async () => {
+    const baseUrl = await listenLocalServer((_request, response) => {
+      response.writeHead(200, { 'Content-Type': 'text/xml' });
+      response.end(
+        '<Respuesta><DTE FechaAnulacion="23/01/2020 09:09:00" FechaCertificacion="2020-01-23T09:10:05-06:00"/></Respuesta>',
+      );
+    });
+    process.env.FEL_BASE_URL_SANDBOX = baseUrl;
+
+    const result = await anulateFelInvoice({
+      idVenta: 7,
+      numeroVenta: 1007,
+      autorizacionFel: '123e4567-e89b-12d3-a456-426614174000',
+      serieFel: 'FEL',
+      numeroFel: '42',
+      motivo: 'ANULACION VENTA 1007',
+      fechaAnulacion: new Date('2020-01-23T12:00:00.000Z'),
+    });
+
+    expect(result.confirmada).toBe(true);
+    // 23/01/2020 09:09:00 hora local de Guatemala (UTC-6) == 15:09:00 UTC.
+    expect(result.fechaAnulacionFel?.toISOString()).toBe('2020-01-23T15:09:00.000Z');
+    expect(result.yaAnuladoEnProveedor).toBe(false);
+  });
+
+  it('flags yaAnuladoEnProveedor when the provider reports error 116 (already annulled)', async () => {
+    const baseUrl = await listenLocalServer((_request, response) => {
+      response.writeHead(200, { 'Content-Type': 'text/xml' });
+      response.end(
+        '<Respuesta><DTE FechaAnulacion="23/01/2020 09:09:00" FechaCertificacion="2020-01-23T09:10:05-06:00">' +
+          '<Error Codigo="116">El documento ya se encontraba anulado</Error></DTE></Respuesta>',
+      );
+    });
+    process.env.FEL_BASE_URL_SANDBOX = baseUrl;
+
+    const result = await anulateFelInvoice({
+      idVenta: 7,
+      numeroVenta: 1007,
+      autorizacionFel: '123e4567-e89b-12d3-a456-426614174000',
+      serieFel: 'FEL',
+      numeroFel: '42',
+      motivo: 'ANULACION VENTA 1007',
+      fechaAnulacion: new Date('2020-01-23T12:00:00.000Z'),
+    });
+
+    expect(result.confirmada).toBe(true);
+    expect(result.yaAnuladoEnProveedor).toBe(true);
+  });
 });

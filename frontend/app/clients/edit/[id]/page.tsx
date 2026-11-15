@@ -144,6 +144,7 @@ export default function EditClientPage() {
           ) : (
             <ClientFormCard
               title={`Editar cliente #${params.id}`}
+              clientId={Number(params.id)}
               form={form}
               saving={saving}
               uploadingImage={uploadingImage}

@@ -368,7 +368,11 @@ export default function SaleDetailPage() {
     setIsAnulatingSale(true);
     try {
       const result = await anulateSale(sale.id, { idUsuarioAnulador: user.id });
-      if (result.felAnulacion?.confirmada && result.felAnulacion.fechaAnulacionFel) {
+      if (result.felAnulacion?.yaAnuladoEnProveedor) {
+        toast.success(
+          "Venta anulada correctamente. La factura ya estaba anulada desde el proveedor FEL (posiblemente desde el portal de Ecofactura); se sincronizó el estado local.",
+        );
+      } else if (result.felAnulacion?.confirmada && result.felAnulacion.fechaAnulacionFel) {
         toast.success(
           `Venta y factura anuladas por Ecofacturas el ${formatDate(result.felAnulacion.fechaAnulacionFel)}`,
         );
@@ -586,23 +590,16 @@ export default function SaleDetailPage() {
                       <p className="break-all font-medium">{sale.autorizacionFel ?? "-"}</p>
                     </div>
                     <div className="flex items-end gap-3 md:col-span-2">
-                      {sale.rutaPdfFel ? (
+                      {sale.rutaPdfFel && !sale.anulado ? (
                         <Button asChild variant="outline" size="sm">
                           <a href={resolveUploadUrl(sale.rutaPdfFel)} target="_blank" rel="noreferrer">
                             Ver PDF certificado
                           </a>
                         </Button>
-                      ) : (
+                      ) : !sale.anulado ? (
                         <p className="text-xs text-muted-foreground">
                           {sale.autorizacionFel ? "PDF no disponible" : "Factura pendiente de emisión"}
                         </p>
-                      )}
-                      {sale.qrFel ? (
-                        <Button asChild variant="outline" size="sm">
-                          <a href={sale.qrFel} target="_blank" rel="noreferrer">
-                            Verificar en SAT
-                          </a>
-                        </Button>
                       ) : null}
                       {sale.anulado && sale.rutaPdfFelAnulacion ? (
                         <Button asChild variant="outline" size="sm">

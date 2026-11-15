@@ -889,7 +889,18 @@ export default function CreateSalePage() {
                   <p className="text-xs text-destructive">{creditAuthorizationError}</p>
                 ) : null}
                 {tipoRegistro === "VENTA" && creditAuthorization?.motivoNoAutorizado ? (
-                  <p className="text-xs text-amber-700">{creditAuthorization.motivoNoAutorizado}</p>
+                  <div className="space-y-0.5">
+                    <p className="text-xs text-amber-700">{creditAuthorization.motivoNoAutorizado}</p>
+                    {idCliente && hasModulePermission(user, "ventas", "read") ? (
+                      <Link
+                        href={`/credits/customers/${idCliente}`}
+                        target="_blank"
+                        className="text-xs font-medium text-sky-600 underline hover:text-sky-700"
+                      >
+                        Configurar condición de crédito del cliente
+                      </Link>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
 

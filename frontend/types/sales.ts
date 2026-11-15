@@ -407,5 +407,6 @@ export interface AnulateSaleResult {
     confirmada: boolean;
     fechaAnulacionFel: string | null;
     rutaPdfFel: string | null;
+    yaAnuladoEnProveedor: boolean;
   } | null;
 }

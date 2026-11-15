@@ -1,8 +1,11 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { Prisma, PrismaClient } from '@prisma/client';
 
 import { prisma } from '../config/prisma';
 import { buildPaginationMeta, resolvePagination } from '../utils/pagination';
+import { uploadsRootPath } from '../utils/paths';
 import { anulateFelInvoice, emitFelInvoice } from './fel.service';
 import { anulateEnvaseMovementInTransaction } from './envase.service';
 import {
@@ -797,6 +800,19 @@ async function getSaleByIdInternal(
   });
 }
 
+// El archivo físico puede faltar si el entorno (DB restaurada, limpieza de disco, etc.)
+// no conserva /uploads en sincronía con los registros de Venta. Sin esta verificación el
+// frontend enlazaría a una ruta inexistente y el usuario vería un 404 JSON crudo.
+function resolveExistingUploadPath(storedPath: string | null): string | null {
+  if (!storedPath) {
+    return null;
+  }
+
+  const relative = storedPath.replace(/^\/?uploads\//, '');
+  const absolute = path.join(uploadsRootPath, relative);
+  return fs.existsSync(absolute) ? storedPath : null;
+}
+
 function toSaleDto(sale: NonNullable<Awaited<ReturnType<typeof getSaleByIdInternal>>>) {
   const detalle = sale.DetalleVenta
     .filter((detail) => sale.Anulado || !detail.Anulado)
@@ -903,9 +919,9 @@ function toSaleDto(sale: NonNullable<Awaited<ReturnType<typeof getSaleByIdIntern
     numeroFel: sale.NumeroFel,
     serieFel: sale.SerieFel,
     qrFel: sale.QrFel,
-    rutaPdfFel: sale.RutaPdfFel,
+    rutaPdfFel: resolveExistingUploadPath(sale.RutaPdfFel),
     fechaEmisionFel: sale.FechaEmisionFel,
-    rutaPdfFelAnulacion: sale.RutaPdfFelAnulacion,
+    rutaPdfFelAnulacion: resolveExistingUploadPath(sale.RutaPdfFelAnulacion),
     fechaAnulacionFel: sale.FechaAnulacionFel,
     nitFacturado: sale.NitFacturado,
     nombreClienteFacturado: sale.NombreClienteFacturado,
@@ -2354,6 +2370,7 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
         confirmada: true,
         fechaAnulacionFel: sale.FechaAnulacionFel,
         rutaPdfFel: sale.RutaPdfFelAnulacion,
+        yaAnuladoEnProveedor: false,
       };
     } else {
       felAnulacion = await anulateFelInvoice({
@@ -2405,6 +2422,7 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
             confirmada: true,
             fechaAnulacionFel: currentSale.FechaAnulacionFel,
             rutaPdfFel: currentSale.RutaPdfFelAnulacion,
+            yaAnuladoEnProveedor: felAnulacion.yaAnuladoEnProveedor,
           };
         }
 
@@ -2711,6 +2729,7 @@ export async function anulateSale(id: number, idUsuarioAnulador?: number) {
           confirmada: felAnulacion.confirmada,
           fechaAnulacionFel: felAnulacion.fechaAnulacionFel,
           rutaPdfFel: felAnulacion.rutaPdfFel,
+          yaAnuladoEnProveedor: felAnulacion.yaAnuladoEnProveedor,
         }
       : null,
   };

@@ -1,4 +1,5 @@
 import { ImagePlus, Loader2, RefreshCcw } from "lucide-react";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +20,7 @@ export type ClientFormValues = {
 
 type ClientFormCardProps = {
   title: string;
+  clientId?: number;
   form: ClientFormValues;
   saving: boolean;
   uploadingImage: boolean;
@@ -51,6 +53,7 @@ function resolveImagePreviewUrl(rutaImagen: string): string {
 
 export function ClientFormCard({
   title,
+  clientId,
   form,
   saving,
   uploadingImage,
@@ -99,6 +102,15 @@ export function ClientFormCard({
                     Permite solicitar ventas al crédito si también cumple las condiciones vigentes.
                     Desactivado, el cliente puede seguir comprando al contado.
                   </p>
+                  {clientId ? (
+                    <Link
+                      href={`/credits/customers/${clientId}`}
+                      target="_blank"
+                      className="inline-block text-xs font-medium text-sky-600 underline hover:text-sky-700"
+                    >
+                      Asignar condición de crédito (tipo y vigencia) a este cliente
+                    </Link>
+                  ) : null}
                 </div>
               </div>
               <div className="space-y-1.5">
